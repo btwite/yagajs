@@ -1,93 +1,13 @@
 /**
- * symbol : @file
+ * Symbol : @file
  * 
  * Yaga symbol objects.
  * 
  */
 
+'use strict';
+
 let _symbols = new Map();
-let _enumReserved = {
-    UNKNOWN: 0,
-    TRUE: 1,
-    FALSE: 2,
-    NONE: 3
-}
-let _reserved = {
-    "true": _enumReserved.TRUE,
-    "false": _enumReserved.FALSE,
-    "unknown": _enumReserved.UNKNOWN,
-    "_#": _enumReserved.NONE
-}
-
-function _symbolToElement(sym) {
-    // Handle escaped reserved symbols first
-    if (sym.charAt(0) == '#') {
-        String s = sym.substring(1);
-        if (_reserved.get(s) != null)
-            sym = s;
-        return (new AtomSymbol(Symbolspace.getSymbol(sym)));
-    }
-
-    // Try for a reserved Symbol
-    Reserved type = _reserved.get(sym);
-    if (type == null)
-        return (new AtomSymbol(Symbolspace.getSymbol(sym)));
-
-    switch (type) {
-        default:
-            case TRUE:
-            return (AtomTrivalent.TRUE);
-        case FALSE:
-                return (AtomTrivalent.FALSE);
-        case UNKNOWN:
-                return (AtomTrivalent.UNKNOWN);
-        case NONE:
-                return (AtomNone.VALUE);
-    }
-}
-
-static public void printReserved(StringBuilder sb, Reserved sym) {
-    for (Entry < String, Reserved > e: _reserved.entrySet()) {
-        if (e.getValue() != sym)
-            continue;
-        sb.append('#').append(e.getKey());
-        return;
-    }
-}
-
-static public void xprintReserved(StringBuilder sb, Reserved sym, String type) {
-    for (Entry < String, Reserved > e: _reserved.entrySet()) {
-        if (e.getValue() != sym)
-            continue;
-        sb.append("[").append(type).append("]#").append(e.getKey());
-        return;
-    }
-}
-
-static public void printSymbol(StringBuilder sb, String sym) {
-    sb.append(asPrintSymbol(sym));
-}
-
-static public void xprintSymbol(StringBuilder sb, String sym) {
-    if (_reserved.containsKey(sym))
-        sb.append("[#]");
-    sb.append('#').append(sym);
-}
-
-static public String asPrintSymbol(String sym) {
-    String lead = "#";
-    if (_reserved.containsKey(sym))
-        lead += '#';
-    return (lead + sym);
-}
-
-
-function _getSymbol(symName) {
-    let _sym = _symbols.get(symName);
-    if (!_sym) _symbols.set(symName, (_sym = _symbol(symName)));
-    return (_sym);
-}
-
 let _symbol = {
     typeName: 'Symbol',
     _sym: '<Unknown>',
@@ -99,16 +19,23 @@ let _symbol = {
     }
 }
 
-function _newSymbol(sName) {
-    let = Object.create(_symbol);
-    o._sym = sName;
-    return (o);
+let _enumReserved = {
+    UNKNOWN: 0,
+    TRUE: 1,
+    FALSE: 2,
+    NONE: 3
 }
-
 
 module.exports = {
     get: _getSymbol,
     new: _newSymbol,
+
+    symbolToElement: _symbolToElement,
+    printReserved: _printReserved,
+    xprintReserved: _xprintReserved,
+    printSymbol: _printSymbol,
+    xprintSymbol: _xprintSymbol,
+    asPrintSymbol: _asPrintSymbol,
 
     LOCAL: _getSymbol("local"),
     BIND: _getSymbol("bind"),
@@ -123,3 +50,78 @@ module.exports = {
     Reserved: _enumReserved,
 };
 Object.freeze(module.exports);
+
+let yc = require('./yagacore');
+
+let _reservedAtom = {
+    get true() {
+        return (yc.AtomTrivalent.TRUE);
+    },
+    get false() {
+        return (yc.AtomTrivalent.FALSE);
+    },
+    get unknown() {
+        return (yc.AtomTrivalent.UNKNOWN);
+    },
+    get '_#' () {
+        return (yc.AtomTrivalent.NONE);
+    }
+}
+
+let _sReserved = ['true', 'false', 'unknown', '_#'];
+
+function _symbolToElement(sym) {
+    // Handle escaped reserved symbols first
+    if (sym.charAt(0) == '#') {
+        let s = sym.substring(1);
+        if (_reservedAtom[s])
+            sym = s;
+        return (AtomSymbol.new(_getSymbol(sym)));
+    }
+
+    // Try for a reserved Symbol
+    let atom = _reservedAtom[sym];
+    if (!atom)
+        return (AtomSymbol.new(_getSymbol(sym)));
+    return (atom);
+}
+
+function _printReserved(sb, enumSym) {
+    if (enumSym >= _sReserved.length) return;
+    sb.append('#').append(_sReserved[enumSym]);
+}
+
+function _xprintReserved(sb, enumSym, type) {
+    if (enumSym >= _sReserved.length) return;
+    sb.append("[").append(type).append("]#").append(_sReserved[enumSym]);
+}
+
+function _printSymbol(sb, sym) {
+    sb.append(_asPrintSymbol(sym));
+}
+
+function _xprintSymbol(sb, sym) {
+    if (_reservedAtom[sym])
+        sb.append("[#]");
+    sb.append('#').append(sym);
+}
+
+function _asPrintSymbol(sym) {
+    let lead = "#";
+    if (_reservedAtom[sym])
+        lead += '#';
+    return (lead + sym);
+}
+
+
+function _getSymbol(symName) {
+    let _sym = _symbols.get(symName);
+    if (!_sym) _symbols.set(symName, (_sym = _newSymbol(symName)));
+    return (_sym);
+}
+
+function _newSymbol(sName) {
+    let o = Object.create(_symbol);
+    o._sym = sName;
+    return (o);
+}

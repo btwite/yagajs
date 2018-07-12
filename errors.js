@@ -5,7 +5,9 @@
  * 
  */
 
-let lists; // Need to attach the Lists object here.
+'use strict';
+
+let Lists; // Need to attach the Lists object here.
 let Elements; // Need to attach the Elements object here.
 
 function YagaException(element, msg) {
