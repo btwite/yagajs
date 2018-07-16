@@ -8,36 +8,54 @@
 'use strict';
 
 var yaga;
-let _symbols = {};
-let _symbol = {
-    typeName: 'Symbol',
-    _sym: '<Unknown>',
-    asString() {
-        return (this._sym);
-    },
-    print(stream) {
-        return (stream.write(this_sym));
-    }
-}
 
 module.exports = {
-    get: _getSymbol,
-
+    new: _newSymbol,
+    Quoted: {
+        new: _newQuotedSymbol,
+    },
     Initialise: (y) => {
         yaga = yaga ? yaga : y;
-    },
-    PostInitialise: _postInit,
+    }
 };
 Object.freeze(module.exports);
 
-function _getSymbol(symName) {
-    let _sym = _symbols[symName];
-    if (!_sym) _symbols[symName] = (_sym = _newSymbol(symName));
-    return (_sym);
+let _symbols = {};
+
+function _newSymbol(symName) {
+    let sym = _symbols[symName];
+    if (!sym) {
+        _symbols[symName] = sym = Object.create(_symbol);
+        sym._name = symName;
+    }
+    return (sym);
 }
 
-function _newSymbol(sName) {
-    let o = Object.create(_symbol);
-    o._sym = sName;
-    return (o);
+function _newQuotedSymbol(symName) {
+    let sym = Object.create(_newSymbol(symName));
+    sym.typeName = 'QuotedSymbol';
+    sym.bind = function () {
+        return (Object.getPrototypeOf(sym));
+    };
+    sym.evaluate = function () {
+        throw new yaga.errors.InternalException("'evaluate' method unsupported for QuotedSymbol");
+    }
+}
+
+var _symbol = {
+    typeName: 'Symbol',
+    _name: '<Unknown>',
+    isListorAtom: true,
+    bind() {
+        /* Add code here */
+    },
+    evaluate() {
+        return (this);
+    },
+    asString() {
+        return (this._name);
+    },
+    print(stream) {
+        return (stream.write(this._name));
+    }
 }

@@ -1,35 +1,70 @@
 /*
- *  Namespace: @file
+ *  Dictionary: @file
  *
- *  Defines the key behaviours for Namespaces
+ *  Yaga dictionaries contain the yaga immutable definitions. Dictionaries are arranged
+ *  in hierachies with the root dictionary always set to the yaga core dictionary.
+ *  Yaga instance initialisation allows the instance to be assigned a startup dictionary
+ *  that will be typically loaded from an initialisation script of yaga expressions.
+ *  Any dependencies are also loaded at that time, although the dependency is defined in
+ *  the script by the expression (dictionaryDependsOn "source path"). The script can also
+ *  specify a name with the expression (dictionaryName "myDictionary").
+ * 
+ *  The yaga instance is assigned a child dictionary for further definitions and overrides,
+ *  as the preloaded hierachy are immutable and reusable across yaga instances.
+ * 
+ *  This module contains the behaviour for creating dictionaries and a dictionary hierachy.
  */
 "use strict";
 
-var yc, _namespace, _core, _root, _local;
+const sYagaCore = './yaga.core';
+
+var yaga, _dictionary, _dictionaries = {},
+	_core = null;
 module.exports = {
-	Public: {
-		new: _newPublicNamespace,
-	},
-	Private: {
-		new: _newPrivateNamespace,
-	},
-	Local: {
-		new: _newLocalNamespace,
-	},
-	Root: {
-		new: _newRootNamespace,
-	},
-	core: undefined,
-	Initialise(y) {
-		if (yc) return;
-		yc = y;
-		_createCoreNamespace();
-		this.core = _core;
-	},
-	PostInitialise() {
-		_core.addStringBinding('.ristic', yc.Ristic.DotRistic);
+	load: _loadDictionary,
+	Initialise: (y) => {
+		yaga = yaga ? yaga : y;
 	}
 };
+
+function _loadDictionary(yi, optPath, optCore) {
+	_core = _createDictionary(yi, optCore ? optCore : sYagaCore, Object.prototype);
+	_core.parent = _core;
+}
+
+function _createDictionary(yi, path, spaceProt) {
+	let dict = _dictionaries[path];
+	if (dict) return (dict);
+	dict = Object.create(_dictionary);
+	dict._space = Object.create(spaceProt);
+	yi.dictionary = dict;
+	yi.evaluateFile(path);
+	_dictionaries[path] = dict;
+	return (dict);
+}
+
+
+_dictionary = {
+	typeName: 'Dictionary',
+	name: undefined,
+	parent: undefined,
+	_space: undefined,
+	dictionaryDependsOn: _dictionaryDependsOn,
+	dictionaryName: _dictionaryName,
+}
+
+function _dictionaryDependsOn(yi, path) {
+	let dict = yi.dictionary;
+	let parent = _createDictionary(yi, path, _core._space);
+	this._space = Object.assign(Object.create(parent._space), this._space);
+	yi.directory = dict;
+}
+
+function _dictionaryName(yi, name) {
+	this._name = name;
+}
+
+
 
 var _privateNamespaces = [];
 var _nextID = 0;
