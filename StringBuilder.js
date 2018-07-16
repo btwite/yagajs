@@ -12,14 +12,16 @@ module.exports = {
 };
 Object.freeze(module.exports);
 
-let yc = require('./yagacore');
-
 function _newStringBuilder() {
     let _strings = [];
     return (Object.freeze({
         typeName: 'StringBuilder',
         append(o) {
             _strings.push(String(o));
+            return (this);
+        },
+        clear() {
+            _strings = [];
             return (this);
         },
         toString() {

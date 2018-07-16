@@ -7,8 +7,80 @@
 
 'use strict';
 
-let Lists; // Need to attach the Lists object here.
-let Elements; // Need to attach the Elements object here.
+let _evaluateTypes = {
+    EXPRESSION: 'EXPRESSION',
+    RISTIC: 'RISTIC',
+    PIPELINE: 'PIPELINE',
+    PRIMITIVE: 'PRIMITIVE',
+    CONTEXT: 'CONTEXT',
+    EVALUATOR: 'EVALUATOR',
+    INDEX: 'INDEX',
+    PARSE: 'PARSE'
+};
+
+let _parserTypes = {
+    ENDOFSTREAM: 'ENDOFSTREAM',
+    STARTOFEXPRESSION: 'STARTOFEXPRESSION',
+    IO: 'IO',
+    ENDOFEXPRESSION: 'ENDOFEXPRESSION',
+    BRACKETS: 'BRACKETS'
+}
+
+module.exports = {
+    YagaException: _errorMethod(YagaException),
+    BinderException: _errorMethod(BinderException),
+    BindException: _errorMethod(BindException),
+    CastException: _errorMethod(CastException),
+    EvaluateException: _errorMethod(EvaluateException),
+    FrameException: _errorMethod(FrameException),
+    ReadFrameException: _errorMethod(ReadFrameException),
+    WriteFrameException: _errorMethod(WriteFrameException),
+    NameException: _errorMethod(NameException),
+    NamespaceException: _errorMethod(NamespaceException),
+    ParserException: _errorMethod(ParserException),
+    PrimitiveException: _errorMethod(PrimitiveException),
+    RisticValidationException: _errorMethod(RisticValidationException),
+    InternalException: _errorMethod(InternalException),
+
+    isYagaException: _isAnException(YagaException),
+    isBinderException: _isAnException(BinderException),
+    isBindException: _isAnException(BindException),
+    isCastException: _isAnException(CastException),
+    isEvaluateException: _isAnException(EvaluateException),
+    isFrameException: _isAnException(FrameException),
+    isReadFrameException: _isAnException(ReadFrameException),
+    isWriteFrameException: _isAnException(WriteFrameException),
+    isNameException: _isAnException(NameException),
+    isNamespaceException: _isAnException(NamespaceException),
+    isParserException: _isAnException(ParserException),
+    isPrimitiveException: _isAnException(PrimitiveException),
+    isRisticValidationException: _isAnException(RisticValidationException),
+    isInternalException: _isAnException(InternalException),
+
+    Error: _newError,
+
+    evaluateTypes: _evaluateTypes,
+    parserTypes: _parserTypes,
+
+    Initialise: _init
+};
+Object.freeze(module.exports);
+
+function _errorMethod(fnError) {
+    return ((...args) => new fnError(...args));
+}
+
+function _isAnException(FnException) {
+    return ((excp) => excp instanceof FnException);
+}
+
+let Lists, Elements;
+
+function _init(yc) {
+    if (Lists) return;
+    Lists = yc.Lists;
+    Elements = yc.Elements;
+}
 
 function YagaException(element, msg) {
     _setErrorDetails(this, element, msg);
@@ -42,17 +114,6 @@ function CastException(e, prot) {
     return (this);
 }
 _inheritErrorPrototype(CastException, YagaException);
-
-let _evaluateTypes = {
-    EXPRESSION: 'EXPRESSION',
-    RISTIC: 'RISTIC',
-    PIPELINE: 'PIPELINE',
-    PRIMITIVE: 'PRIMITIVE',
-    CONTEXT: 'CONTEXT',
-    EVALUATOR: 'EVALUATOR',
-    INDEX: 'INDEX',
-    PARSE: 'PARSE'
-};
 
 /*
  *	EvaluateException(type, e, msg)
@@ -108,14 +169,6 @@ function NamespaceException(e, msg) {
     return (this);
 }
 _inheritErrorPrototype(NamespaceException, YagaException);
-
-let _parserTypes = {
-    ENDOFSTREAM: 'ENDOFSTREAM',
-    STARTOFEXPRESSION: 'STARTOFEXPRESSION',
-    IO: 'IO',
-    ENDOFEXPRESSION: 'ENDOFEXPRESSION',
-    BRACKETS: 'BRACKETS'
-}
 
 function ParserException(parserType, msg) {
     _setErrorDetails(this, Lists.nil(), msg);
@@ -173,6 +226,13 @@ function RisticValidationException() {
 }
 _inheritErrorPrototype(RisticValidationException, YagaException);
 
+function InternalException(msg) {
+    _setErrorDetails(this, Lists.nil(), msg);
+    _captureStackTrace(this, module.exports.PrimitiveException, msg);
+    this.evaluateType = () => _evaluateTypes.PRIMITIVE;
+    return (this);
+}
+_inheritErrorPrototype(PrimitiveException, EvaluateException);
 
 /*
  *   _newError(msg)
@@ -220,48 +280,4 @@ function _inheritErrorPrototype(fnError, fnProt) {
     fnError.prototype = Object.create(fnProt.prototype);
     fnError.prototype.constructor = fnError;
     fnError.prototype.name = 'yaga.' + fnError.name;
-}
-
-module.exports = {
-    YagaException: _errorMethod(YagaException),
-    BinderException: _errorMethod(BinderException),
-    BindException: _errorMethod(BindException),
-    CastException: _errorMethod(CastException),
-    EvaluateException: _errorMethod(EvaluateException),
-    FrameException: _errorMethod(FrameException),
-    ReadFrameException: _errorMethod(ReadFrameException),
-    WriteFrameException: _errorMethod(WriteFrameException),
-    NameException: _errorMethod(NameException),
-    NamespaceException: _errorMethod(NamespaceException),
-    ParserException: _errorMethod(ParserException),
-    PrimitiveException: _errorMethod(PrimitiveException),
-    RisticValidationException: _errorMethod(RisticValidationException),
-
-    isaYagaException: _isAnException(YagaException),
-    isaBinderException: _isAnException(BinderException),
-    isaBindException: _isAnException(BindException),
-    isaCastException: _isAnException(CastException),
-    isanEvaluateException: _isAnException(EvaluateException),
-    isaFrameException: _isAnException(FrameException),
-    isaReadFrameException: _isAnException(ReadFrameException),
-    isaWriteFrameException: _isAnException(WriteFrameException),
-    isaNameException: _isAnException(NameException),
-    isaNamespaceException: _isAnException(NamespaceException),
-    isaParserException: _isAnException(ParserException),
-    isaPrimitiveException: _isAnException(PrimitiveException),
-    isaRisticValidationException: _isAnException(RisticValidationException),
-
-    Error: _newError,
-
-    evaluateTypes: _evaluateTypes,
-    parserTypes: _parserTypes,
-};
-Object.freeze(module.exports);
-
-function _errorMethod(fnError) {
-    return ((...args) => new fnError(...args));
-}
-
-function _isAnException(FnException) {
-    return ((excp) => excp instanceof FnException);
 }
