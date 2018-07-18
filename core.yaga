@@ -1,11 +1,11 @@
-/"
+/*
 	Core and Yaga definitions that must be loaded at startup.
 	The CoreNamespace name .core must be preloaded into the
 	core namespace at yaga startup time. All named namespaces
 	are defined in the core namespace.
-"/
+*/
 
-/" Declare the core ristic classes. Note that the names are also defined in the .core namespace "/
+// Declare the core ristic classes. Note that the names are also defined in the .core namespace
 (.ristic #.rPrim 		#yaga.core.ristic.PrimRistic)
 (.ristic #.rData 		#yaga.core.ristic.DataRistic)
 (.ristic #.rInj 		#yaga.core.ristic.InjRistic)
@@ -14,30 +14,29 @@
 (.ristic #.rExpr 		#yaga.core.ristic.ExprRistic)
 (.ristic #.rAlias 		#yaga.core.ristic.AliasRistic)
 
-/" 
+/* 
 	Declare the core level define macro .def.
 	We also create a backup of .ristic that calls a primitive to answer
 	the .ristic binding.
-"/
+*/
 ((.rPrim #yaga.core.prim.Core #Define) .def (.rPrim #yaga.core.prim.Core #Define))
 (.def .rDotRistic	(.rPrim #yaga.core.prim.Core #DotRistic))
 (.def .undef 		(.rPrim #yaga.core.prim.Core #Undefine))
 
-/" Create definitions for .fn and .macro to abstract simple Ristic "/
+/* Create definitions for .fn and .macro to abstract simple Ristic */
 (.def .PRECDEFAULT		100)
 (.def .PRECDEFAULT-1	99)
 (.def .PRECDEFAULT-2	98)
 
-(.def .fn 				(.rPipe .PRECDEFAULT))	/" Simple function will assume DefaultPrecedence. "/
+(.def .fn 				(.rPipe .PRECDEFAULT))	// Simple function will assume DefaultPrecedence. 
 (.def .macro 			(.rBindpipe))
 (.def .fndef 			(.fn .def))
 
-/" Aliasing. fnAlias is an evaluation function, while .alias is bind time ristic "/
+// Aliasing. fnAlias is an evaluation function, while .alias is bind time ristic "/
 (.def .alias 			(.rAlias))
 (.def .fnAlias 			(.fn .alias))
 (.def .dealias			(.fn (.rPrim #yaga.core.prim.Core #DeAlias)))
-
-/" 
+/* 
 	Injected Lists. Note that using the Injection ristic will immediately enforce injection
 	in the reference list. If this is not the desired outcome then use the .asInjection
 	function to answer the parameters as an Injection list.
@@ -45,11 +44,11 @@
 	binding pipeline. Place ristic at the end of the pipeline. Can also employ injected
 	variables which are prefixed with a '^' character. This will force a non single element
 	to be injected at the reference position.
-"/
+*/
 (.def .inj			(.rInj))
 (.def .asInjection	(.fn .inj))
 
-/" Useful macros to create simple pipelines with defined arguments "/
+/* Useful macros to create simple pipelines with defined arguments */
 (.def .fnx 		(.rPipe .PRECDEFAULT (#args #x)))
 (.def .fny 		(.rPipe .PRECDEFAULT (#args #y)))
 (.def .fnz 		(.rPipe .PRECDEFAULT (#args #z)))
@@ -66,7 +65,7 @@
 (.def .macyz 	(.rBindpipe (#args #y #z)))
 (.def .macxyz 	(.rBindpipe (#args #x #y #z)))
 
-/" Element printing services. Prints to stdout. It is aliased to prevent further ristic reduction as it  answers a Ristic "/
+// Element printing services. Prints to stdout. It is aliased to prevent further ristic reduction as it  answers a Ristic
 (.def .rPrint			(.macx (.rPrim #yaga.core.prim.Core #Print x) .alias ))
 
 (.def .print			(.fn (.rPrint 0)))
@@ -81,10 +80,10 @@
 (.def .xbprint			(.macro (.rPrint 8)))
 (.def .xrawprint		(.macro (.rPrint 9)))
 
-/" 
+/* 
 	Production invocation of parse, bind, step, evaluate and reduce operations. Note that parse, bind have higher precedence.
 	Note that 'step' will treat elements after the first as parameters to be applied to the first.
-"/
+*/
 (.def .rParse 			(.rPrim #yaga.core.prim.Core #Parse))
 (.def .rBind 			(.rPrim #yaga.core.prim.Core #Bind))
 (.def .rStep 			(.rPrim #yaga.core.prim.Core #Step))
@@ -97,7 +96,7 @@
 (.def .eval 			(.fn .rEval))
 (.def .reduce 			(.fn .rReduce))
 
-/" 
+/* 
    Simple macro for defining constants expressions at bind time. 
    The '|z' is the declaration of the Pipe variable 'z' that takes the output from 
    previous pipeline step. All subsequent references are read only. Variables in the 
@@ -105,10 +104,10 @@
    required then add a .rEval as the next step. Note |z will override any other 
    variables or defines of the same name when they appear in the pipeline.
    Pipe variables must have an alpha after the Pipe qualifier.
-"/
+*/
 (.def .const (.macxy y .rBind .rReduce |z [x z] .def))
 
-/" List services "/
+// List services "/
 (.def .rHead 			(.rPrim #yaga.core.prim.Core #Head))
 (.def .rTail 			(.rPrim #yaga.core.prim.Core #Tail))
 (.def .rEnd 			(.rPrim #yaga.core.prim.Core #End))
@@ -121,31 +120,31 @@
 (.def .front 			(.fn .rFront))
 (.def .append 			(.fn .rAppend))
 
-/" Ristic defines for creating productive and data expressions with bound and unbound elements "/
+// Ristic defines for creating productive and data expressions with bound and unbound elements "/
 (.def .xProd			(.rExpr #prod))
 (.def .xBoundProd		(.rExpr #prod #bind))
 (.def .xData			(.rExpr #prod))
 (.def .xBoundData		(.rExpr #prod #bind))
 
-/" Predefined precedence values. Higher precedence has lower value. "/
+// Predefined precedence values. Higher precedence has lower value. "/
 (.def .PRECOPSTART			1000)
 (.def .PRECADDER			1020)	/" Must equal .PRECADDITIVE "/
 
 (.def .ADDITIVE	(.rPipe .PRECADDER))
 (.def .+ (.ADDITIVE (.rPrim #yaga.core.prim.Operators #Add)))
 
-(.const .PRECUNARY			(.PRECOPSTART .+ 0))		/" + - ! ~ "/
-(.const .PRECMULTIPLICATIVE	(.PRECOPSTART .+ 10))		/" * / % "/
-(.const .PRECADDITIVE		(.PRECOPSTART .+ 20))		/" + - "/
-(.const .PRECSHIFT			(.PRECOPSTART .+ 30))		/" >> << "/
-(.const .PRECRELATIONAL		(.PRECOPSTART .+ 40))		/" < <= > >= "/
-(.const .PRECEQUALITY		(.PRECOPSTART .+ 50))		/" == != "/
-(.const .PRECBITAND			(.PRECOPSTART .+ 60))		/" & "/
-(.const .RECBITXOR			(.PRECOPSTART .+ 61))		/" ^ "/
-(.const .PRECBITOR			(.PRECOPSTART .+ 62))		/" | "/
-(.const .PRECAND			(.PRECOPSTART .+ 70))		/" && "/
-(.const .PRECOR				(.PRECOPSTART .+ 71))		/" ^ "/
-(.const .PRECASSIGNMENT		(.PRECOPSTART .+ 80))		/" = ... "/
+(.const .PRECUNARY			(.PRECOPSTART .+ 0))		// + - ! ~ "/
+(.const .PRECMULTIPLICATIVE	(.PRECOPSTART .+ 10))		// * / % "/
+(.const .PRECADDITIVE		(.PRECOPSTART .+ 20))		// + - "/
+(.const .PRECSHIFT			(.PRECOPSTART .+ 30))		// >> << "/
+(.const .PRECRELATIONAL		(.PRECOPSTART .+ 40))		// < <= > >= "/
+(.const .PRECEQUALITY		(.PRECOPSTART .+ 50))		// == != "/
+(.const .PRECBITAND			(.PRECOPSTART .+ 60))		// & "/
+(.const .RECBITXOR			(.PRECOPSTART .+ 61))		// ^ "/
+(.const .PRECBITOR			(.PRECOPSTART .+ 62))		// | "/
+(.const .PRECAND			(.PRECOPSTART .+ 70))		// && "/
+(.const .PRECOR				(.PRECOPSTART .+ 71))		// ^ "/
+(.const .PRECASSIGNMENT		(.PRECOPSTART .+ 80))		// = ... "/
 
 (.def .UNARY			(.rPipe .PRECUNARY))
 (.def .MULTIPLICATIVE	(.rPipe .PRECMULTIPLICATIVE))
@@ -157,7 +156,7 @@
 (.def .% 		(.MULTIPLICATIVE (.rPrim #yaga.core.prim.Operators #Remainder)))
 
 
-/" Create the core namespace allocation and assignment macro "/
+// Create the core namespace allocation and assignment macro "/
 (.def .setPublicSpace 		(.rPrim #yaga.core.prim.Core #SetNamespace))
 (.def .newPublicSpace 		(.rPrim #yaga.core.prim.Core #NewNamespace))
 (.def .newLocalSpace 		(.rPrim #yaga.core.prim.Core #NewNamespace #local))
@@ -172,13 +171,13 @@
 (.def .fnParentSpace		(.fn .parentSpace))
 (.def .fnSetParentAsPublic	(.fn .space .parentSpace .setPublicSpace))
 
-/" 
+/* 
 	Pushing a namespace alters the behaviour of the expression. The elements
 	to the right of any parameters for the push operation are treated and
 	are evaluated as an Expression. This effectively means that the head of
 	the expression is shifted. This enables the expression to be treated as
 	if the .privateSpace/.publicSpace ristic was not present.
-"/
+*/
 (.def .privateSpace 	(.rPrim #yaga.core.prim.Core #PushPrivateNamespace))
 (.def .publicSpace		(.rPrim #yaga.core.prim.Core #PushPublicNamespace))
 
@@ -186,13 +185,13 @@
 (.def .fnPublicSpace	(.fn .publicSpace))
 
 
-/" All other core definitions need to go here "/
+// All other core definitions need to go here "/
 
 
-/" Create and switch to the yaga namespace which extends the core namespace (default). "/
+// Create and switch to the yaga namespace which extends the core namespace (default). "/
 (.setPublicSpace (.newPublicSpace .yaga .core))
 
-/" Create yaga language definitions "/
+// Create yaga language definitions "/
 (.def define ((.rBindpipe (#nparms 2)) .def))
 (.def .rBinop (.macx (.rPipe x (#nparms 2 1))))
 

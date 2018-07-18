@@ -16,10 +16,9 @@
  */
 "use strict";
 
-const sYagaCore = './yaga.core';
+var yaga, _dictionary, _core;
+var _dictionaries = {};
 
-var yaga, _dictionary, _dictionaries = {},
-	_core = null;
 module.exports = {
 	load: _loadDictionary,
 	Initialise: (y) => {
@@ -28,18 +27,38 @@ module.exports = {
 };
 
 function _loadDictionary(yi, optPath, optCore) {
-	_core = _createDictionary(yi, optCore ? optCore : sYagaCore, Object.prototype);
-	_core.parent = _core;
+	_getCoreDictionary(yi, optCore);
+	if (!optPath) return (_createDictionaryInstance(_core));
+	let dict = _getDictionary(yi, optPath);
+	return (_createDictionaryInstance(dict))
 }
 
-function _createDictionary(yi, path, spaceProt) {
+function _getDictionary(yi, path) {
 	let dict = _dictionaries[path];
 	if (dict) return (dict);
 	dict = Object.create(_dictionary);
-	dict._space = Object.create(spaceProt);
-	yi.dictionary = dict;
-	yi.evaluateFile(path);
+	_evaluateDictionary(yi, dict, path, _core._space);
+	return (dict);
+}
+
+function _getCoreDictionary(yi, optPath) {
+	if (_core) return (_core);
+	let path = optPath ? optPath : yaga.resolveFileName('core.yaga', module);
+	_core = Object.create(_dictionary);
+	_evaluateDictionary(yi, _core, path, null);
+	return (_core);
+}
+
+function _evaluateDictionary(yi, dict, path, parentSpace) {
+	dict._space = Object.create(parentSpace);
+	dict.parent = _core;
+	yi.evaluateDictionary(dict, path);
 	_dictionaries[path] = dict;
+}
+
+function _createDictionaryInstance(parentDict) {
+	let dict = Object.create(parentDict);
+	dict._space = Object.create(parentDict._space);
 	return (dict);
 }
 
@@ -54,17 +73,15 @@ _dictionary = {
 }
 
 function _dictionaryDependsOn(yi, path) {
-	let dict = yi.dictionary;
-	let parent = _createDictionary(yi, path, _core._space);
-	this._space = Object.assign(Object.create(parent._space), this._space);
-	yi.directory = dict;
+	this._parent = _getDictionary(yi, path);
+	this._space = Object.assign(Object.create(this.parent._space), this._space);
 }
 
 function _dictionaryName(yi, name) {
 	this._name = name;
 }
 
-
+/*
 
 var _privateNamespaces = [];
 var _nextID = 0;
@@ -251,3 +268,4 @@ function _getOwnerPrefix(owner) {
 		return (owner.name().asjString() + "::");
 	return (_getOwnerPrefix(owner.parent()) + owner.name().asjString() + "::");
 }
+*/

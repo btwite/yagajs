@@ -7,6 +7,8 @@
 
 'use strict';
 
+var yaga;
+
 let _evaluateTypes = {
     EXPRESSION: 'EXPRESSION',
     RISTIC: 'RISTIC',
@@ -18,16 +20,15 @@ let _evaluateTypes = {
     PARSE: 'PARSE'
 };
 
-let _parserTypes = {
-    ENDOFSTREAM: 'ENDOFSTREAM',
-    STARTOFEXPRESSION: 'STARTOFEXPRESSION',
-    IO: 'IO',
-    ENDOFEXPRESSION: 'ENDOFEXPRESSION',
-    BRACKETS: 'BRACKETS'
-}
-
 module.exports = {
     YagaException: _errorMethod(YagaException),
+    isaYagaException: _isAnException(YagaException),
+    InternalException: _errorMethod(InternalException),
+    isaInternalException: _isAnException(InternalException),
+    ParserException: _errorMethod(ParserException),
+    isaParserException: _isAnException(ParserException),
+
+
     BinderException: _errorMethod(BinderException),
     BindException: _errorMethod(BindException),
     CastException: _errorMethod(CastException),
@@ -36,13 +37,9 @@ module.exports = {
     ReadFrameException: _errorMethod(ReadFrameException),
     WriteFrameException: _errorMethod(WriteFrameException),
     NameException: _errorMethod(NameException),
-    NamespaceException: _errorMethod(NamespaceException),
-    ParserException: _errorMethod(ParserException),
     PrimitiveException: _errorMethod(PrimitiveException),
     RisticValidationException: _errorMethod(RisticValidationException),
-    InternalException: _errorMethod(InternalException),
 
-    isYagaException: _isAnException(YagaException),
     isBinderException: _isAnException(BinderException),
     isBindException: _isAnException(BindException),
     isCastException: _isAnException(CastException),
@@ -51,16 +48,12 @@ module.exports = {
     isReadFrameException: _isAnException(ReadFrameException),
     isWriteFrameException: _isAnException(WriteFrameException),
     isNameException: _isAnException(NameException),
-    isNamespaceException: _isAnException(NamespaceException),
-    isParserException: _isAnException(ParserException),
     isPrimitiveException: _isAnException(PrimitiveException),
     isRisticValidationException: _isAnException(RisticValidationException),
-    isInternalException: _isAnException(InternalException),
 
     Error: _newError,
 
     evaluateTypes: _evaluateTypes,
-    parserTypes: _parserTypes,
 
     Initialise: _init
 };
@@ -74,20 +67,38 @@ function _isAnException(FnException) {
     return ((excp) => excp instanceof FnException);
 }
 
-let Lists, Elements;
+let List, _defaultParserPoint;
 
-function _init(yc) {
-    if (Lists) return;
-    Lists = yc.Lists;
-    Elements = yc.Elements;
+function _init(y) {
+    if (List) return;
+    yaga = y;
+    List = yaga.List;
+    _defaultParserPoint = yaga.Parser.defaultParserPoint
 }
 
-function YagaException(element, msg) {
-    _setErrorDetails(this, element, msg);
+function YagaException(e, msg) {
+    _setErrorDetails(this, e, msg);
     _captureStackTrace(this, module.exports.YagaException, msg);
     return (this);
 }
 _inheritErrorPrototype(YagaException, Error);
+
+function InternalException(msg) {
+    _setErrorDetails(this, undefined, msg);
+    _captureStackTrace(this, module.exports.InternalException, msg);
+    return (this);
+}
+_inheritErrorPrototype(InternalException, EvaluateException);
+
+function ParserException(src, msg, rsn) {
+    _setErrorDetails(this, src, msg);
+    _captureStackTrace(this, module.exports.ParserException, msg);
+    this.reason = rsn ? rsn : 'PARSER';
+    return (this);
+}
+_inheritErrorPrototype(ParserException, YagaException);
+
+
 
 function BinderException(ctxt, msg) {
     _setErrorDetails(this, ctxt.element(), msg);
@@ -163,21 +174,6 @@ function NameException(e, msg) {
 }
 _inheritErrorPrototype(NameException, YagaException);
 
-function NamespaceException(e, msg) {
-    _setErrorDetails(this, e, msg);
-    _captureStackTrace(this, module.exports.NamespaceException, msg);
-    return (this);
-}
-_inheritErrorPrototype(NamespaceException, YagaException);
-
-function ParserException(parserType, msg) {
-    _setErrorDetails(this, Lists.nil(), msg);
-    _captureStackTrace(this, module.exports.ParserException, msg);
-    this.parserType = () => parserType;
-    return (this);
-}
-_inheritErrorPrototype(ParserException, YagaException);
-
 function PrimitiveException(e, msg) {
     _setErrorDetails(this, e, msg);
     _captureStackTrace(this, module.exports.PrimitiveException, msg);
@@ -226,46 +222,47 @@ function RisticValidationException() {
 }
 _inheritErrorPrototype(RisticValidationException, YagaException);
 
-function InternalException(msg) {
-    _setErrorDetails(this, Lists.nil(), msg);
-    _captureStackTrace(this, module.exports.PrimitiveException, msg);
-    this.evaluateType = () => _evaluateTypes.PRIMITIVE;
-    return (this);
-}
-_inheritErrorPrototype(PrimitiveException, EvaluateException);
-
 /*
  *   _newError(msg)
  *   _newError(element, msg)
  *   _newError(msg, point)
  */
 function _newError() {
-    let _msg, _e, _point;
+    let msg, e, point;
     if (arguments.length == 1) {
-        _e = Lists.nil();
-        _msg = arguments[0];
-        _point = e.parserPoint();
+        e = List.nil();
+        msg = arguments[0];
+        point = e.parserPoint;
     } else {
         if (typeof arguments[0] === 'string') {
-            _e = Lists.nil();
-            _msg = arguments[0];
-            _point = arguments[1];
+            e = List.nil();
+            msg = arguments[0];
+            point = arguments[1];
         } else {
-            _e = arguments[0];
-            _msg = arguments[1];
-            _point = e.parserPoint();
+            e = arguments[0];
+            msg = arguments[1];
+            point = e.parserPoint;
         }
     }
     return {
-        element: () => _e,
-        message: () => _msg,
-        formattedMessage: () => `${_point.format()} - ${_msg}`
+        element: e,
+        message: msg,
+        formattedMessage: () => `${point.format()} - ${msg}`
     }
 }
 
-function _setErrorDetails(that, element, msg) {
+function _setErrorDetails(that, src, msg) {
     that.message = msg;
-    that.element = () => element;
+    if (!src) {
+        that.parserPoint = _defaultParserPoint;
+        that.element = yaga.List.nil();
+    } else if (src.isParserPoint) {
+        that.parserPoint = src;
+        that.element = yaga.List.nil();
+    } else {
+        that.parserPoint = src.parserPoint;
+        that.element = src;
+    }
 }
 
 function _captureStackTrace(that, fnError, msg) {

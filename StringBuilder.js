@@ -24,6 +24,15 @@ function _newStringBuilder() {
             _strings = [];
             return (this);
         },
+        atGet(idx) {
+            return (_strings[idx]);
+        },
+        length() {
+            return (this.toString().length);
+        },
+        segmentCount() {
+            return (_strings.length);
+        },
         toString() {
             return (_strings.join(''));
         }

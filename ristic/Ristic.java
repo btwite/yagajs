@@ -1,34 +1,3 @@
-/*
- * Ristic: @file
- *
- *	An internal pipeline list that defines characteristics to be applied to 
- *  the parameters passed to the Ristic. Typically the Ristic this will 
- *	transform the parameters list into a specialised list, although this is
- *	not mandatory.
- *  
- *  Ristics are not an extension of BindingPipeline as they are only
- *  productive if at the head of an expression. They also can be placed as a
- *	step within in a Pipeline.
- *  They remain a simple Ristic if they appear anywhere else in an expression. 
- *	This allows ristics to be applied during the evaluation phase when 
- *	constructing new expressions.
- *
- *  Ristics are split into Ristic classes and instances. DotRistic is the root
- *  class that constructs other Ristic Classes.
- *		Ex. (.ristic #pipe #yaga.core.ristic.PipeRistic)
- *  will instantiate an instance of the pipeline ristic. This can then be
- *  assigned to a defined name.
- *		Ex. (.def .pipe (.ristic #pipe #yaga.core.ristic.PipeRistic))
- */
-"use strict";
-
-var yc, _prot;
-module.exports = {
-	new: _newAtomFloat,
-	prototype: undefined,
-	Initialise: _init,
-};
-
 public class Ristic extends Container {
 	static final public DotRistic DotRistic = new DotRistic();
 

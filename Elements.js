@@ -13,6 +13,8 @@ module.exports = {
 	prototype: undefined,
 	Initialise: _init,
 };
+
+/*
 static public final Elements EmptyElements = new Empty();
 static public final List[] EmptyArray = new List[0];
 
@@ -139,7 +141,7 @@ public Elements(List r) {
 	_relatedElement = r;
 }
 private final List _relatedElement;
-
+*/
 function _abstract() {
 	throw yc.errors.InternalException('Not implemented');
 };
@@ -222,179 +224,180 @@ _elements = {
 	areBound: () => _abstract(),
 	hasBoundElementsNoVariables: () => _abstract(),
 	hasVariableElements: () => _abstract(),
+	/*
+		private static class Empty extends Elements {
+			private Empty() {
+				super(Lists.nil());
+			}
 
-	private static class Empty extends Elements {
-		private Empty() {
-			super(Lists.nil());
-		}
+			@Override
+			public boolean isFixedLength() {
+				return (true);
+			}
 
-		@Override
-		public boolean isFixedLength() {
-			return (true);
-		}
+			@Override
+			public final List element(int idx) {
+				return (Lists.nil());
+			}
+			@Override
+			public final boolean isSingle() {
+				return (false);
+			}
+			@Override
+			public boolean isEmpty() {
+				return (true);
+			}
+			@Override
+			public List[] asArray() {
+				return (EmptyArray);
+			}
+			@Override
+			public List[] asExpandedArray(Context ctxt) {
+				return (EmptyArray);
+			}
+			@Override
+			public List[] asParameters(Context ctxt) {
+				return (EmptyArray);
+			}
+			@Override
+			public int length() {
+				return (0);
+			}
 
-		@Override
-		public final List element(int idx) {
-			return (Lists.nil());
-		}
-		@Override
-		public final boolean isSingle() {
-			return (false);
-		}
-		@Override
-		public boolean isEmpty() {
-			return (true);
-		}
-		@Override
-		public List[] asArray() {
-			return (EmptyArray);
-		}
-		@Override
-		public List[] asExpandedArray(Context ctxt) {
-			return (EmptyArray);
-		}
-		@Override
-		public List[] asParameters(Context ctxt) {
-			return (EmptyArray);
-		}
-		@Override
-		public int length() {
-			return (0);
-		}
+			@Override
+			public List pipeStep(Context ctxt, List parms) throws YagaException {
+				return (parms);
+			}
+			@Override
+			public List bindPipeStep(Context ctxt, List parms) throws YagaException {
+				return (parms);
+			}
 
-		@Override
-		public List pipeStep(Context ctxt, List parms) throws YagaException {
-			return (parms);
-		}
-		@Override
-		public List bindPipeStep(Context ctxt, List parms) throws YagaException {
-			return (parms);
-		}
+			@Override
+			public Elements subset(Context ctxt, int iStart) {
+				return (this);
+			}
+			@Override
+			public Elements subset(Context ctxt, int iStart, int iEnd) {
+				return (this);
+			}
+			@Override
+			protected int subset(Context ctxt, int idx, int iStart, List[] es, int ies) {
+				return (ies);
+			}
 
-		@Override
-		public Elements subset(Context ctxt, int iStart) {
-			return (this);
-		}
-		@Override
-		public Elements subset(Context ctxt, int iStart, int iEnd) {
-			return (this);
-		}
-		@Override
-		protected int subset(Context ctxt, int idx, int iStart, List[] es, int ies) {
-			return (ies);
-		}
+			@Override
+			public Elements bind(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public Elements evaluate(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public Elements bindingEvaluate(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public Elements reduce(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public List reduce(Context ctxt, int idx) {
+				return (Lists.nil());
+			}
 
-		@Override
-		public Elements bind(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public Elements evaluate(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public Elements bindingEvaluate(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public Elements reduce(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public List reduce(Context ctxt, int idx) {
-			return (Lists.nil());
-		}
+			@Override
+			public Elements dealias(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public List dealias(Context ctxt, int idx) {
+				return (Lists.nil());
+			}
 
-		@Override
-		public Elements dealias(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public List dealias(Context ctxt, int idx) {
-			return (Lists.nil());
-		}
+			@Override
+			public List head() {
+				return (Lists.nil());
+			}
+			@Override
+			public Elements tail() {
+				return (this);
+			}
+			@Override
+			public List end() {
+				return (Lists.nil());
+			}
+			@Override
+			public Elements front() {
+				return (this);
+			}
 
-		@Override
-		public List head() {
-			return (Lists.nil());
-		}
-		@Override
-		public Elements tail() {
-			return (this);
-		}
-		@Override
-		public List end() {
-			return (Lists.nil());
-		}
-		@Override
-		public Elements front() {
-			return (this);
-		}
+			@Override
+			public Elements append(List e) {
+				return (e.elements());
+			}
 
-		@Override
-		public Elements append(List e) {
-			return (e.elements());
-		}
-
-		@Override
-		public Elements propagateReference(Context ctxt, Frame.Reference r) {
-			return (this);
-		}
-		@Override
-		public Elements expand(Context ctxt) {
-			return (this);
-		}
-		@Override
-		public Elements bindNames(Context ctxt) {
-			return (this);
-		}
+			@Override
+			public Elements propagateReference(Context ctxt, Frame.Reference r) {
+				return (this);
+			}
+			@Override
+			public Elements expand(Context ctxt) {
+				return (this);
+			}
+			@Override
+			public Elements bindNames(Context ctxt) {
+				return (this);
+			}
 
 
-		@Override
-		public boolean isAtomic() {
-			return (true);
+			@Override
+			public boolean isAtomic() {
+				return (true);
+			}
+			@Override
+			public boolean areReducible() {
+				return (false);
+			}
+			@Override
+			public boolean areTrivial() {
+				return (true);
+			}
+			@Override
+			public boolean hasVariables() {
+				return (false);
+			}
+			@Override
+			public boolean canEvaluate() {
+				return (false);
+			}
+			@Override
+			public boolean giveProduction() {
+				return (false);
+			}
+			@Override
+			public boolean areBound() {
+				return (true);
+			}
+			@Override
+			public boolean hasBoundElementsNoVariables() {
+				return (true);
+			}
+			@Override
+			public boolean hasVariableElements() {
+				return (false);
+			}
 		}
-		@Override
-		public boolean areReducible() {
-			return (false);
-		}
-		@Override
-		public boolean areTrivial() {
-			return (true);
-		}
-		@Override
-		public boolean hasVariables() {
-			return (false);
-		}
-		@Override
-		public boolean canEvaluate() {
-			return (false);
-		}
-		@Override
-		public boolean giveProduction() {
-			return (false);
-		}
-		@Override
-		public boolean areBound() {
-			return (true);
-		}
-		@Override
-		public boolean hasBoundElementsNoVariables() {
-			return (true);
-		}
-		@Override
-		public boolean hasVariableElements() {
-			return (false);
-		}
-	}
 
-	public void trace(String msg) {
-		trace(System.out, msg);
-	}
-	public void trace(PrintStream stream, String msg) {
-		stream.printf("Element trace(%s) :\n", msg);
-		int i = 0;
-		for (List e: asArray())
-			e.trace(stream, i++ + ":" + msg);
-	}
+		public void trace(String msg) {
+			trace(System.out, msg);
+		}
+		public void trace(PrintStream stream, String msg) {
+			stream.printf("Element trace(%s) :\n", msg);
+			int i = 0;
+			for (List e: asArray())
+				e.trace(stream, i++ + ":" + msg);
+		}
+	*/
 }

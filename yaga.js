@@ -9,14 +9,18 @@
 let yaga;
 let _exports = {
     Instance: {
-        new: _newYagaInstance
-    }
+        new: _newYagaInstance,
+    },
+    resolveFileName: _resolveFileName,
 };
 module.exports = yaga = _exports;
 
-_exports.errors = require('./errors');
 _exports.StringBuilder = require('./StringBuilder');
 _exports.Symbol = require('./Symbol');
+_exports.Dictionary = require('./Dictionary');
+_exports.Parser = require('./Parser');
+_exports.errors = require('./errors');
+_exports.List = require('./List');
 
 Object.freeze(_exports);
 
@@ -33,16 +37,37 @@ _runInitPhase('PostInitialise');
 /**
  * Create the prototype for a Yaga instance which inherits this module exports.
  */
+
+function _newYagaInstance(optDictPath, options = {}) {
+    let yi = Object.create(_instance);
+    yi._options = options;
+    // ......
+    yi.dictionary = yaga.Dictionary.load(yi, optDictPath, options.yagaCorePath);
+    return (yi);
+}
+
+function _resolveFileName(sFile, optModule) {
+    let path = require('path');
+    if (sFile.includes(path.sep)) return (sFile);
+    let mod = optModule ? optModule : module;
+    return (path.dirname(mod.filename) + path.sep + sFile);
+}
+
 var _instance = Object.assign(Object.create(_exports), {
     typeName: 'YagaInstance',
     dictionary: undefined,
+    evaluateDictionary: _evaluateDictionary,
+    _options: undefined,
 });
 
-function _newYagaInstance(optDictPath, optYagaCore) {
-    let yi = Object.create(_instance);
+function _evaluateDictionary(dict, path) {
+    let curDict = this.dictionary;
+    this.dictionary = dict;
 
-    yaga.Dictionary.load(yi, optDictPath, optYagaCore);
-    return (yi);
+    console.log(`Evaluate dictionary '${path}'`);
+    // .....
+    this.dictionary = curDict;
+    return (undefined);
 }
 
 function _runInitPhase(sPhase, ...args) {

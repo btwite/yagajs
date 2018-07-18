@@ -1,938 +1,543 @@
 /*
+ *  Parser: @file
  *
  *  Parser for simple s-expression like syntax.
  */
-package yaga.core;
+"use strict";
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.PushbackReader;
-import java.io.StringReader;
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import yaga.core.exceptions.NameException;
-import yaga.core.exceptions.ParserException;
-import yaga.core.exceptions.YagaException;
+const ENDOFINPUT = 'ENDOFINPUT';
+const ENDOFEXPRESSION = 'ENDOFEXPRESSION';
 
-@SuppressWarnings("empty-statement")
-/**
- *
- * @author Bruce
- */
-public class Parser {
-    public abstract interface Input {
-        public String sourceName();
-        default public int startLine() {
-            return (1);
-        }
-        default public int tabCount() {
-            return (4);
-        }
+var yaga, _parser, _parserPoint, _defParserPoint;
+module.exports = {
+    new: _newParser,
+    Point: {
+        new: _newParserPoint,
+    },
+    defaultParserPoint: _defParserPoint,
+    Initialise: (y) => {
+        yaga = yaga ? yaga : y;
+        _defParserPoint = _newParserPoint(undefined, '<None>');
     }
+};
+Object.freeze(module.exports);
 
-    public interface FileInput extends Input {
-        @Override
-        default public String sourceName() {
-            try {
-                return ("file:\\" + file().getCanonicalPath());
-            } catch (IOException x) {
-                return ("file:\\<unknown>");
+function _newParser(yi) {
+    let parser = Object.create(_parser);
+    parser.yi = yi;
+    return (parser);
+}
+
+function _newParserPoint(parent, srcName, line, col) {
+    let point = Object.create(_parserPoint);
+    point.parent = parent;
+    point.sourceName = srcName;
+    if (line) point.line = line;
+    if (col) point.column = col;
+    return (point);
+}
+
+
+_parser = {
+    typeName: 'Parser',
+    parseFile: _parseFile,
+    parseStrings: _parseStrings,
+    newPoint: _newPoint,
+    sourceName: undefined,
+    yi: undefined,
+    _readChar: _readChar,
+    _readNextChar: undefined,
+    _peekNextChar: undefined,
+    _pushbackChar: undefined,
+    _lastParserPoint: undefined,
+    _expressions: undefined,
+    _errors: undefined,
+    _lvlExpr: undefined,
+    _lineNo: 0,
+    _column: 0,
+    _tabCount: 4,
+    _curChar: undefined,
+    _flEOS: false,
+    _errors: undefined,
+    _parentPoints: undefined,
+    _parentPoint: undefined,
+}
+
+function _parseFile(path) {
+    let fs = require('fs');
+    let fd;
+    try {
+        fd = fs.openSync(path, 'r');
+    } catch (err) {
+        throw yaga.errors.ParserException(undefined, `Failed to open yaga file. Rsn(${err.message})`);
+    }
+    this.sourceName = path;
+    let oPos = 0,
+        buf = Buffer.alloc(8192),
+        encoding = undefined;
+    _initParser(this, () => {
+        let nBytes = fs.readSync(fd, buf, 0, buf.length, oPos);
+        if (!encoding) {
+            this._line = 1;
+            // Require a way of checking the encoding. For example package 'detect-character-encoding'
+            encoding = 'ascii';
+        }
+        oPos += nBytes;
+        return (nBytes == 0 ? null : buf.toString(encoding));
+    });
+    _parse(this);
+    fs.closeSync(fd);
+    return (this._expressions);
+}
+
+function _parseStrings(arr) {
+    this.sourceName = 'Strings';
+    let iArr = 0;
+    _initParser(this, () => {
+        if (iArr >= arr.length) return (null);
+        this._line++;
+        return (arr[iArr++]);
+    });
+    return (_parse(this));
+}
+
+function _readChar() {
+    let ch = this._readNextChar();
+    switch (ch) {
+        case '\r':
+            let peek = this._peekNextChar();
+            if (peek != '\n') {
+                return (ch);
             }
-        }
-        public File file();
+            ch = this._readNextChar();
+        case '\n':
+            this._lineNo++;
+            this.column = 0;
+            return (this._readChar());
+        case '\t':
+            let tc = this._tabCount;
+            this._column = (this._column + tc) / tc * tc + 1;
+            return (this._readChar());
+        default:
+            return (ch);
     }
+}
 
-    public interface ListInput extends Input {
-        @Override
-        default public String sourceName() {
-            return ("list:\\<input>");
-        }
-        @Override
-        default public int startLine() {
-            return (0);
-        }
+function _newPoint(parent, line, col) {
+    if (parent === undefined) parent = this._parentPoint;
+    if (line === undefined) line = this._lineNo;
+    if (col === undefined) col = this.column;
+    this._lastParserPoint = _newParserPoint(parent, this.sourceName, line, col);
+    return (this._lastParserPoint)
+}
 
-        public Elements elements();
+_parserPoint = {
+    typeName: 'ParserPoint',
+    isaParserPoint: true,
+    sourceName: undefined,
+    line: 0,
+    column: 0,
+    parent: undefined,
+    format() {
+        return (`${this.sourceName}[${this.line},${this.column}]`);
     }
+}
 
-    private abstract class InputHandler {
-        public abstract List nextExpression() throws YagaException;
-        public abstract boolean hasMoreTextInput() throws YagaException;
-        public abstract Input input();
-        public void initialise() throws YagaException { /* Do nothing */ }
-        public void finalise() throws YagaException { /* Do nothing */ }
-    }
+function _pushParentPoint(parser, point) {
+    parser._parentPoints.push(parser._parentPoint);
+    parser._parentPoint = point;
+}
 
-    private class FileHandler extends InputHandler {
-        public FileHandler(FileInput in ) {
-            _fi = in ;
-        }
+function _popParentPoint(parser) {
+    parser._parentPoint = parser._parentPoints.pop();
+}
 
-        private final FileInput _fi;
+function _newParentPoint(parser) {
+    let point = parser._newPoint();
+    _pushParentPoint(point);
+    return (point);
+}
 
-        @Override
-        public Input input() {
-            return (_fi);
-        }
+function _initParser(parser, fnRead) {
+    parser._lastParserPoint = _newParserPoint(undefined, parser.sourceName);
+    parser._expressions = [];
+    parser._errors = [];
+    parser._lvlExpr = [];
+    if (parser.yi._options.tabCount) parser._tabCount = parser.yi._options.tabCount;
+    parser._errors = [];
+    parser._exprs = [];
+    parser._parentPoints = [];
+    parser._parentPoint = _defParserPoint;
 
-        @Override
-        public void initialise()
-        throws YagaException {
-            try {
-                _reader = new PushbackReader(new FileReader(_fi.file()));
-            } catch (FileNotFoundException x) {
-                throw new ParserException(ParserException.ErrorType.IO, "File IO error", x);
+    let iStr = 0,
+        strLength = 0,
+        str = undefined,
+        pushbackChar = undefined;
+    parser._readNextChar = function () {
+        let ch;
+        if (pushbackChar) {
+            let ch = pushbackChar;
+            pushbackChar = undefined;
+        } else if (iStr >= strLength) {
+            if (this._flEOS) {
+                throw yaga.errors.ParserException(this._lastParserPoint, "End of input detected", ENDOFINPUT);
             }
-        }
-
-        @Override
-        public void finalise()
-        throws YagaException {
-            try {
-                _reader.close();
-            } catch (IOException x) {
-                throw new ParserException(ParserException.ErrorType.IO, "File IO error", x);
-            }
-        }
-
-        @Override
-        public List nextExpression()
-        throws YagaException {
-            try {
-                if (hasMoreTextInput())
-                    return (parseText());
-            } catch (EndOfTextInput e) {}
-            return (null);
-        }
-
-        @Override
-        public boolean hasMoreTextInput()
-        throws YagaException {
-            return (!isEndOfStream());
-        }
-    }
-
-    private class ListHandler extends InputHandler {
-        public ListHandler(Context ctxt, ListInput in )
-        throws YagaException {
-            _li = in ;
-            _elements = in .elements().asExpandedArray(ctxt);
-            _idx = 0;
-        }
-
-        private final ListInput _li;
-        private int _idx;
-        private final List[] _elements;
-
-        @Override
-        public Input input() {
-            return (_li);
-        }
-
-        @Override
-        public List nextExpression()
-        throws YagaException {
-            try {
-                if (hasMoreTextInput())
-                    return (parseText());
-            } catch (EndOfTextInput e) {}
-
-            if (_idx >= _elements.length)
-                return (null);
-            _lineNo++;
-            _offCol = -1;
-            return (_elements[_idx++]);
-        }
-
-        @Override
-        public boolean hasMoreTextInput()
-        throws YagaException {
-            if (!isEndOfStream())
-                return (true);
-            if (_reader != null) {
-                try {
-                    _reader.close();
-                } catch (IOException x) {
-                    addError(x.toString());
-                }
-                _reader = null;
-            }
-
-            if (_idx >= _elements.length)
-                return (false);
-            if (!_elements[_idx].isString())
-                return (false);
-
-            // Have a string, so we can continue text parsing.
-            _flEOS = false;
-            List ein = _elements[_idx++];
-            _lineNo++;
-            _offCol = -1;
-            _reader = new PushbackReader(new StringReader(ein.asisString().asjString()));
-            return (true);
-        }
-    }
-
-    static public Parser parse(Context ctxt, FileInput fi) {
-        return ((new Parser(ctxt, fi)).start());
-    }
-    static public Parser parse(Context ctxt, ListInput li)
-    throws YagaException {
-        return ((new Parser(ctxt, li)).start());
-    }
-
-    private Parser(Context ctxt, FileInput in ) {
-        _ctxt = ctxt;
-        _hand = new FileHandler( in );
-    }
-    private Parser(Context ctxt, ListInput in )
-    throws YagaException {
-        _ctxt = ctxt;
-        _hand = new ListHandler(ctxt, in );
-    }
-
-    private final Context _ctxt;
-    private final InputHandler _hand;
-
-    private char _curChar;
-    private PushbackReader _reader;
-    private int _lineNo;
-    private int _offCol;
-    private int _tabCount;
-    private boolean _flEOS;
-    private String _eol;
-    private String _sourceName;
-    private ArrayList < Error > _errors;
-    private ParserPoint _tokenPoint;
-    private ArrayDeque < ParserPoint > _parentPoints;
-    private ParserPoint _parentPoint;
-    private ArrayList < List > _exprs;
-    private ArrayDeque < Character > _lvlExpr;
-
-    public Parser start() {
-        Exception ex;
-        boolean finalising = false;
-        initialise();
-        try {
-            _hand.initialise();
-            List e = _hand.nextExpression();
-            for (; e != null; e = _hand.nextExpression())
-                _exprs.add(e);
-            finalising = true;
-            _hand.finalise();
-            return (this);
-        } catch (YagaException x) {
-            addError(x.getMessage());
-            ex = x;
-        } catch (Exception e) {
-            addError(e.toString());
-            ex = e;
-        }
-        _ctxt.logException(ex);
-        if (!finalising) {
-            try {
-                _hand.finalise();
-            } catch (Exception x) {}
-        }
-        return (this);
-    }
-
-    private void initialise() {
-        _lvlExpr = new ArrayDeque();
-        _lineNo = _hand.input().startLine();
-        _tabCount = _hand.input().tabCount();
-        _flEOS = false;
-        _eol = System.lineSeparator();
-        _errors = new ArrayList();
-        _exprs = new ArrayList();
-        _parentPoints = new ArrayDeque();
-        _parentPoint = ParserPoint.Default;
-        _sourceName = _hand.input().sourceName();
-        _reader = null;
-    }
-
-    public List[] expressions() {
-        return (_exprs.toArray(new List[_exprs.size()]));
-    }
-
-
-    public int currentLine() {
-        return (_lineNo);
-    }
-    public int currentColumn() {
-        return (_offCol + 1);
-    }
-    public int currentColumnOffset() {
-        return (_offCol);
-    }
-
-    public Error[] errors() {
-        return (_errors.toArray(new Error[_errors.size()]));
-    }
-    public boolean hasErrors() {
-        return (_errors.size() > 0);
-    }
-    public interface ErrorsDo {
-        public void run(Error err);
-    }
-    public void errorsDo(ErrorsDo fn) {
-        for (Error err: _errors)
-            fn.run(err);
-    }
-
-    private List parseText()
-    throws YagaException, EndOfTextInput {
-        // Skip any initial white space
-        while (Character.isWhitespace(readChar())) {
-            if (_flEOS && !_hand.hasMoreTextInput())
-                throw tEndOfTextInput;
-        }
-
-        switch (_curChar) {
-            case ')':
-            case ']':
-                if (_lvlExpr.isEmpty())
-                    throw new ParserException(ParserException.ErrorType.STARTOFEXPRESSION, "Missing start of expression");
-                if (_lvlExpr.pop() != _curChar)
-                    throw new ParserException(ParserException.ErrorType.BRACKETS, "Mismatching brackets");
-                return (null); // End of expression detected.
-
-            case '(':
-                return (parseExpression(')', (e, p) - > new Expression.ProdExpr(e, p)));
-            case '[':
-                return (parseExpression(']', (e, p) - > new Expression.DataExpr(e, p)));
-
-            case '#':
-                return (parseSymbol());
-
-            case '\\':
-                if (Character.isWhitespace(readNextChar())) {
-                    pushbackChar(_curChar);
-                    _curChar = '\\';
-                    break;
-                }
-                // Anything that is escaped must be a name
-                break;
-
-            case '\'':
-                return (parseChar());
-
-            case '"':
-                return (parseString());
-
-            case '/':
-                if (readNextChar() != '"') {
-                    pushbackChar(_curChar);
-                    _curChar = '/';
-                    break;
-                }
-                return (parseComment());
-
-            case '-':
-                char c = readNextChar();
-                pushbackChar(_curChar);
-                _curChar = '-';
-                if (!Character.isDigit(c))
-                    break;
-                return (parseNumber());
-
-            case '+':
-                c = readNextChar();
-                pushbackChar(_curChar);
-                _curChar = '+';
-                if (!Character.isDigit(c))
-                    break;
-                return (parseNumber());
-
-            default:
-                if (Character.isDigit(_curChar))
-                    return (parseNumber());
-                break;
-        }
-        // The default is a name atom.
-        return (parseName());
-    }
-
-    static private interface ParseExprFn {
-        public List run(Elements elements, ParserPoint point) throws YagaException;
-    }
-
-    private List parseExpression(char bracket, ParseExprFn fn)
-    throws YagaException {
-        int lvlExpr = _lvlExpr.size();
-        _lvlExpr.push(bracket);
-        ParserPoint point = newParentPoint();
-        ArrayList < List > list = new ArrayList();
-        boolean isTrivial = true;
-
-        List e;
-        while ((e = _hand.nextExpression()) != null) {
-            if (!e.isTrivial())
-                isTrivial = false;
-            list.add(e);
-        }
-        if (lvlExpr != _lvlExpr.size())
-            throw new ParserException(ParserException.ErrorType.ENDOFEXPRESSION, "Missing end of expression");
-
-        List eList =
-            list.isEmpty() ? Lists.nil(point) :
-            (isTrivial ?
-                Lists.newData(list.toArray(new List[list.size()]), point) :
-                fn.run(Elements.make(list.toArray(new List[list.size()])), point));
-
-        popParentPoint();
-        return (eList);
-    }
-
-    private List parseName()
-    throws YagaException {
-        return (newName(readToken().toString()));
-    }
-
-    private List newName(StringBuilder name) {
-        return (newName(name.toString()));
-    }
-    private List newName(String name) {
-        try {
-            return (Name.newUnboundName(name, _tokenPoint));
-        } catch (NameException e) {
-            addError(_tokenPoint, e.getMessage());
-        }
-        return (new Name.Unbound(name, _tokenPoint));
-    }
-
-
-    private List parseSymbol()
-    throws YagaException {
-        StringBuilder tok = readToken();
-        if (tok.length() == 1)
-            return (newName(tok));
-        return ((Symbol.symbolToElement(tok.substring(1))).setParserPoint(_tokenPoint));
-    }
-
-    private List parseChar()
-    throws YagaException {
-        String s = parseString('\'');
-        if (s.length() == 1)
-            return ((new AtomChar(s.charAt(0))).setParserPoint(_tokenPoint));
-        addError(_tokenPoint, "Invalid character constant");
-        return ((new AtomChar('?')).setParserPoint(_tokenPoint));
-    }
-
-    private List parseString()
-    throws YagaException {
-        return ((new AtomString(parseString('"'))).setParserPoint(_tokenPoint));
-    }
-
-
-    private String parseString(char delimiter)
-    throws YagaException {
-        _tokenPoint = newParserPoint();
-        int curLine = _lineNo;
-        int curOff = _offCol;
-        int oEscape = -1;
-        StringBuilder str = new StringBuilder();
-        /*
-         *  Strings can are limited to a single line. String concatenation
-         *  function can be used to merge multi-line strings.
-         */
-        try {
-            for (;;) {
-                readChar();
-                if (curLine != _lineNo) {
-                    addError(_tokenPoint, "String has not been terminated");
-                    if (oEscape >= 0)
-                        addError("Invalid use of escape in String constant");
-                    pushbackChar(_curChar);
-                    break;
-                }
-                if (_offCol > curOff + 1) {
-                    if (oEscape >= 0) {
-                        addError("Invalid use of escape in String constant");
-                        oEscape = -1;
-                    }
-                    // Fill in tabbing locations with spaces.
-                    for (int i = _offCol - (curOff + 1); i > 0; i--)
-                        str.append(' ');
-                }
-                curOff = _offCol;
-                if (oEscape >= 0) {
-                    oEscape = -1;
-                    if (Character.isWhitespace(_curChar))
-                        addError("Invalid use of escape in String constant");
-                    switch (_curChar) {
-                        case 'n':
-                            str.append('\n');
-                            break;
-                        case 't':
-                            str.append('\t');
-                            break;
-                        case 'b':
-                            str.append('\b');
-                            break;
-                        case 'f':
-                            str.append('\f');
-                            break;
-                        case 'r':
-                            str.append('\r');
-                            break;
-                        default:
-                            str.append(_curChar);
-                            break;
-                    }
-                    continue;
-                }
-                if (_curChar == '\\') {
-                    oEscape = _offCol;
-                    continue;
-                }
-                if (_curChar == delimiter)
-                    break;
-                str.append(_curChar);
-            }
-            return (str.toString());
-        } catch (ParserException e) {
-            if (e.errorType() == ParserException.ErrorType.ENDOFSTREAM)
-                addError(_tokenPoint, "String has not been terminated");
-            throw e; // Might as well re-throw exception as no end of stream.
-        }
-    }
-
-    private List parseComment()
-    throws YagaException {
-        _tokenPoint = newParserPoint();
-        int curLine = _lineNo;
-        int curOff = _offCol;
-        int lvl = 1;
-        StringBuilder str = new StringBuilder();
-        ArrayList < String > lines = new ArrayList();
-        /*
-         *  Comments can span multiple lies so we create a String representation
-         *  for each line.
-         *  We are currently position on the first '"' character.
-         */
-        for (;;) {
-            try {
-                readChar();
-                if (curLine != _lineNo) {
-                    curLine = _lineNo;
-                    lines.add(str.toString());
-                    if (str.length() > 0)
-                        str.delete(0, str.length());
-                } else if (_offCol > curOff + 1) {
-                    // Fill in tabbing locations with spaces.
-                    for (int i = _offCol - (curOff + 1); i > 0; i--)
-                        str.append(' ');
-                }
-                curOff = _offCol;
-                if (_curChar == '"') {
-                    if (readNextChar() == '/') {
-                        if (--lvl == 0)
-                            break;
-                    }
-                    pushbackChar(_curChar);
-                    _curChar = '"';
-                }
-                if (_curChar == '/') {
-                    if (readNextChar() == '"')
-                        lvl++;
-                    pushbackChar(_curChar);
-                    _curChar = '"';
-                }
-                str.append(_curChar);
-            } catch (ParserException e) {
-                if (e.errorType() == ParserException.ErrorType.ENDOFSTREAM) {
-                    if (_hand.hasMoreTextInput())
-                        continue;
-                    addError(_tokenPoint, "Missing end of comment");
-                }
-                throw e; // Might as well re-throw exception as no end of stream.
-            }
-        }
-        lines.add(str.toString());
-
-        return ((new AtomComment(lines.toArray(new String[lines.size()]))).setParserPoint(_tokenPoint));
-    }
-
-    private enum NumType {
-        INTEGER,
-        DECIMAL,
-        FLOAT,
-        SIGNRADIX,
-        USIGNRADIX
-    }
-
-    private List parseNumber()
-    throws YagaException {
-        StringBuilder tok = readToken();
-        // Analyse the token and determine which number type if any applies.
-        int i;
-        if (tok.length() > 2 &&
-            Character.digit(tok.charAt(0), 10) == 0 && (i = "xXbBoO".indexOf(tok.charAt(1))) >= 0) {
-            final int radixs[] = new int[] {
-                16,
-                16,
-                2,
-                2,
-                8,
-                8
-            };
-            final int nBits[] = new int[] {
-                4,
-                4,
-                1,
-                1,
-                3,
-                3
-            };
-            final NumType types[] = new NumType[] {
-                NumType.USIGNRADIX, NumType.USIGNRADIX,
-                    NumType.USIGNRADIX, NumType.USIGNRADIX,
-                    NumType.USIGNRADIX, NumType.USIGNRADIX
-            };
-            return (parseRadix(tok, radixs[i], nBits[i], types[i]));
-        }
-
-        // Don't have a defined radix, so check the validity of the number.
-        NumType type = NumType.INTEGER;
-        boolean flDecimal = false, flExponent = false, flExpSign = true, flType = false;
-        char c = tok.charAt(i = 0);
-        if (c == '+' || c == '-')
-            i++;
-
-        // If we don't have a valid number then just answer a name.
-        // If this is actually an error then it will be picked up at bind
-        // time by compilers.
-        for (; i < tok.length(); i++) {
-            if (flType)
-                return (newName(tok));
-            if (Character.isDigit(c = tok.charAt(i)))
-                continue;
-            switch (c) {
-                case '.':
-                    if (flDecimal)
-                        return (newName(tok));
-                    flDecimal = true;
-                    type = NumType.DECIMAL;
-                    continue;
-                case 'e':
-                case 'E':
-                    if (flExponent)
-                        return (newName(tok));
-                    flExponent = true;
-                    type = NumType.FLOAT;
-                    continue;
-                case '+':
-                    if (!flExponent || flExpSign)
-                        return (newName(tok));
-                    flExpSign = true;
-                    continue;
-                case '-':
-                    if (!flExponent || flExpSign)
-                        return (newName(tok));
-                    flExpSign = true;
-                    continue;
-                default:
-                    if ("ildgf".indexOf(c) >= 0) {
-                        flType = true;
-                        continue;
-                    }
-            }
-            return (newName(tok));
-        }
-        String stok = flType ? tok.substring(0, tok.length() - 1) : tok.toString();
-        if (type == NumType.INTEGER) {
-            if (stok.length() > 18) {
-                BigInteger g = new BigInteger(stok);
-                if (flType)
-                    return (integerToType(tok, g, tok.length() - 1));
-                if ((g.compareTo(BigInteger.ZERO) < 0 && g.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) < 0) ||
-                    (g.compareTo(BigInteger.ZERO) > 0 && g.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0))
-                    return ((new AtomInteger(g)).setParserPoint(_tokenPoint));
-                return ((new AtomInt64(g.longValue())).setParserPoint(_tokenPoint));
+            if ((str = fnRead()) == null) {
+                this._flEOS = true;
+                ch = ' '; // Just return a space now and throw on next call
             } else {
-                long l = Long.parseLong(stok);
-                if (flType)
-                    return (longToType(tok, l, tok.length() - 1));
-                if ((l < 0 && l < Integer.MIN_VALUE) || (l > 0 && l > Integer.MAX_VALUE))
-                    return ((new AtomInt64(l)).setParserPoint(_tokenPoint));
-                return ((new AtomInt32((int) l)).setParserPoint(_tokenPoint));
+                if ((strLength = str.length) == 0) return (this.readNextChar());
+                iStr = 1;
+                ch = str[0];
             }
+        } else {
+            ch = str[iStr++]
         }
+        this.column++;
+        return (this._curChar = ch);
+    };
+    parser._peekNextChar = function () {
+        if (pushbackChar) return (pushbackChar);
+        if (iStr >= strLength) {
+            if (this._flEOS || (str = fnRead()) == null) {
+                this._flEOS = true;
+                return (' ');
+            }
+            iStr = 0;
+            if ((strLength = str.length) == 0) return (this.peekNextChar());
+            return (str[0]);
+        }
+        return (str[iStr]);
+    };
+    parser._pushbackChar = function () {
+        if (pushbackChar) {
+            throw yaga.errors.InternalException(undefined, "Attempting mulitple parser pushbacks");
+        }
+        this.column--;
+        pushbackChar = this._curChar;
+    };
+}
 
-        BigDecimal d = new BigDecimal(stok);
+function _parse(parser) {
+    try {
+        let expr = _nextExpression(parser);
+        for (; expr != null; expr = _nextExpression(parser))
+            parser._expressions.push(expr);
+    } catch (err) {
+        //  throw err;
+        _addError(parser, `${err.name}: ${err.message}`, parser._lastParserPoint);
+    }
+    return (parser._expressions);
+}
+
+function _nextExpression(parser) {
+    // Skip any initial white space
+    let ch, peek;
+    while (_isWhitespace(ch = parser._readChar())) {}
+
+    switch (ch) {
+        case ')':
+            if (parser._lvlExpr.length == 0)
+                throw new yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression");
+            parser._lvlExpr.pop();
+            return (null); // End of expression detected.
+        case '(':
+            return (_parseExpression(parser));
+        case '\'':
+            return (_parseQuotedElement(parser));
+        case '`':
+            return (_parseQuasiQuotedElement(parser))
+        case ',':
+            return (_parseQuasiOverride(parser));
+        case '"':
+            return (_parseString(parse, '"'));
+        case '/':
+            peek = parser._peekNextChar();
+            if (peek === '*' || peek === '/') {
+                _parseComment(parser);
+                return (_nextExpression(parser));
+            }
+            break;
+        case '-':
+        case '+':
+            peek = parser._peekNextChar();
+            if (_isDigit(parser, peek))
+                return (_parseNumber(parser));
+            break;
+        case '\\':
+            return (_parseEscape(parser));
+        default:
+            if (_isDigit(ch))
+                return (_parseNumber(parser));
+            break;
+    }
+    // The default is a Symbol.
+    return (_parseSymbol(parser));
+}
+
+function _parseEscape(parser) {
+    // If just a single backslash then treat as a token.
+    if (!_isWhitespace(parser._peekNextChar())) parser._readChar();
+    return (_parseSymbol(parser));
+}
+
+function _parseExpression(_parser) {
+    let lvlExpr = parser._lvlExpr.length;
+    parser._lvlExpr.push(parser);
+    let point = _newParentPoint(parser);
+    let e, list = [];
+
+    while ((e = _nextExpression(parser)) != null) {
+        list.push(e);
+    }
+    if (lvlExpr != parser._lvlExpr.length) {
+        throw new ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION);
+    }
+    let eList = list.length == 0 ? yaga.List.nil(point) : yaga.List.new(list, point);
+    _popParentPoint();
+    return (eList);
+}
+
+function _parseQuasiQuotedElement(parser) {
+    let e = _nextExpression(parser);
+    if (typeof e === 'object' && e.isaListOrAtom)
+        return (e.asQuasiQuoted());
+    return (e);
+}
+
+function _parseQuasiOverride(parser) {
+    let at = parser._peekNextChar();
+    if (at === '@') parser._readChar();
+    let e = _nextExpression(parser);
+    if (typeof e === 'object' && e.isaListOrAtom)
+        return (e.asQuasiOverride(at === '@'));
+    return (e);
+}
+
+function _parseQuotedElement(parser) {
+    let e = _nextExpression(parser);
+    if (typeof e === 'object' && e.isaListOrAtom)
+        return (e.asQuoted());
+    return (e);
+}
+
+function _parseSymbol(parser, tok) {
+    if (!tok) tok = _readToken(parser);
+    return (yaga.Symbol.new(tok, parser._lastParserPoint));
+}
+
+function _parseNumber(pasrer) {
+    let tok = _readToken(parser);
+    // Analyse the token and determine which number type if any applies.
+    let flDecimal = false,
+        flExponent = false,
+        flExpSign = true,
+        flType = undefined;
+    let i = 0,
+        c = tok.atGet(i);
+    if (c == '+' || c == '-')
+        i++;
+
+    // If we don't have a valid number then just answer a Symbol.
+    // If this is actually an error then it will be picked up at bind.
+    for (; i < tok.segmentCount(); i++) {
         if (flType)
-            return (decimalToType(tok, d, tok.length() - 1));
-        if ((d.compareTo(BigDecimal.ZERO) < 0 && d.compareTo(BigDecimal.valueOf(Double.MIN_VALUE)) < 0) ||
-            (d.compareTo(BigDecimal.ZERO) > 0 && d.compareTo(BigDecimal.valueOf(Double.MAX_VALUE)) > 0))
-            return ((new AtomDecimal(d)).setParserPoint(_tokenPoint));
-        return ((new AtomFloat(d.floatValue())).setParserPoint(_tokenPoint));
-    }
-
-    private List parseRadix(StringBuilder tok, int radix, int nBits, NumType type) {
-        int initialiser =
-            Character.digit(tok.charAt(2), radix) >= radix / 2 &&
-            type == NumType.SIGNRADIX ? -1 : 0;
-        int tokLength = tok.length();
-        if ((tokLength - 2) * nBits <= 64) {
-            long num = initialiser;
-            for (int i = 2; i < tokLength; i++) {
-                long digit = Character.digit(tok.charAt(i), radix);
-                if (digit < 0)
-                    return (longToType(tok, num, i));
-                num = (num << nBits) | digit;
-            }
-            if ((tokLength - 2) * nBits <= 32)
-                return ((new AtomInt32((int) num)).setParserPoint(_tokenPoint));
-            return ((new AtomInt64(num)).setParserPoint(_tokenPoint));
-        }
-        BigInteger num = BigInteger.valueOf(initialiser);
-        for (int i = 2; i < tok.length(); i++) {
-            long digit = Character.digit(tok.charAt(i), radix);
-            if (digit < 0)
-                return (integerToType(tok, num, i));
-            num = num.shiftLeft(nBits).or(BigInteger.valueOf(digit));
-        }
-        return ((new AtomInteger(num)).setParserPoint(_tokenPoint));
-    }
-
-    private List longToType(StringBuilder tok, long num, int iTypeCode) {
-        if (tok.length() - 1 > iTypeCode)
-            return (newName(tok));
-
-        switch (tok.charAt(iTypeCode)) {
-            case 'i': // int32
-                if ((num < 0 && num < Integer.MIN_VALUE) ||
-                    (num > 0 && num > Integer.MAX_VALUE))
-                    addError(_tokenPoint, "int32 value is out of range");
-                return ((new AtomInt32((int) num)).setParserPoint(_tokenPoint));
-            case 'l': // int64
-                return ((new AtomInt64(num)).setParserPoint(_tokenPoint));
-            case 'g': // integer
-                return ((new AtomInteger(BigInteger.valueOf(num))).setParserPoint(_tokenPoint));
-            case 'd': // decimal
-                return ((new AtomDecimal(BigDecimal.valueOf(num))).setParserPoint(_tokenPoint));
-            case 'f': // float
-                return ((new AtomFloat(num)).setParserPoint(_tokenPoint));
+            return (_parseSymbol(parser, tok));
+        if (_isDigit(c = tok.atGet(i)))
+            continue;
+        switch (c) {
+            case '.':
+                if (flDecimal)
+                    return (_parseSymbol(parser, tok));
+                flDecimal = true;
+                continue;
+            case 'e':
+            case 'E':
+                if (flExponent)
+                    return (_parseSymbol(parser, tok));
+                flExponent = true;
+                continue;
+            case '+':
+            case '-':
+                if (!flExponent || flExpSign)
+                    return (_parseSymbol(parser, tok));
+                flExpSign = true;
+                continue;
             default:
-                return (newName(tok));
-        }
-    }
-
-    private List integerToType(StringBuilder tok, BigInteger num, int iTypeCode) {
-        if (tok.length() - 1 > iTypeCode)
-            return (newName(tok));
-
-        switch (tok.charAt(iTypeCode)) {
-            case 'i': // int32
-                if ((num.compareTo(BigInteger.ZERO) < 0 && num.compareTo(BigInteger.valueOf(Integer.MIN_VALUE)) < 0) ||
-                    (num.compareTo(BigInteger.ZERO) > 0 && num.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0))
-                    addError(_tokenPoint, "int32 value is out of range");
-                return ((new AtomInt32(num.intValue())).setParserPoint(_tokenPoint));
-            case 'l': // int64
-                if ((num.compareTo(BigInteger.ZERO) < 0 && num.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) < 0) ||
-                    (num.compareTo(BigInteger.ZERO) > 0 && num.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0))
-                    addError(_tokenPoint, "int64 value is out of range");
-                return ((new AtomInt64(num.longValue())).setParserPoint(_tokenPoint));
-            case 'g': // integer
-                return ((new AtomInteger(num)).setParserPoint(_tokenPoint));
-            case 'd': // decimal
-                return ((new AtomDecimal(new BigDecimal(num))).setParserPoint(_tokenPoint));
-            case 'f': // float
-                BigDecimal dec = new BigDecimal(num);
-                if ((num.compareTo(BigInteger.ZERO) < 0 && dec.compareTo(BigDecimal.valueOf(Double.MIN_VALUE)) < 0) ||
-                    (num.compareTo(BigInteger.ZERO) > 0 && dec.compareTo(BigDecimal.valueOf(Double.MAX_VALUE)) > 0))
-                    addError(_tokenPoint, "float value is out of range");
-                return ((new AtomFloat(num.floatValue())).setParserPoint(_tokenPoint));
-            default:
-                return (newName(tok));
-        }
-    }
-
-    private List decimalToType(StringBuilder tok, BigDecimal num, int iTypeCode) {
-        if (tok.length() - 1 > iTypeCode)
-            return (newName(tok));
-
-        switch (tok.charAt(iTypeCode)) {
-            case 'i': // int32
-                addError(_tokenPoint, "Invalid int32 constant");
-                return ((new AtomInt32(num.intValue())).setParserPoint(_tokenPoint));
-            case 'l': // int64
-                addError(_tokenPoint, "Invalid int64 constant");
-                return ((new AtomInt64(num.longValue())).setParserPoint(_tokenPoint));
-            case 'g': // integer
-                addError(_tokenPoint, "Invalid integer constant");
-                return ((new AtomInteger(num.toBigInteger())).setParserPoint(_tokenPoint));
-            case 'd': // decimal
-                return ((new AtomDecimal(num)).setParserPoint(_tokenPoint));
-            case 'f': // float
-                if ((num.compareTo(BigDecimal.ZERO) < 0 && num.compareTo(BigDecimal.valueOf(Double.MIN_VALUE)) < 0) ||
-                    (num.compareTo(BigDecimal.ZERO) > 0 && num.compareTo(BigDecimal.valueOf(Double.MAX_VALUE)) > 0))
-                    addError(_tokenPoint, "float value is out of range");
-                return ((new AtomFloat(num.floatValue())).setParserPoint(_tokenPoint));
-            default:
-                return (newName(tok));
-        }
-    }
-
-    private StringBuilder readToken()
-    throws YagaException {
-        _tokenPoint = newParserPoint();
-        StringBuilder tok = new StringBuilder();
-        tok.append(_curChar);
-        while (readTokenChar() != 0)
-            tok.append(_curChar);
-        return (tok);
-    }
-
-    private char readTokenChar()
-    throws YagaException {
-        if (!Character.isWhitespace(readNextChar()) &&
-            _curChar != ')' && _curChar != '(' && _curChar != ']' && _curChar != '[')
-            return (_curChar);
-        pushbackChar(_curChar);
-        return (0);
-    }
-
-    // Assume that we have already consumed the intial character of the
-    // token that we are processing. _offCol == colNo of previous char
-    private ParserPoint newParserPoint() {
-        return (new ParserPoint(_parentPoint, _sourceName, _lineNo, _offCol));
-    }
-
-    private void pushParentPoint(ParserPoint point) {
-        _parentPoints.push(_parentPoint);
-        _parentPoint = point;
-    }
-
-    private void popParentPoint() {
-        _parentPoint = _parentPoints.pop();
-    }
-
-    private ParserPoint newParentPoint() {
-        ParserPoint point = newParserPoint();
-        pushParentPoint(point);
-        return (point);
-    }
-
-    private Error addError(String msg) {
-        return (addError(newParserPoint(), msg));
-    }
-    private Error addError(ParserPoint point, String msg) {
-        Error e = new Error(point, msg);
-        _errors.add(e);
-        return (e);
-    }
-
-    private char readChar()
-    throws YagaException {
-        if (readNextChar() == _eol.charAt(0)) {
-            if (_eol.length() > 1) {
-                int ic = read();
-                if (ic == -1) {
-                    return (_curChar);
+                if ('f'.includes(c)) {
+                    flType = c;
+                    continue;
                 }
-                if ((char) ic != _eol.charAt(1)) {
-                    unread(ic);
-                    return (_curChar);
-                }
+        }
+        return (_parseSymbol(parser, tok));
+    }
+    // At the moment we only handle floats.
+    let s = tok.toString();
+    if (flType) s = s.substr(0, s.length - 1);
+    if (flExponent) {
+        return (parseFloat(s));
+    }
+    if (flDecimal) {
+        return (parseFloat(s));
+    }
+    return (parseFloat(s));
+}
+
+function _parseString(parser, delimiter) {
+    const _filler = '                                                                                                 ';
+    parser.newPoint();
+    let curLine = parser._lineNo,
+        curCol = parser._column,
+        colEscape = 0,
+        str = yaga.StringBuilder.new();
+    /*
+     *  Strings can span mulitple lines with all white space compressed to a single whitespace character.
+     *  Injecting the escape character in front of required white space on the next line will prevent this.
+     *  Example:
+     *          "This is a string
+     *           that spans mulitple lines
+     *          \           with indentation on this line"
+     */
+    let ch;
+    try {
+
+        for (;;) {
+            ch = parser._readChar();
+            if (curLine != parser._lineNo) {
+                if (colEscape > 0)
+                    _addError(parser, "Invalid use of escape in String constant");
+                // Have a new line so consume any whitespace up to first non white space character.
+                // Note that we insert a single whitespace character unless an escape character has been
+                // injected.
+                while (_isWhitespace(ch)) ch = parser._readChar();
+                if (ch == '\\' && _isWhitespace(parser._peekNextChar())) continue;
+                str.append(' ');
             }
-            _lineNo++;
-            _offCol = -1;
-            return (readChar());
-        } else if (_curChar == '\n') {
-            _lineNo++;
-            _offCol = -1;
-            return (readChar());
-        } else if (_curChar == '\t') {
-            _offCol = (_offCol + _tabCount) / _tabCount * _tabCount - 1;
-            return (readChar());
+            if (parser._column > curCol + 1) {
+                if (colEscape > 0) {
+                    addError(parser, "Invalid use of escape in String constant");
+                    colEscape = 0;
+                }
+                // Fill in tabbing locations with spaces.
+                let nFill = parser._column - (curCol + 1);
+                while (nFill > _filler.length) {
+                    str.append(_filler);
+                    nFill -= _filler.length;
+                }
+                str.append(_filler.substr(0, nFill));
+            }
+            curCol = parser._column;
+            if (colEscape > 0) {
+                oEscape = 0;
+                if (_isWhitespace(ch))
+                    addError("Invalid use of escape in String constant");
+                switch (ch) {
+                    case 'n':
+                        str.append('\n');
+                        break;
+                    case 't':
+                        str.append('\t');
+                        break;
+                    case 'b':
+                        str.append('\b');
+                        break;
+                    case 'f':
+                        str.append('\f');
+                        break;
+                    case 'r':
+                        str.append('\r');
+                        break;
+                    default:
+                        str.append(ch);
+                        break;
+                }
+                continue;
+            }
+            if (ch == '\\') {
+                colEscape = parser._column;
+                continue;
+            }
+            if (ch == delimiter)
+                break;
+            str.append(ch);
         }
-        return (_curChar);
+        return (str.toString());
+    } catch (err) {
+        if (err.isaParserException() && err.reason === ENDOFINPUT) {
+            _addError(parser, "Missing end of STRING");
+        }
+        throw err; // Might as well re-throw exception as no end of stream.
     }
+}
 
-    private char readNextChar()
-    throws YagaException {
-        int ic = read();
-        if (ic == -1) {
-            if (_flEOS)
-                throw new ParserException(ParserException.ErrorType.ENDOFSTREAM, "End of stream detected");
-            _flEOS = true;
-            ic = Character.SPACE_SEPARATOR;
+function _parseComment(parser) {
+    parser.newPoint();
+    /*
+     *   Just throw comments away.
+     */
+    try {
+        let ch = parser._readChar();
+        if (ch === '/') {
+            // Consume until end of line.
+            let curLineNo = parser._lineNo;
+            while (!parser._flEOS && curLineNo == parser._lineNo) {
+                ch = parser._readChar()
+            }
+            parser._pushbackChar();
+            return;
         }
-        _curChar = (char) ic;
-        _offCol++;
-        return (_curChar);
+        // Possible multiline comment so need to look for '*/' end comment sequence
+        for (;;) {
+            ch = parser._readChar();
+            if (ch === '*' && parser._peekNextChar() === '/') {
+                parser._readChar();
+                return;
+            }
+        }
+    } catch (err) {
+        if (err.isaParserException && err.isaParserException() && err.reason === ENDOFINPUT) {
+            _addError(parser, "Missing end of COMMENT");
+        }
+        throw err; // Might as well re-throw exception as no end of stream.
     }
+}
 
-    public boolean isEndOfStream() {
-        if (_flEOS || _reader == null)
-            return (true);
-        try {
-            readNextChar();
-            pushbackChar(_curChar);
-        } catch (Exception e) {}
-        return (_flEOS);
+function _readToken(parser) {
+    parser.newPoint();
+    let tok = yaga.StringBuilder.new();
+    tok.append(parser._curChar);
+    let ch;
+    while (ch = _readTokenChar(parser))
+        tok.append(ch);
+    return (tok);
+}
+
+function _readTokenChar(parser) {
+    let ch;
+    if (!_isWhitespace(ch = parser._readNextChar()) && ch != ')' && ch != '(')
+        return (ch);
+    parser._pushbackChar();
+    return (undefined);
+}
+
+function _isDigit(ch) {
+    // Will need to be extended to handle ucs-2 extended digits
+    return ('0123456789'.includes(ch));
+}
+
+function _isWhitespace(ch) {
+    // Will need to be extended to handle ucs-2 extended whitespace
+    return (ch === ' ');
+}
+
+function _addError(parser, msg, e) {
+    let err;
+    if (!e) {
+        err = yaga.errors.Error(msg, parser._lastParserPoint);
+    } else if (e.isaParserPoint) {
+        err = yaga.errors.Error(msg, e);
+    } else {
+        err = yaga.errors.Error(e, msg);
     }
-
-    private void pushbackChar(char c)
-    throws YagaException {
-        _offCol--;
-        unread(c);
-    }
-
-    public class Error {
-        private Error(ParserPoint point, String msg) {
-            _point = point;
-            _msg = msg;
-        }
-
-        private final ParserPoint _point;
-        private final String _msg;
-
-        public ParserPoint parserPoint() {
-            return (_point);
-        }
-        public String message() {
-            return (_msg);
-        }
-
-        public String formattedMessage() {
-            return (String.format("%s - %s", _point.format(), _msg));
-        }
-    }
-
-    private int read()
-    throws YagaException {
-        try {
-            return (_reader.read());
-        } catch (IOException e) {
-            throw new ParserException(ParserException.ErrorType.IO, e.toString());
-        }
-    }
-
-    private void unread(char ch)
-    throws YagaException {
-        try {
-            _reader.unread(ch);
-        } catch (IOException e) {
-            throw new ParserException(ParserException.ErrorType.IO, e.toString());
-        }
-    }
-
-    private void unread(int ch)
-    throws YagaException {
-        try {
-            _reader.unread(ch);
-        } catch (IOException e) {
-            throw new ParserException(ParserException.ErrorType.IO, e.toString());
-        }
-    }
-
-    static private EndOfTextInput tEndOfTextInput = new EndOfTextInput();
-    static private class EndOfTextInput extends Throwable {}
+    parser._errors.push(err)
 }
