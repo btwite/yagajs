@@ -58,7 +58,6 @@ _parser = {
     _tabCount: 4,
     _curChar: undefined,
     _flEOS: false,
-    _errors: undefined,
     _parentPoints: undefined,
     _parentPoint: undefined,
 }
@@ -68,22 +67,22 @@ function _parseFile(path) {
     let fd;
     try {
         fd = fs.openSync(path, 'r');
+        this.sourceName = fs.realpathSync(path);
     } catch (err) {
         throw yaga.errors.ParserException(undefined, `Failed to open yaga file. Rsn(${err.message})`);
     }
-    this.sourceName = path;
     let oPos = 0,
         buf = Buffer.alloc(8192),
         encoding = undefined;
     _initParser(this, () => {
         let nBytes = fs.readSync(fd, buf, 0, buf.length, oPos);
         if (!encoding) {
-            this._line = 1;
+            this._lineNo = 1;
             // Require a way of checking the encoding. For example package 'detect-character-encoding'
             encoding = 'ascii';
         }
         oPos += nBytes;
-        return (nBytes == 0 ? null : buf.toString(encoding));
+        return (nBytes == 0 ? null : buf.toString(encoding, 0, nBytes));
     });
     _parse(this);
     fs.closeSync(fd);
@@ -101,23 +100,23 @@ function _parseStrings(arr) {
     return (_parse(this));
 }
 
-function _readChar() {
-    let ch = this._readNextChar();
+function _readChar(fnEOS) {
+    let ch = this._readNextChar(fnEOS);
     switch (ch) {
         case '\r':
             let peek = this._peekNextChar();
             if (peek != '\n') {
                 return (ch);
             }
-            ch = this._readNextChar();
+            this._readNextChar(fnEOS);
         case '\n':
             this._lineNo++;
-            this.column = 0;
-            return (this._readChar());
+            this._column = 0;
+            return (this._curChar = ' '); // Give back white space
         case '\t':
             let tc = this._tabCount;
             this._column = (this._column + tc) / tc * tc + 1;
-            return (this._readChar());
+            return (this._readChar(fnEOS));
         default:
             return (ch);
     }
@@ -126,7 +125,7 @@ function _readChar() {
 function _newPoint(parent, line, col) {
     if (parent === undefined) parent = this._parentPoint;
     if (line === undefined) line = this._lineNo;
-    if (col === undefined) col = this.column;
+    if (col === undefined) col = this._column;
     this._lastParserPoint = _newParserPoint(parent, this.sourceName, line, col);
     return (this._lastParserPoint)
 }
@@ -153,19 +152,16 @@ function _popParentPoint(parser) {
 }
 
 function _newParentPoint(parser) {
-    let point = parser._newPoint();
-    _pushParentPoint(point);
+    let point = parser.newPoint();
+    _pushParentPoint(parser, point);
     return (point);
 }
 
 function _initParser(parser, fnRead) {
     parser._lastParserPoint = _newParserPoint(undefined, parser.sourceName);
     parser._expressions = [];
-    parser._errors = [];
     parser._lvlExpr = [];
     if (parser.yi._options.tabCount) parser._tabCount = parser.yi._options.tabCount;
-    parser._errors = [];
-    parser._exprs = [];
     parser._parentPoints = [];
     parser._parentPoint = _defParserPoint;
 
@@ -173,18 +169,19 @@ function _initParser(parser, fnRead) {
         strLength = 0,
         str = undefined,
         pushbackChar = undefined;
-    parser._readNextChar = function () {
+    parser._readNextChar = function (fnEOS) {
         let ch;
         if (pushbackChar) {
-            let ch = pushbackChar;
+            ch = pushbackChar;
             pushbackChar = undefined;
         } else if (iStr >= strLength) {
             if (this._flEOS) {
+                if (fnEOS) return (fnEOS());
                 throw yaga.errors.ParserException(this._lastParserPoint, "End of input detected", ENDOFINPUT);
             }
             if ((str = fnRead()) == null) {
                 this._flEOS = true;
-                ch = ' '; // Just return a space now and throw on next call
+                ch = ' '; // Just return whitespace now and throw on next call
             } else {
                 if ((strLength = str.length) == 0) return (this.readNextChar());
                 iStr = 1;
@@ -193,7 +190,7 @@ function _initParser(parser, fnRead) {
         } else {
             ch = str[iStr++]
         }
-        this.column++;
+        this._column++;
         return (this._curChar = ch);
     };
     parser._peekNextChar = function () {
@@ -213,8 +210,9 @@ function _initParser(parser, fnRead) {
         if (pushbackChar) {
             throw yaga.errors.InternalException(undefined, "Attempting mulitple parser pushbacks");
         }
-        this.column--;
+        this._column--;
         pushbackChar = this._curChar;
+        this._curChar = ' ';
     };
 }
 
@@ -224,8 +222,7 @@ function _parse(parser) {
         for (; expr != null; expr = _nextExpression(parser))
             parser._expressions.push(expr);
     } catch (err) {
-        //  throw err;
-        _addError(parser, `${err.name}: ${err.message}`, parser._lastParserPoint);
+        _addError(parser, `${err.name}: ${err.message}`, parser._lastParserPoint, err);
     }
     return (parser._expressions);
 }
@@ -233,12 +230,15 @@ function _parse(parser) {
 function _nextExpression(parser) {
     // Skip any initial white space
     let ch, peek;
-    while (_isWhitespace(ch = parser._readChar())) {}
+    while (_isWhitespace(ch = parser._readChar(() => {
+            return ('');
+        })));
+    if (ch == '') return (null);
 
     switch (ch) {
         case ')':
             if (parser._lvlExpr.length == 0)
-                throw new yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression");
+                throw yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression");
             parser._lvlExpr.pop();
             return (null); // End of expression detected.
         case '(':
@@ -250,7 +250,7 @@ function _nextExpression(parser) {
         case ',':
             return (_parseQuasiOverride(parser));
         case '"':
-            return (_parseString(parse, '"'));
+            return (_parseString(parser, '"'));
         case '/':
             peek = parser._peekNextChar();
             if (peek === '*' || peek === '/') {
@@ -275,13 +275,7 @@ function _nextExpression(parser) {
     return (_parseSymbol(parser));
 }
 
-function _parseEscape(parser) {
-    // If just a single backslash then treat as a token.
-    if (!_isWhitespace(parser._peekNextChar())) parser._readChar();
-    return (_parseSymbol(parser));
-}
-
-function _parseExpression(_parser) {
+function _parseExpression(parser) {
     let lvlExpr = parser._lvlExpr.length;
     parser._lvlExpr.push(parser);
     let point = _newParentPoint(parser);
@@ -291,16 +285,16 @@ function _parseExpression(_parser) {
         list.push(e);
     }
     if (lvlExpr != parser._lvlExpr.length) {
-        throw new ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION);
+        throw ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION);
     }
     let eList = list.length == 0 ? yaga.List.nil(point) : yaga.List.new(list, point);
-    _popParentPoint();
+    _popParentPoint(parser);
     return (eList);
 }
 
 function _parseQuasiQuotedElement(parser) {
     let e = _nextExpression(parser);
-    if (typeof e === 'object' && e.isaListOrAtom)
+    if (typeof e === 'object' && e.isaYagaType)
         return (e.asQuasiQuoted());
     return (e);
 }
@@ -309,24 +303,42 @@ function _parseQuasiOverride(parser) {
     let at = parser._peekNextChar();
     if (at === '@') parser._readChar();
     let e = _nextExpression(parser);
-    if (typeof e === 'object' && e.isaListOrAtom)
-        return (e.asQuasiOverride(at === '@'));
+    if (e.isaYagaType) {
+        if (at === '@') return (e.asQuasiOverride());
+        else return (e.asQuasiInjection());
+    }
     return (e);
 }
 
 function _parseQuotedElement(parser) {
     let e = _nextExpression(parser);
-    if (typeof e === 'object' && e.isaListOrAtom)
+    if (e.isaYagaType)
         return (e.asQuoted());
     return (e);
 }
 
 function _parseSymbol(parser, tok) {
     if (!tok) tok = _readToken(parser);
-    return (yaga.Symbol.new(tok, parser._lastParserPoint));
+    // Check for reserved tokens.
+    let s = tok.toString();
+    switch (s) {
+        case 'undefined':
+            return (yaga.Wrapper.new(undefined, parser._lastParserPoint));
+        case 'null':
+            return (yaga.Wrapper.new(null, parser._lastParserPoint));
+        case '_':
+            return (yaga.Symbol.none(parser._lastParserPoint));
+    }
+    return (yaga.Symbol.new(s, parser._lastParserPoint));
 }
 
-function _parseNumber(pasrer) {
+function _parseEscape(parser) {
+    // If just a single backslash then treat as a token.
+    if (!_isWhitespace(parser._peekNextChar())) parser._readChar();
+    return (yaga.Symbol.new(_readToken(parser), parser._lastParserPoint));
+}
+
+function _parseNumber(parser) {
     let tok = _readToken(parser);
     // Analyse the token and determine which number type if any applies.
     let flDecimal = false,
@@ -464,7 +476,7 @@ function _parseString(parser, delimiter) {
         return (str.toString());
     } catch (err) {
         if (err.isaParserException() && err.reason === ENDOFINPUT) {
-            _addError(parser, "Missing end of STRING");
+            _addError(parser, "Missing end of STRING", undefined, err);
         }
         throw err; // Might as well re-throw exception as no end of stream.
     }
@@ -472,31 +484,39 @@ function _parseString(parser, delimiter) {
 
 function _parseComment(parser) {
     parser.newPoint();
-    /*
-     *   Just throw comments away.
-     */
+    //   Just throw comments away.
+    //   Note that nested /* ... */ comments are supported
     try {
         let ch = parser._readChar();
         if (ch === '/') {
             // Consume until end of line.
             let curLineNo = parser._lineNo;
-            while (!parser._flEOS && curLineNo == parser._lineNo) {
-                ch = parser._readChar()
-            }
+            while (curLineNo == parser._lineNo) parser._readChar(() => {
+                curLineNo = 0;
+                return ('');
+            });
             parser._pushbackChar();
             return;
         }
-        // Possible multiline comment so need to look for '*/' end comment sequence
+        // Possible multiline comment so need to look for '*/' end comment sequence and
+        // lookout got nested comments
+        let nestLevel = 1;
         for (;;) {
             ch = parser._readChar();
-            if (ch === '*' && parser._peekNextChar() === '/') {
+            let peek = parser._peekNextChar();
+            if (ch === '/') {
+                if (peek === '*') {
+                    parser._readChar();
+                    nestLevel++;
+                }
+            } else if (ch === '*' && peek === '/') {
                 parser._readChar();
-                return;
+                if (--nestLevel == 0) return;
             }
         }
     } catch (err) {
         if (err.isaParserException && err.isaParserException() && err.reason === ENDOFINPUT) {
-            _addError(parser, "Missing end of COMMENT");
+            _addError(parser, "Missing end of COMMENT", undefined, err);
         }
         throw err; // Might as well re-throw exception as no end of stream.
     }
@@ -514,7 +534,7 @@ function _readToken(parser) {
 
 function _readTokenChar(parser) {
     let ch;
-    if (!_isWhitespace(ch = parser._readNextChar()) && ch != ')' && ch != '(')
+    if (!_isWhitespace(ch = parser._readChar()) && ch != ')' && ch != '(')
         return (ch);
     parser._pushbackChar();
     return (undefined);
@@ -530,14 +550,6 @@ function _isWhitespace(ch) {
     return (ch === ' ');
 }
 
-function _addError(parser, msg, e) {
-    let err;
-    if (!e) {
-        err = yaga.errors.Error(msg, parser._lastParserPoint);
-    } else if (e.isaParserPoint) {
-        err = yaga.errors.Error(msg, e);
-    } else {
-        err = yaga.errors.Error(e, msg);
-    }
-    parser._errors.push(err)
+function _addError(parser, msg, e, attach) {
+    parser.yi.addError(e, msg, attach);
 }

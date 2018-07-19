@@ -2,7 +2,6 @@
  * Symbol : @file
  * 
  * Yaga symbol objects.
- * 
  */
 
 'use strict';
@@ -11,6 +10,7 @@ var yaga;
 
 module.exports = {
     new: _newSymbol,
+    none: _none,
     Initialise: (y) => {
         yaga = yaga ? yaga : y;
     },
@@ -23,25 +23,35 @@ Object.freeze(module.exports);
 function _newSymbol(symName, optPoint) {
     if (typeof symName !== 'string') symName = symName.toString(); // Handle StringBuilder case.
     let sym = Object.create(_symbol);
-    sym._name = symName;
+    sym.value = symName;
     sym.reference = sym;
     if (optPoint)
         sym.parserPoint = optPoint;
     return (sym);
 }
 
+function _none(optPoint) {
+    let none = _newsymbol('_', optPoint);
+    none.typeName = 'None';
+    none.isNone = true;
+    return (none);
+}
+
 var _symbol = {
     typeName: 'Symbol',
-    _name: '<Unknown>',
-    isaListOrAtom: true,
+    value: '<Unknown>',
+    isaYagaType: true,
     parserPoint: undefined,
     reference: undefined,
     asQuoted: _asQuoted,
     asQuasiQuoted: _asQuasiQuoted,
     asQuasiOverride: _asQuasiOverride,
+    asQuasiInjection: _asQuasiInjection,
+    isaSymbol: true,
     isQuoted: false,
     isQuasiOverride: false,
-    isAtInjected: false,
+    isQuasiInjection: false,
+    leadSyntax: undefined,
     bind(yi) {
         /* Add code here */
     },
@@ -49,10 +59,11 @@ var _symbol = {
         return (this);
     },
     asString() {
-        return (this._name);
+        return (this.value);
     },
-    print(stream) {
-        return (stream.write(this._name));
+    print(printer) {
+        if (this.leadSyntax) printer.printLead(this.leadSyntax);
+        printer.printElement(this.value);
     }
 };
 
@@ -60,9 +71,10 @@ function _asQuoted() {
     let sym = Object.create(this);
     sym.typeName = 'QuotedSymbol';
     sym.isQuoted = true;
-    sym.bind = function (yi) {
-        return (Object.getPrototypeOf(sym));
-    };
+    sym.leadSyntax = '\'',
+        sym.bind = function (yi) {
+            return (Object.getPrototypeOf(sym));
+        };
     sym.evaluate = function (yi) {
         throw new yaga.errors.InternalException("'evaluate' method unsupported for QuotedSymbol");
     }
@@ -71,6 +83,7 @@ function _asQuoted() {
 
 function _asQuasiQuoted() {
     let sym = this.asQuoted();
+    sym.leadSyntax = '`';
     sym.evaluate = function (yi) {
         throw new yaga.errors.InternalException("'evaluate' method unsupported for QuasiQuotedSymbol");
     }
@@ -79,16 +92,27 @@ function _asQuasiQuoted() {
 
 // May change bind so that parent list is passed to handle quasi overrides rather than the parent having
 // to check every element.
-function _asQuasiOverride(flAtOp) {
+function _asQuasiOverride() {
     let sym = Object.create(this);
-    sym.typeName = 'QuotedSymbol';
+    sym.typeName = 'QuasiOverrideSymbol';
     sym.isQuasiOverride = true;
-    sym.isAtInjected = flAtOp;
+    sym.leadSyntax = ',';
     sym.bind = function (yi) {
         return (Object.getPrototypeOf(this).bind(yi))
     };
     sym.evaluate = function (yi) {
         throw new yaga.errors.InternalException("'evaluate' method unsupported for QuasiOverrideSymbol");
     }
+    return (sym);
+}
+
+function _asQuasiInjection() {
+    let sym = this.asQuasiOverride();
+    sym.typeName = 'QuasiInjectionSymbol';
+    sym.isQuasiInjection = true;
+    sym.leadSyntax = ',@';
+    sym.bind = function (yi) {
+        return (Object.getPrototypeOf(this).bind(yi))
+    };
     return (sym);
 }

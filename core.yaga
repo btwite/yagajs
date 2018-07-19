@@ -1,12 +1,21 @@
+((.jsPrim jsDefine) define (.jsPrim jsDefine))
+(define function (.jsPrim jsFunction))
+(define macro (.jsPrim jsMacro))
+
+
 /*
 	Core and Yaga definitions that must be loaded at startup.
 	The CoreNamespace name .core must be preloaded into the
 	core namespace at yaga startup time. All named namespaces
 	are defined in the core namespace.
-*/
-
 // Declare the core ristic classes. Note that the names are also defined in the .core namespace
+*/
+/*
+// abcd
 (.ristic #.rPrim 		#yaga.core.ristic.PrimRistic)
+Hello world
+( '(a b c) `( f g ,h ,@( s c d)))
+
 (.ristic #.rData 		#yaga.core.ristic.DataRistic)
 (.ristic #.rInj 		#yaga.core.ristic.InjRistic)
 (.ristic #.rPipe 		#yaga.core.ristic.PipeRistic)
@@ -128,7 +137,7 @@
 
 // Predefined precedence values. Higher precedence has lower value. "/
 (.def .PRECOPSTART			1000)
-(.def .PRECADDER			1020)	/" Must equal .PRECADDITIVE "/
+(.def .PRECADDER			1020)	// Must equal .PRECADDITIVE "/
 
 (.def .ADDITIVE	(.rPipe .PRECADDER))
 (.def .+ (.ADDITIVE (.rPrim #yaga.core.prim.Operators #Add)))
@@ -200,3 +209,5 @@
 (.def * (.rBinop .PRECMULTIPLICATIVE .*))
 (.def / (.rBinop .PRECMULTIPLICATIVE ./))
 (.def % (.rBinop .PRECMULTIPLICATIVE .%))
+
+*/

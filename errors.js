@@ -22,11 +22,9 @@ let _evaluateTypes = {
 
 module.exports = {
     YagaException: _errorMethod(YagaException),
-    isaYagaException: _isAnException(YagaException),
     InternalException: _errorMethod(InternalException),
-    isaInternalException: _isAnException(InternalException),
     ParserException: _errorMethod(ParserException),
-    isaParserException: _isAnException(ParserException),
+    DictionaryException: _errorMethod(DictionaryException),
 
 
     BinderException: _errorMethod(BinderException),
@@ -40,17 +38,6 @@ module.exports = {
     PrimitiveException: _errorMethod(PrimitiveException),
     RisticValidationException: _errorMethod(RisticValidationException),
 
-    isBinderException: _isAnException(BinderException),
-    isBindException: _isAnException(BindException),
-    isCastException: _isAnException(CastException),
-    isEvaluateException: _isAnException(EvaluateException),
-    isFrameException: _isAnException(FrameException),
-    isReadFrameException: _isAnException(ReadFrameException),
-    isWriteFrameException: _isAnException(WriteFrameException),
-    isNameException: _isAnException(NameException),
-    isPrimitiveException: _isAnException(PrimitiveException),
-    isRisticValidationException: _isAnException(RisticValidationException),
-
     Error: _newError,
 
     evaluateTypes: _evaluateTypes,
@@ -63,10 +50,6 @@ function _errorMethod(fnError) {
     return ((...args) => new fnError(...args));
 }
 
-function _isAnException(FnException) {
-    return ((excp) => excp instanceof FnException);
-}
-
 let List, _defaultParserPoint;
 
 function _init(y) {
@@ -77,31 +60,39 @@ function _init(y) {
 }
 
 function YagaException(e, msg) {
-    _setErrorDetails(this, e, msg);
+    _setErrorDetails(this, e, msg, YagaException);
     _captureStackTrace(this, module.exports.YagaException, msg);
     return (this);
 }
 _inheritErrorPrototype(YagaException, Error);
 
 function InternalException(msg) {
-    _setErrorDetails(this, undefined, msg);
+    _setErrorDetails(this, undefined, msg, InternalException);
     _captureStackTrace(this, module.exports.InternalException, msg);
     return (this);
 }
 _inheritErrorPrototype(InternalException, EvaluateException);
 
 function ParserException(src, msg, rsn) {
-    _setErrorDetails(this, src, msg);
+    _setErrorDetails(this, src, msg, ParserException);
     _captureStackTrace(this, module.exports.ParserException, msg);
     this.reason = rsn ? rsn : 'PARSER';
     return (this);
 }
 _inheritErrorPrototype(ParserException, YagaException);
 
+function DictionaryException(e, msg) {
+    _setErrorDetails(this, e, msg, DictionaryException);
+    _captureStackTrace(this, module.exports.DictionaryException, msg);
+    return (this);
+}
+_inheritErrorPrototype(DictionaryException, YagaException);
+
+
 
 
 function BinderException(ctxt, msg) {
-    _setErrorDetails(this, ctxt.element(), msg);
+    _setErrorDetails(this, ctxt.element(), msg, BinderException);
     _captureStackTrace(this, module.exports.BinderException, msg);
     this.context = () => ctxt;
     return (this);
@@ -110,7 +101,7 @@ _inheritErrorPrototype(BinderException, YagaException);
 
 function BindException(ctxt) {
     let _msg = 'Bind Exception';
-    _setErrorDetails(this, ctxt.element(), _msg);
+    _setErrorDetails(this, ctxt.element(), _msg, BindException);
     _captureStackTrace(this, module.exports.BinderException, _msg);
     this.context = () => ctxt;
     return (this);
@@ -119,7 +110,7 @@ _inheritErrorPrototype(BinderException, YagaException);
 
 function CastException(e, prot) {
     let msg = `${e.typeName} cannot be cast to ${prot.typeName}`;
-    _setErrorDetails(this, e, msg);
+    _setErrorDetails(this, e, msg, CastException);
     _captureStackTrace(this, module.exports.CastException, msg);
     this.prot = () => prot;
     return (this);
@@ -135,7 +126,7 @@ function EvaluateException(evaluateType, e, msg) {
         msg = e;
         e = Lists.nil();
     }
-    _setErrorDetails(this, e, msg);
+    _setErrorDetails(this, e, msg, EvaluateException);
     _captureStackTrace(this, module.exports.EvaluateException, msg);
     this.evaluateType = () => evaluateType;
     return (this);
@@ -143,7 +134,7 @@ function EvaluateException(evaluateType, e, msg) {
 _inheritErrorPrototype(EvaluateException, YagaException);
 
 function FrameException(v, msg) {
-    _setErrorDetails(this, v, msg);
+    _setErrorDetails(this, v, msg, FrameException);
     _captureStackTrace(this, module.exports.FrameException, msg);
     this.variable = () => v;
     return (this);
@@ -151,7 +142,7 @@ function FrameException(v, msg) {
 _inheritErrorPrototype(FrameException, YagaException);
 
 function ReadFrameException(v, msg) {
-    _setErrorDetails(this, v, msg);
+    _setErrorDetails(this, v, msg, ReadFrameException);
     _captureStackTrace(this, module.exports.ReadFrameException, msg);
     this.variable = () => v;
     return (this);
@@ -159,7 +150,7 @@ function ReadFrameException(v, msg) {
 _inheritErrorPrototype(ReadFrameException, FrameException);
 
 function WriteFrameException(v, val, msg) {
-    _setErrorDetails(this, v, msg);
+    _setErrorDetails(this, v, msg, WriteFrameException);
     _captureStackTrace(this, module.exports.WriteFrameException, msg);
     this.variable = () => v;
     this.value = () => val;
@@ -168,14 +159,14 @@ function WriteFrameException(v, val, msg) {
 _inheritErrorPrototype(WriteFrameException, FrameException);
 
 function NameException(e, msg) {
-    _setErrorDetails(this, e, msg);
+    _setErrorDetails(this, e, msg, NameException);
     _captureStackTrace(this, module.exports.NameException, msg);
     return (this);
 }
 _inheritErrorPrototype(NameException, YagaException);
 
 function PrimitiveException(e, msg) {
-    _setErrorDetails(this, e, msg);
+    _setErrorDetails(this, e, msg, PrimitiveException);
     _captureStackTrace(this, module.exports.PrimitiveException, msg);
     this.evaluateType = () => _evaluateTypes.PRIMITIVE;
     return (this);
@@ -208,7 +199,7 @@ function RisticValidationException() {
     if (typeof _errors === 'string') {
         _errors = [_newError(_source, _errors)];
     }
-    _setErrorDetails(this, _source, _msg);
+    _setErrorDetails(this, _source, _msg, RisticValidationException);
     _captureStackTrace(this, module.exports.RisticValidationException, _msg);
     this.ristic = () => _ristic;
     this.element = function () {
@@ -222,45 +213,35 @@ function RisticValidationException() {
 }
 _inheritErrorPrototype(RisticValidationException, YagaException);
 
-/*
- *   _newError(msg)
- *   _newError(element, msg)
- *   _newError(msg, point)
- */
-function _newError() {
-    let msg, e, point;
-    if (arguments.length == 1) {
+
+function _newError(e, msg, attach) {
+    let point;
+    if (e.isaParserPoint) {
+        point = e;
         e = List.nil();
-        msg = arguments[0];
-        point = e.parserPoint;
     } else {
-        if (typeof arguments[0] === 'string') {
-            e = List.nil();
-            msg = arguments[0];
-            point = arguments[1];
-        } else {
-            e = arguments[0];
-            msg = arguments[1];
-            point = e.parserPoint;
-        }
+        point = yaga.getParserPoint(e);
     }
     return {
         element: e,
+        parserPoint: point,
         message: msg,
+        attachment: attach,
         formattedMessage: () => `${point.format()} - ${msg}`
     }
 }
 
-function _setErrorDetails(that, src, msg) {
+function _setErrorDetails(that, src, msg, fnError) {
     that.message = msg;
+    that[`isa${fnError.name}`] = true;
     if (!src) {
         that.parserPoint = _defaultParserPoint;
         that.element = yaga.List.nil();
-    } else if (src.isParserPoint) {
+    } else if (src.isaParserPoint) {
         that.parserPoint = src;
         that.element = yaga.List.nil();
     } else {
-        that.parserPoint = src.parserPoint;
+        that.parserPoint = yaga.getParserPoint(src);
         that.element = src;
     }
 }
