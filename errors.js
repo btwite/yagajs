@@ -25,10 +25,10 @@ module.exports = {
     InternalException: _errorMethod(InternalException),
     ParserException: _errorMethod(ParserException),
     DictionaryException: _errorMethod(DictionaryException),
+    BindException: _errorMethod(BindException),
 
 
     BinderException: _errorMethod(BinderException),
-    BindException: _errorMethod(BindException),
     CastException: _errorMethod(CastException),
     EvaluateException: _errorMethod(EvaluateException),
     FrameException: _errorMethod(FrameException),
@@ -88,21 +88,18 @@ function DictionaryException(e, msg) {
 }
 _inheritErrorPrototype(DictionaryException, YagaException);
 
+function BindException(e, msg) {
+    _setErrorDetails(this, e, msg, BindException);
+    _captureStackTrace(this, module.exports.BindException, msg);
+    return (this);
+}
+_inheritErrorPrototype(BindException, YagaException);
 
 
 
 function BinderException(ctxt, msg) {
     _setErrorDetails(this, ctxt.element(), msg, BinderException);
     _captureStackTrace(this, module.exports.BinderException, msg);
-    this.context = () => ctxt;
-    return (this);
-}
-_inheritErrorPrototype(BinderException, YagaException);
-
-function BindException(ctxt) {
-    let _msg = 'Bind Exception';
-    _setErrorDetails(this, ctxt.element(), _msg, BindException);
-    _captureStackTrace(this, module.exports.BinderException, _msg);
     this.context = () => ctxt;
     return (this);
 }
@@ -216,11 +213,11 @@ _inheritErrorPrototype(RisticValidationException, YagaException);
 
 function _newError(e, msg, attach) {
     let point;
-    if (e.isaParserPoint) {
+    if (!e || !e.isaParserPoint) {
+        point = yaga.getParserPoint(e);
+    } else {
         point = e;
         e = List.nil();
-    } else {
-        point = yaga.getParserPoint(e);
     }
     return {
         element: e,

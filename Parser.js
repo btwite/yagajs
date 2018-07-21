@@ -7,6 +7,7 @@
 
 const ENDOFINPUT = 'ENDOFINPUT';
 const ENDOFEXPRESSION = 'ENDOFEXPRESSION';
+const ENDOFBLOCK = 'ENDOFBLOCK';
 
 var yaga, _parser, _parserPoint, _defParserPoint;
 module.exports = {
@@ -236,13 +237,17 @@ function _nextExpression(parser) {
     if (ch == '') return (null);
 
     switch (ch) {
+        case '}':
         case ')':
             if (parser._lvlExpr.length == 0)
-                throw yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression");
-            parser._lvlExpr.pop();
+                throw yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression or block");
+            if (parser._lvlExpr.pop() != ch)
+                throw new ParserException(ParserException.ErrorType.BRACKETS, `Mismatching brackets. Expecting '${ch}'`);
             return (null); // End of expression detected.
         case '(':
             return (_parseExpression(parser));
+        case '{':
+            return (_parseBlock(parser));
         case '\'':
             return (_parseQuotedElement(parser));
         case '`':
@@ -276,17 +281,28 @@ function _nextExpression(parser) {
 }
 
 function _parseExpression(parser) {
+    return (__parseExpressions(parser, ')', () => {
+        throw ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION)
+    }));
+}
+
+function _parseBlock(parser) {
+    let list = __parseExpressions(parser, '}', () => {
+        throw ParserException(parser._lastParserPoint, "Missing end of block", ENDOFBLOCK)
+    });
+    return (yaga.Function.Block.new(list, list.parserPoint));
+}
+
+function __parseExpressions(parser, bracket, fnErr) {
     let lvlExpr = parser._lvlExpr.length;
-    parser._lvlExpr.push(parser);
+    parser._lvlExpr.push(bracket);
     let point = _newParentPoint(parser);
     let e, list = [];
 
     while ((e = _nextExpression(parser)) != null) {
         list.push(e);
     }
-    if (lvlExpr != parser._lvlExpr.length) {
-        throw ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION);
-    }
+    if (lvlExpr != parser._lvlExpr.length) fnErr();
     let eList = list.length == 0 ? yaga.List.nil(point) : yaga.List.new(list, point);
     _popParentPoint(parser);
     return (eList);
@@ -534,7 +550,7 @@ function _readToken(parser) {
 
 function _readTokenChar(parser) {
     let ch;
-    if (!_isWhitespace(ch = parser._readChar()) && ch != ')' && ch != '(')
+    if (!_isWhitespace(ch = parser._readChar()) && !'(){}'.includes(ch))
         return (ch);
     parser._pushbackChar();
     return (undefined);

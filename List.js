@@ -10,6 +10,7 @@ var yaga, _list, _nil;
 
 module.exports = {
 	new: _newList,
+	newInsertable: _newInsertableList,
 	nil: _newNil,
 	prototype: _list,
 	Initialise(y) {
@@ -24,11 +25,20 @@ module.exports = {
 };
 Object.freeze(module.exports);
 
-function _newList(arr, point) {
+function _newList(arr, point, refList) {
 	if (arr.length == 0) return (point ? _newNil(point) : _nil);
 	let list = Object.create(_list);
 	list.elements = list.value = arr;
+	list.length = arr.length;
+	list.isEmpty = false;
 	if (point) list.parserPoint = point;
+	if (refList) list.referenceList = refList;
+	return (list);
+}
+
+function _newInsertableList(arr, point) {
+	let list = _newList(arr, point);
+	list.isInsertable = true;
 	return (list);
 }
 
@@ -52,50 +62,62 @@ _list = {
 	isQuasiQuoted: false,
 	isQuasiOverride: false,
 	isQuasiInjection: false,
-	isEmpty() {
-		return (this.elements.length == 0);
-	},
+	isEmpty: true,
 	elements: undefined,
+	length: 0,
 	value: undefined,
+	referenceList: undefined, // Can be assigned to handle printer operations
 	leadSyntax: '(',
 	trailSyntax: ')',
 
-	bind(yi) {
-		/* Add code here */
-	},
+	bind: _bindList,
 	evaluate(yi) {
 		return (this);
 	},
 
-	headElement() {
-		return (this.elements().head());
-	},
-	tailElement() {
-		return (this.elements().end());
-	},
-
-	headSubList() {
-		return (yc.Lists.newData(elements().front()));
-	},
-	tailSubList() {
-		return (yc.Lists.newData(elements().tail()));
-	},
-
-	appendList(e) {
-		return (yc.Lists.newData(elements().append(e), this._point));
-	},
-
 	print(printer) {
+		let list = this.referenceList || this;
 		printer
-			.printLead(this.leadSyntax)
+			.printLead(list.leadSyntax)
 			.increaseIndent(2);
-		this.elements.forEach((e) => printer.printExpression(e));
+		list.elements.forEach((e) => printer.printExpression(e));
 		printer
 			.decreaseIndent(2)
-			.printTrail(this.trailSyntax);
+			.printTrail(list.trailSyntax);
 	},
 }
 
+function _bindList(yi) {
+	let isCallable, arr = [],
+		es = this.elements;
+	if (es.length == 0) return (this);
+	let head = yaga.bindValue(yi, es[0]);
+	if ((isCallable = yaga.isCallable(head)) && yaga.isaMacro(head)) {
+		head = head.evaluate(yi); // Setup the context for the macro call
+		head = head.call(yi, this); // Call will take the context and instaniate
+		if (yaga.isaList(head) && !head.isInsertable) {
+			return (_bindList.call(head, yi));
+		}
+		return (head);
+	}
+	if (!isCallable) throw yaga.errors.BindException(this, 'Head element must be a function or macro');
+	arr.push(head);
+	_bindElements(yi, arr, es, 1);
+	return (_newList(arr, this.parserPoint));
+}
+
+function _bindElements(yi, arr, es, iStart) {
+	for (let i = iStart; i < es.length; i++) {
+		let e = es[i];
+		if (!yaga.isaYagaType(e)) {
+			arr.push(e);
+			continue;
+		}
+		e = e.bind(yi);
+		if (e.isInsertable) _bindElements(yi, arr, e.elements, 0);
+		else arr.push(e);
+	}
+}
 
 function _asQuoted() {
 	let list = Object.create(this);

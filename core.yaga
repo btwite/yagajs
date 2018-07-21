@@ -1,7 +1,16 @@
-((.jsPrim jsDefine) define (.jsPrim jsDefine))
-(define function (.jsPrim jsFunction))
-(define macro (.jsPrim jsMacro))
-
+((.jsPrim macro jsDefine) define (.jsPrim macro jsDefine))		// Call internal js primitive loader to set up define function
+(define function (.jsPrim macro jsFunction))
+(define macro (.jsPrim macro jsMacro))
+(define parms (.jsPrim macro jsParms))
+(define let (.jsPrim macro jsLet))
+(define return (.jsPrim function jsReturn))
+(define break (.jsPrim function jsBreak))
+(define = (.jsPrim function jsSet))
+(define List (function (...args) (return args)))
+(define head (.jsPrim function jsHead))
+(define end (.jsPrim function jsEnd))
+(define front (.jsPrim function jsFront))
+(define tail (.jsPrim function jsTail))
 
 /*
 	Core and Yaga definitions that must be loaded at startup.

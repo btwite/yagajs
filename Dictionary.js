@@ -53,7 +53,7 @@ function _getCoreDictionary(yi, optPath) {
 	// loading JavaScript primitive functions for handling low level operations.
 	let jfn = yi._options.jsPrimLoader;
 	if (!jfn) jfn = yaga.Primitives.jsPrimLoader;
-	_core.define('.jsPrim', yaga.Functions.Macro.jsNew(yaga.List.nil(), jfn));
+	_core.define('.jsPrim', yaga.Function.Macro.jsNew(yaga.List.nil(), jfn));
 	_evaluateDictionary(yi, _core, path);
 	return (_core);
 }

@@ -33,12 +33,8 @@ var _wrapper = {
     asQuasiOverride: _returnThis,
     asQuasiInjection: _returnThis,
     value: undefined,
-    bind(yi) {
-        /* Add code here */
-    },
-    evaluate(yi) {
-        return (this);
-    },
+    bind: _returnThis,
+    evaluate: _returnThis,
     print(printer) {
         printer.printElement(String(this.value));
     }

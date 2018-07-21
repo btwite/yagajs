@@ -13,6 +13,15 @@ let _exports = {
     },
     resolveFileName: _resolveFileName,
     getParserPoint: _getParserPoint,
+    bindValue: _bindValue,
+    evaluateValue: _evaluateValue,
+    isaYagaType: _isaYagaType,
+    isCallable: _isCallable,
+    isaMacro: _isaMacro,
+    isaFunction: _isaFunction,
+    isaList: _isaList,
+    assignParameters: _assignParameters,
+    newVariable: _newVariable,
 };
 module.exports = yaga = _exports;
 
@@ -24,7 +33,7 @@ _exports.errors = require('./errors');
 _exports.List = require('./List');
 _exports.Wrapper = require('./Wrapper');
 _exports.Primitives = require('./Primitives');
-_exports.Functions = require('./Functions');
+_exports.Function = require('./Function');
 
 Object.freeze(_exports);
 
@@ -64,7 +73,40 @@ var _instance = Object.assign(Object.create(_exports), {
     typeName: 'YagaInstance',
     dictionary: undefined,
     evaluateDictionary: _evaluateDictionary,
+    bind: _bind,
+    binder: {
+        closures: undefined,
+        curDesc: undefined,
+        curBlock: undefined,
+        curIdx: undefined,
+        pushClosure(fnType) {
+            let varMap = Object.create(this.curDesc.varMap);
+            let desc = {
+                fnType: fnType,
+                varMap: varMap
+            };
+            this.closures.push(desc);
+            this.curDesc = desc;
+            if (fnType.isaBlock) this.curBlock = fnType;
+            this.curIdx++;
+            return (varMap);
+        },
+        popClosure() {
+            let closures = this.closures;
+            closures.pop();
+            let desc = closures[closures.length - 1];
+            if (desc.fnType.isaBlock) this.curBlock = desc.fnType;
+            this.curDesc = desc;
+            this.curIdx--;
+        },
+    },
+    context: {
+        closures: undefined,
+        curClosure: undefined,
+        argLists: undefined,
+    },
     addError: _addError,
+    addException: _addException,
     printErrors: _printErrors,
     clearErrors: _clearErrors,
     hasErrors: _hasErrors,
@@ -73,6 +115,114 @@ var _instance = Object.assign(Object.create(_exports), {
     _errors: [],
     print: _print,
 });
+
+function _bind(exprs) {
+    // Can get one or more expressions to bind.
+    // Anwsers the result of the bind(s).
+    let binds;
+    if (Array.isArray(exprs)) {
+        let binds = [];
+        exprs.forEach((expr) => {
+            binds.push(_bindExpr(this, expr));
+        });
+    } else {
+        binds = _bindExpr(this, exprs);
+    }
+    _resetBinder(yi);
+    return (binds);
+}
+
+function _bindExpr(yi, expr) {
+    if (!expr || !expr.isaYagaType) return (expr);
+    _resetBinder(yi);
+    try {
+        return (expr.bind(yi));
+    } catch (err) {
+        this.addException(expr, err);
+    }
+    return (undefined);
+}
+
+function _bindValue(yi, e) {
+    if (e && e.isYagaType) return (e.bind(yi));
+    return (e);
+}
+
+function _assignParameters(parms) {
+    if (!parms || !Array.isArray(parms) || parms.length == 0) return;
+    let binder = yi.binder;
+    if (!binder.closures || binder.closures.length == 0) {
+        throw yaga.errors.YagaException(parms[0], 'Binder is not active');
+    }
+    let fnType = binder.curDesc && binder.curDesc.fnType;
+    if (!fnType || !fnType.isaBlock) {
+        throw yaga.errors.BindException(parms[0], 'Parameters can only be assigned to a block');
+    }
+    if (fnType.parms) {
+        throw yaga.errors.BindException(parms[0], 'Parameters have already been assigned to the block');
+    }
+    if (!fnType.isaBoundBlock) {
+        throw yaga.errors.InternalException('Attempting to assign parameters to unbound block');
+    }
+    if (fnType.scope.variables.length > 0) {
+        throw yaga.errors.BindException(parms[0], 'Parameters must be declared prior to variables');
+    }
+    fnType.assignParameters(this, parms);
+}
+
+function _newVariable(sym) {
+    let binder = yi.binder;
+    if (!binder.closures || binder.closures.length == 0) {
+        throw yaga.errors.YagaException(sym, 'Binder is not active');
+    }
+    let fnType = binder.curDesc && binder.curDesc.fnType;
+    if (!fnType.isaBoundClosure) {
+        throw yaga.errors.BindException(sym, 'Variable must be declared within a function or block');
+    }
+    return (yaga.Symbol.Variable.new(fnType, sym));
+}
+
+function _evaluateValue(yi, e) {
+    if (e && e.isYagaType) return (e.evaluate(yi));
+    return (e);
+}
+
+function _isaYagaType(e) {
+    return (e && e.isYagaType);
+}
+
+function _isCallable(e) {
+    return ((_isaYagaType(e) && e.isaClosure) || (typeof head === 'function'));
+}
+
+function _isaMacro(e) {
+    return ((_isaYagaType(e) && e.isaMacro));
+}
+
+function _isaFunction(e) {
+    return ((_isaYagaType(e) && e.isaFunction));
+}
+
+function _isaList(e) {
+    return ((_isaYagaType(e) && e.isaList));
+}
+
+function _resetBinder(yi) {
+    let binder = yi.binder;
+    binder.closures = [];
+    binder.curBlock = undefined;
+    binder.curDesc = {
+        varMap: null
+    };
+    binder.curIdx = -1;
+}
+
+function _resetContext(yi) {
+    let ctxt = yi.context;
+    ctxt.closures = [];
+    ctxt.curClosure = undefined;
+    ctxt.argLists = undefined;
+}
 
 function _evaluateDictionary(dict, path) {
     let curDict = this.dictionary;
@@ -85,6 +235,7 @@ function _evaluateDictionary(dict, path) {
 }
 
 function _getParserPoint(e) {
+    if (e === undefined || e === null) return (yaga.Parser.defaultParserPoint);
     if (!e.isaYagaType && !e.parserPoint) return (yaga.Parser.defaultParserPoint);
     if (e.isaParserPoint) return (e);
     return (e.parserPoint);
@@ -171,6 +322,11 @@ function _print(stream, ...set) {
 function _addError(e, msg, attach) {
     this._errors.push(yaga.errors.Error(e, msg, attach))
     return (this);
+}
+
+function _addException(e, excp) {
+    let msg = `${excp.name}: ${excp.message}`;
+    this._errors.push(yaga.errors.Error(e, msg, excp))
 }
 
 function _clearErrors() {
