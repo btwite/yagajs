@@ -15,13 +15,19 @@ module.exports = {
     jsMacro: _jsMacro,
     jsParms: _jsParms,
     jsLet: _jsLet,
+    jsAdd: _jsAdd,
+    jsDictName: _jsDictName,
+    jsDictDependsOn: _jsDictDependsOn,
     Initialise: (y) => yaga = yaga ? yaga : y,
 };
 Object.freeze(module.exports);
 
 function _jsPrimLoader(yi, list) {
-    let arr = list.elements;
-    let fn = arr.length == 3 ? this[arr[2].value] : require(arr[2].value)[arr[3].value];
+    let r, arr = list.elements;
+    let sReq = 'yaga';
+    let fn = arr.length == 3 ? (r = this)[arr[2].value] : (r = require(sReq = arr[2].value))[arr[3].value];
+    if (typeof fn !== 'function') _throw(list, `Function '${sReq}.${arr[arr.length-1].value}' could not be found`);
+    fn = fn.bind(r);
     if (arr[1].value == 'macro')
         return (yaga.Function.Macro.jsNew(list, fn));
     return (yaga.Function.jsNew(list, fn))
@@ -30,8 +36,10 @@ function _jsPrimLoader(yi, list) {
 function _jsDefine(yi, list) {
     let arr = list.elements;
     let val = arr[2];
+    //    console.log(arr[1].value);
     if (yaga.isaYagaType(val)) val = val.bind(yi);
     yi.dictionary.define(arr[1], val);
+    if (yaga.isaYagaType(val)) val = val.asQuoted(); // Must quote as being a macro the value will be rebound.
     return (yaga.Symbol.bind(arr[1], val));
 }
 
@@ -53,6 +61,40 @@ function _jsLet(yi, list) {
     }
     if (arr1.length == 2) arr1 = arr1[1]; // Only need a single assignment
     return (yaga.List.new(arr1, list.parserPoint, list));
+}
+
+function _jsAdd(yi, list) {
+    let val, arr = list.elements;
+    if (arr.length < 2) _throw(e, 'Addition requires 2 or more arguments');
+    if (typeof (val = arr[0]) !== 'string' && typeof val !== 'number') throw (list, `'${val}' invalid for addition`);
+    for (let i = 1; i < arr.length; i++) {
+        let e = arr[i];
+        if (typeof e !== 'string' && typeof e !== 'number') throw (list, `'${e}' invalid for addition`);
+        val += e;
+    }
+    return (val);
+}
+
+function _jsDictName(yi, list) {
+    let arr = list.elements;
+    if (arr.length != 2 || !yaga.isaYagaType(arr[1]) || !arr[1].isaSymbol) _throw(e, 'Invalid name for a Dictionary');
+    yi.setDictName(arr[1].value);
+}
+
+function _jsDictDependsOn(yi, list) {
+    let name, mod, arr = list.elements;
+    if (arr.length < 2 || arr.length > 3) _throw(e, 'Invalid dependency for a Dictionary');
+    name = arr[arr.length - 1];
+    if (arr.length == 3) mod = arr[2];
+    if (typeof name !== 'string') {
+        if (!yaga.isaYagaType(name) || !name.isaSymbol) _throw(e, 'Invalid dictionary name');
+        name = name.value;
+    }
+    if (mod !== undefined && typeof mod !== 'string') {
+        if (!yaga.isaYagaType(name) || !name.isaSymbol) _throw(e, 'Invalid dictionary module name');
+        mod = mod.value;
+    }
+    yi.setDictDependsOn(name, mod);
 }
 
 function _jsFunction(yi, list) {

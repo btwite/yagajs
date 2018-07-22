@@ -39,6 +39,24 @@ function _newList(arr, point, refList) {
 function _newInsertableList(arr, point) {
 	let list = _newList(arr, point);
 	list.isInsertable = true;
+	list.bind = _invalidOperation;
+	list.evaluate = _invalidOperation;
+	return (list);
+}
+
+function _invalidOperation(yi) {
+	throw yaga.errors.InternalException('Invalid operation')
+}
+
+function _newBoundList(arr, point) {
+	if (!Array.isArray(arr)) return (arr); // This can happen if macros transform a list into a value.
+	let list = _newList(arr, point);
+	list.typeName = 'BoundList';
+	list.isaBoundList = true;
+	list.bind = _returnThis;
+	list.evaluate = function (yi) {
+		return (_call(yi, this.elements, this.parserPoint));
+	};
 	return (list);
 }
 
@@ -70,10 +88,10 @@ _list = {
 	leadSyntax: '(',
 	trailSyntax: ')',
 
-	bind: _bindList,
-	evaluate(yi) {
-		return (this);
+	bind(yi) {
+		return (_newBoundList(_bindList(yi, this), this.parserPoint));
 	},
+	evaluate: _returnThis,
 
 	print(printer) {
 		let list = this.referenceList || this;
@@ -87,36 +105,48 @@ _list = {
 	},
 }
 
-function _bindList(yi) {
+function _call(yi, es, point) {
+	return (es[0].call(yi, _newList(_evaluateArray(yi, es.splice(1)), point)));
+}
+
+
+function _bindList(yi, list) {
 	let isCallable, arr = [],
-		es = this.elements;
+		es = list.elements;
 	if (es.length == 0) return (this);
-	let head = yaga.bindValue(yi, es[0]);
+	let head = yi.bindValue(es[0]);
 	if ((isCallable = yaga.isCallable(head)) && yaga.isaMacro(head)) {
 		head = head.evaluate(yi); // Setup the context for the macro call
-		head = head.call(yi, this); // Call will take the context and instaniate
-		if (yaga.isaList(head) && !head.isInsertable) {
-			return (_bindList.call(head, yi));
-		}
-		return (head);
+		head = head.call(yi, list); // Call will take the context and instaniate
+		if (!yaga.isaYagaType(head) || (yaga.isaList(head) && head.isInsertable)) return (head);
+		return (head.bind(yi));
 	}
 	if (!isCallable) throw yaga.errors.BindException(this, 'Head element must be a function or macro');
 	arr.push(head);
-	_bindElements(yi, arr, es, 1);
-	return (_newList(arr, this.parserPoint));
+	return (_bindElements(yi, arr, es, 1));
 }
 
 function _bindElements(yi, arr, es, iStart) {
 	for (let i = iStart; i < es.length; i++) {
-		let e = es[i];
-		if (!yaga.isaYagaType(e)) {
-			arr.push(e);
-			continue;
-		}
-		e = e.bind(yi);
-		if (e.isInsertable) _bindElements(yi, arr, e.elements, 0);
+		let e = yi.bindValue(es[i]);
+		if (yaga.isaYagaType(e) && e.isInsertable) _bindElements(yi, arr, e.elements, 0);
 		else arr.push(e);
 	}
+	return (arr);
+}
+
+function _evaluateArray(yi, es) {
+	let arr = [];
+	es.forEach(e => {
+		if (!yaga.isaYagaType(e)) {
+			arr.push(e);
+			return;
+		}
+		e = e.evaluate(yi);
+		if (yaga.isaYagaType(e) && e.isInsertable) arr.concat(e.elements);
+		else arr.push(e);
+	});
+	return (arr);
 }
 
 function _asQuoted() {
@@ -124,12 +154,8 @@ function _asQuoted() {
 	list.typeName = 'QuotedList';
 	list.isQuoted = true;
 	list.leadSyntax = '\'(';
-	list.bind = function (yi) {
-		return (Object.getPrototypeOf(list));
-	};
-	list.evaluate = function (yi) {
-		throw new yaga.errors.InternalException("'evaluate' method unsupported for QuotedList");
-	}
+	list.bind = _returnPrototype;
+	list.evaluate = _returnThis;
 	return (list);
 }
 
@@ -139,12 +165,20 @@ function _asQuasiQuoted() {
 	list.isQuasiQuoted = true;
 	list.leadSyntax = '`(';
 	list.bind = function (yi) {
-		// More work required here
-		return (Object.getPrototypeOf(list));
+		let arr = [];
+		this.elements.forEach(e => {
+			if (yaga.isaYagaType(e) && e.isQuasiOverride) {
+				e = e.bind(yi);
+				if (yaga.isaYagaType(e) && e.isInsertable) {
+					arr.concat(e.elements);
+					return;
+				}
+			}
+			arr.push(e);
+		});
+		return (_newList(arr, this.parserPoint));
 	};
-	list.evaluate = function (yi) {
-		throw new yaga.errors.InternalException("'evaluate' method unsupported for QuasiQuotedList");
-	}
+	list.evaluate = _returnThis;
 	return (list);
 }
 
@@ -156,21 +190,37 @@ function _asQuasiOverride() {
 	list.isQuasiOverride = true;
 	list.leadSyntax = ',(';
 	list.bind = function (yi) {
-		return (Object.getPrototypeOf(this).bind(yi))
+		let e = Object.getPrototypeOf(this).bind(yi);
+		if (yaga.isaYagaType(e)) e = e.evaluate(yi);
+		return (e);
 	};
 	list.evaluate = function (yi) {
-		throw new yaga.errors.InternalException("'evaluate' method unsupported for QuasiOverrideList");
+		throw new yaga.errors.YagaException(this, "Misplaced quasi override");
 	}
 	return (list);
 }
 
 function _asQuasiInjection() {
-	let list = _asQuasiOverride();
+	let list = _asQuasiOverride.call(this);
 	list.typeName = 'QuasiInjectionList';
 	list.leadSyntax = ',@(';
 	list.isQuasiInjection = true;
 	list.bind = function (yi) {
-		return (Object.getPrototypeOf(this).bind(yi))
+		let e = Object.getPrototypeOf(this).bind(yi);
+		if (yaga.isaYagaType(e)) e = e.evaluate(yi);
+		if (yaga.isaYagaType(e) && e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
+		return (e);
 	};
+	list.evaluate = function (yi) {
+		throw new yaga.errors.YagaException(this, "Misplaced quasi injection");
+	}
 	return (list);
+}
+
+function _returnThis() {
+	return (this);
+}
+
+function _returnPrototype() {
+	return (Object.getPrototypeOf(this));
 }

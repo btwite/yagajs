@@ -98,7 +98,7 @@ function _bindFunction(yi) {
     let binder = yi.binder;
     binder.pushClosure(this);
     _bindParameters(yi, fn);
-    fn.expression = yaga.bindValue(fn.expression);
+    fn.expression = yi.bindValue(fn.expression);
     binder.popClosure();
     return (fn);
 }
@@ -112,8 +112,12 @@ function _bindClosure(yi, oClosure, ty) {
         parentClosure: binder.curDesc.fnType,
         idx: binder.curIdx,
         variables: [],
-        bind(yi) {
-            return (this);
+        bind: _returnThis,
+        evaluate(yi) {
+
+        },
+        call: {
+
         },
         addVariable(v) {
             _addToVarMap(v, binder.curDesc.varMap);
@@ -131,7 +135,7 @@ function _bindParameters(yi, fn) {
     fn.parms.forEach(parm => fn.addVariable(parm));
     // Can now bind the default values as we have access to all the parameter definitions
     fn.parms.forEach(parm => {
-        if (parm.defaultValue) parm.defaultValue = yaga.bindValue(yi, parm.defaultValue);
+        if (parm.defaultValue) parm.defaultValue = yi.bindValue(parm.defaultValue);
     });
     return (parms);
 }
@@ -149,7 +153,7 @@ _block = Object.assign(Object.create(_function), {
 
     bind: _bindBlock,
     evaluate(yi) {
-        return (this);
+
     },
     call(yi, args) {
 
@@ -166,7 +170,7 @@ function _bindBlock(yi) {
     let binder = yi.binder;
     binder.pushClosure(this);
     let stmts = [];
-    fn.expression.elements.forEach(stmt => stmts.push(yaga.bindValue(stmt)));
+    fn.expression.elements.forEach(stmt => stmts.push(yi.bindValue(stmt)));
     fn.expression = yaga.List.new(stmts, fn.expression.parserPoint);
     binder.popClosure();
     return (fn);
@@ -183,18 +187,13 @@ _jsFunction = Object.assign(Object.create(_function), {
     jfn: undefined,
     _list: undefined,
 
-    bind(yi) {
-        /* Add code here */
-    },
-    evaluate(yi) {
-        return (this);
-    },
+    bind: _returnThis,
+    evaluate: _returnThis,
     call(yi, args) {
-
+        return (this.jfn(yi, args));
     },
     print(printer) {
-        if (this.leadSyntax) printer.printLead(this.leadSyntax);
-        printer.printElement(this.value);
+        this._list.print(printer);
     }
 });
 

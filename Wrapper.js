@@ -34,7 +34,9 @@ var _wrapper = {
     asQuasiInjection: _returnThis,
     value: undefined,
     bind: _returnThis,
-    evaluate: _returnThis,
+    evaluate(yi) {
+        return (this.value);
+    },
     print(printer) {
         printer.printElement(String(this.value));
     }

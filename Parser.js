@@ -310,7 +310,7 @@ function __parseExpressions(parser, bracket, fnErr) {
 
 function _parseQuasiQuotedElement(parser) {
     let e = _nextExpression(parser);
-    if (typeof e === 'object' && e.isaYagaType)
+    if (yaga.isaYagaType(e))
         return (e.asQuasiQuoted());
     return (e);
 }
@@ -320,8 +320,8 @@ function _parseQuasiOverride(parser) {
     if (at === '@') parser._readChar();
     let e = _nextExpression(parser);
     if (e.isaYagaType) {
-        if (at === '@') return (e.asQuasiOverride());
-        else return (e.asQuasiInjection());
+        if (at === '@') return (e.asQuasiInjection());
+        else return (e.asQuasiOverride());
     }
     return (e);
 }

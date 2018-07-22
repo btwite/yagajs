@@ -59,9 +59,10 @@ function _init(y) {
     _defaultParserPoint = yaga.Parser.defaultParserPoint
 }
 
-function YagaException(e, msg) {
+function YagaException(e, msg, optErrors) {
     _setErrorDetails(this, e, msg, YagaException);
     _captureStackTrace(this, module.exports.YagaException, msg);
+    if (optErrors) this.errors = optErrors;
     return (this);
 }
 _inheritErrorPrototype(YagaException, Error);
@@ -71,7 +72,7 @@ function InternalException(msg) {
     _captureStackTrace(this, module.exports.InternalException, msg);
     return (this);
 }
-_inheritErrorPrototype(InternalException, EvaluateException);
+_inheritErrorPrototype(InternalException, YagaException);
 
 function ParserException(src, msg, rsn) {
     _setErrorDetails(this, src, msg, ParserException);
@@ -210,21 +211,27 @@ function RisticValidationException() {
 }
 _inheritErrorPrototype(RisticValidationException, YagaException);
 
-
 function _newError(e, msg, attach) {
     let point;
-    if (!e || !e.isaParserPoint) {
-        point = yaga.getParserPoint(e);
-    } else {
+    if (yaga.isaYagaType(e) && e.isaParserPoint) {
         point = e;
         e = List.nil();
+    } else {
+        point = yaga.getParserPoint(e);
     }
     return {
         element: e,
         parserPoint: point,
         message: msg,
         attachment: attach,
-        formattedMessage: () => `${point.format()} - ${msg}`
+        formattedMessage() {
+            if (yaga.isaYagaType(this.e) && e.typeName) {
+                return (`${point.format()}: ${e.typeName} - ${msg}`)
+            }
+            if (point === undefined)
+                return (`<None>[0,0] - ${msg}`);
+            return (`${point.format()} - ${msg}`);
+        }
     }
 }
 

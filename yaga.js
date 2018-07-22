@@ -13,7 +13,6 @@ let _exports = {
     },
     resolveFileName: _resolveFileName,
     getParserPoint: _getParserPoint,
-    bindValue: _bindValue,
     evaluateValue: _evaluateValue,
     isaYagaType: _isaYagaType,
     isCallable: _isCallable,
@@ -22,6 +21,7 @@ let _exports = {
     isaList: _isaList,
     assignParameters: _assignParameters,
     newVariable: _newVariable,
+    printErrors: _printErrors,
 };
 module.exports = yaga = _exports;
 
@@ -53,12 +53,16 @@ _runInitPhase('PostInitialise');
  * Options:
  *      yagaCorePath: Alternate file path for the core yaga definitions.
  *      jsPrimLoader: Alternate JavaScript primitive function loader.
+ *      dictionaryPath: Path of the dictionary script to load
  */
-function _newYagaInstance(optDictPath, options = {}) {
+function _newYagaInstance(options = {}) {
     let yi = Object.create(_instance);
     yi._options = options;
-    // ......
-    yi.dictionary = yaga.Dictionary.load(yi, optDictPath);
+    yi.dictionary = yaga.Dictionary.load(yi, options.dictionaryPath);
+    if (yi.hasErrors()) {
+        throw yaga.errors.YagaException(undefined, 'Dictionary load failed', yi._errors);
+    }
+    yi.isInitialised = true;
     return (yi);
 }
 
@@ -71,43 +75,26 @@ function _resolveFileName(sFile, optModule) {
 
 var _instance = Object.assign(Object.create(_exports), {
     typeName: 'YagaInstance',
+    isInitialised: false,
     dictionary: undefined,
     evaluateDictionary: _evaluateDictionary,
     bind: _bind,
+    bindValue: _bindValue,
+    evaluate: _evaluate,
+    printDictionaries: _printDictionaries,
+    setDictName: _setDictName,
+    setDictDependsOn: _setDictDependsOn,
     binder: {
         closures: undefined,
         curDesc: undefined,
         curBlock: undefined,
         curIdx: undefined,
-        pushClosure(fnType) {
-            let varMap = Object.create(this.curDesc.varMap);
-            let desc = {
-                fnType: fnType,
-                varMap: varMap
-            };
-            this.closures.push(desc);
-            this.curDesc = desc;
-            if (fnType.isaBlock) this.curBlock = fnType;
-            this.curIdx++;
-            return (varMap);
-        },
-        popClosure() {
-            let closures = this.closures;
-            closures.pop();
-            let desc = closures[closures.length - 1];
-            if (desc.fnType.isaBlock) this.curBlock = desc.fnType;
-            this.curDesc = desc;
-            this.curIdx--;
-        },
+        pushClosure: _pushClosure,
+        popClosure: _popClosure,
     },
-    context: {
-        closures: undefined,
-        curClosure: undefined,
-        argLists: undefined,
-    },
+    causedErrors: _causedErrors,
     addError: _addError,
     addException: _addException,
-    printErrors: _printErrors,
     clearErrors: _clearErrors,
     hasErrors: _hasErrors,
     _options: undefined,
@@ -115,37 +102,78 @@ var _instance = Object.assign(Object.create(_exports), {
     _errors: [],
     print: _print,
 });
+Object.defineProperty(_instance, 'printErrors', {
+    value(...args) {
+        _printErrors(this._errors, ...args);
+    }
+})
 
 function _bind(exprs) {
     // Can get one or more expressions to bind.
     // Anwsers the result of the bind(s).
-    let binds;
+    let binds = [],
+        fn = x => {
+            _resetBinder(this);
+            return (x.bind(this));
+        };
     if (Array.isArray(exprs)) {
-        let binds = [];
-        exprs.forEach((expr) => {
-            binds.push(_bindExpr(this, expr));
-        });
+        exprs.forEach(expr => binds.push(_doPhase(this, fn, expr)));
     } else {
-        binds = _bindExpr(this, exprs);
+        binds = _doPhase(this, fn, expr);
     }
-    _resetBinder(yi);
+    _resetBinder(this);
     return (binds);
 }
 
-function _bindExpr(yi, expr) {
-    if (!expr || !expr.isaYagaType) return (expr);
-    _resetBinder(yi);
+function _bindValue(e) {
+    if (_isaYagaType(e)) return (e.bind(this));
+    return (e);
+}
+
+function _evaluate(exprs) {
+    // Can get one or more expressions to evaluate.
+    // Anwsers the result of the evaluate(s).
+    let result = [],
+        fn = x => x.evaluate(this);
+    if (Array.isArray(exprs)) {
+        exprs.forEach(expr => result.push(_doPhase(this, fn, expr)));
+    } else {
+        result = _doPhase(this, fn, exprs);
+    }
+    return (result);
+}
+
+function _doPhase(yi, fn, expr) {
+    if (!_isaYagaType(expr)) return (expr);
     try {
-        return (expr.bind(yi));
+        return (fn(expr));
     } catch (err) {
-        this.addException(expr, err);
+        yi.addException(expr, err);
     }
     return (undefined);
 }
 
-function _bindValue(yi, e) {
-    if (e && e.isYagaType) return (e.bind(yi));
-    return (e);
+
+function _pushClosure(fnType) {
+    let varMap = Object.create(this.curDesc.varMap);
+    let desc = {
+        fnType: fnType,
+        varMap: varMap
+    };
+    this.closures.push(desc);
+    this.curDesc = desc;
+    if (fnType.isaBlock) this.curBlock = fnType;
+    this.curIdx++;
+    return (varMap);
+}
+
+function _popClosure() {
+    let closures = this.closures;
+    closures.pop();
+    let desc = closures[closures.length - 1];
+    if (desc.fnType.isaBlock) this.curBlock = desc.fnType;
+    this.curDesc = desc;
+    this.curIdx--;
 }
 
 function _assignParameters(parms) {
@@ -182,13 +210,13 @@ function _newVariable(sym) {
     return (yaga.Symbol.Variable.new(fnType, sym));
 }
 
-function _evaluateValue(yi, e) {
-    if (e && e.isYagaType) return (e.evaluate(yi));
-    return (e);
+function _isaYagaType(e) {
+    return (e && e.isaYagaType);
 }
 
-function _isaYagaType(e) {
-    return (e && e.isYagaType);
+function _evaluateValue(yi, e) {
+    if (_isaYagaType(e)) return (e.evaluate(yi));
+    return (e);
 }
 
 function _isCallable(e) {
@@ -227,11 +255,39 @@ function _resetContext(yi) {
 function _evaluateDictionary(dict, path) {
     let curDict = this.dictionary;
     this.dictionary = dict;
-
-    console.log(`Evaluate dictionary '${path}'`);
-    // .....
+    try {
+        let exprs;
+        if (this.causedErrors(() => exprs = yaga.Parser.new(this).parseFile(path))) {
+            throw yaga.errors.YagaException(undefined, `Parse failed for '${path}'`, this._errors);
+        }
+        if (this.causedErrors(() => exprs = this.bind(exprs))) {
+            throw yaga.errors.YagaException(undefined, `Parse failed for '${path}'`, this._errors);
+        }
+        this.evaluate(exprs);
+    } catch (err) {
+        this.addException(undefined, err);
+    }
     this.dictionary = curDict;
-    return (undefined);
+}
+
+function _setDictName(sName) {
+    if (this.isInitialised || this.dictionary.name) {
+        throw yaga.errors.YagaException(undefined, `Dictionary name cannot be set`);
+    }
+    this.dictionary.setName(this, sName);
+}
+
+function _setDictDependsOn(sPath, sMod) {
+    if (this.isInitialised || this.dictionary.parent !== yaga.Dictionary.core()) {
+        throw yaga.errors.YagaException(undefined, `Dictionary dependency cannot be set`);
+    }
+    this.dictionary.setDependsOn(this, sPath, sMod);
+}
+
+function _printDictionaries(stream) {
+    if (!stream) stream = process.stdout;
+    stream.write('---------------- Loaded Dictionaries ----------------\n');
+    this.dictionary.printAll(this, stream);
 }
 
 function _getParserPoint(e) {
@@ -241,20 +297,20 @@ function _getParserPoint(e) {
     return (e.parserPoint);
 }
 
-function _print(stream, ...set) {
-    if (set.length == 0) return;
+function _print(exprs, stream, initIndent = 0) {
+    if (!stream) stream = process.stdout;
     let indent, length, extra,
         maxIndent = ' '.repeat(32);
     let printer = {
         printExpression(expr) {
-            if (expr.isaYagaType) expr.print(this);
+            if (_isaYagaType(expr)) expr.print(this);
             else this.printElement(String(expr));
             return (this);
         },
         printChars(chs) {
             if (length + chs.length > 80) {
                 stream.write('\n');
-                length = 0;
+                length = initIndent;
                 if (indent > 0) {
                     let s = indent > maxIndent.length ? maxIndent : maxIndent.substr(0, indent);
                     length += s.length;
@@ -290,8 +346,8 @@ function _print(stream, ...set) {
             return (this);
         },
         reset() {
-            indent = 0;
-            length = 0;
+            indent = initIndent;
+            length = initIndent;
             extra = '';
             return (this);
         }
@@ -307,16 +363,19 @@ function _print(stream, ...set) {
     };
 
     let nl = noNewline;
-    set.forEach((exprs) => {
+    if (!Array.isArray(exprs)) exprs = [exprs];
+    exprs.forEach((xs) => {
         nl = nl();
         let nl1 = noNewline;
-        exprs.forEach((expr) => {
+        if (!Array.isArray(xs)) xs = [xs];
+        xs.forEach((expr) => {
             nl1 = nl1();
             printer
                 .reset()
                 .printExpression(expr);
         });
     });
+    stream.write('\n');
 }
 
 function _addError(e, msg, attach) {
@@ -325,6 +384,7 @@ function _addError(e, msg, attach) {
 }
 
 function _addException(e, excp) {
+    if (e === undefined && excp) e = excp.element;
     let msg = `${excp.name}: ${excp.message}`;
     this._errors.push(yaga.errors.Error(e, msg, excp))
 }
@@ -338,9 +398,16 @@ function _hasErrors() {
     return (this._errors.length > 0);
 }
 
-function _printErrors(stream) {
+function _causedErrors(fn) {
+    let errCount = this._errors.length;
+    fn();
+    return (errCount < this._errors.length);
+}
+
+function _printErrors(errors, stream) {
+    if (!Array.isArray(errors)) return;
     if (!stream) stream = process.stdout;
-    this._errors.forEach((err) => {
+    errors.forEach((err) => {
         stream.write(`=> ${err.formattedMessage()}\n`);
         let attach = err.attachment;
         if (attach) {
@@ -349,6 +416,7 @@ function _printErrors(stream) {
             } else {
                 stream.write(`    ${String(attach)}`);
             }
+            stream.write('\n\n');
         }
     });
 }

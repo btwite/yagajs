@@ -6,6 +6,7 @@
 
 'use strict';
 
+const Operators = '`~!@#$%^&*_-+=|\:;"\'<,>.?/';
 var yaga;
 
 module.exports = {
@@ -30,9 +31,9 @@ module.exports = {
         _symbol.parserPoint = yaga.Parser.defaultParserPoint;
         this.List = _newSymbol('List');
         this.opAssign = _newSymbol('=');
+        Object.freeze(this);
     },
 };
-Object.freeze(module.exports);
 
 function _newSymbol(symName, optPoint) {
     if (typeof symName !== 'string') symName = symName.toString(); // Handle StringBuilder case.
@@ -65,7 +66,7 @@ function _newParameter(sym, defaultValue) {
 function _newVarParm(sym) {
     let parm = _newParameter(sym);
     parm.typeName = 'VariableParameter';
-    parm.isaVariableParameter: true;
+    parm.isaVariableParameter = true;
     parm.evaluate = function (yi) {
         // needs to be changed
         return (yi.context.argLists[this.idxClosure][this.idx]);
@@ -106,11 +107,13 @@ function _none(optPoint) {
 }
 
 function _bindSymbol(sym, val) {
-    if (!val || !val.isaYagaType) val = yaga.Wrapper.new(val, sym.parserPoint);
+    if (!yaga.isaYagaType(val)) val = yaga.Wrapper.new(val, sym.parserPoint);
     return (Object.assign(Object.create(val), {
         _symbol: sym,
         bind: _returnThis,
-        evaluate: _returnThis,
+        evaluate(yi) {
+            return (Object.getPrototypeOf(this).evaluate(yi))
+        },
         print(printer) {
             return (this._symbol.print(printer));
         }
@@ -134,19 +137,20 @@ var _symbol = {
     leadSyntax: undefined,
     bind(yi) {
         // Check if the Symbol is in the closures
-        let v = yi.binder.curDesc.varMap[this.value];
+        let varMap = yi.binder.curDesc.varMap;
+        let v = varMap && varMap[this.value];
         if (v) return (_newReference(v))
         // Now try the Dictionaries.
         let expr = yi.dictionary.find(this);
-        if (expr) return (_bindSymbol(this, expr));
+        if (expr !== undefined) return (_bindSymbol(this, expr));
         throw yaga.errors.BindException(this, `'${this.value}' is not declared or defined`);
     },
     evaluate(yi) {
-        return (this);
+        return (this.bind(yi).evaluate(yi));
     },
     write(yi, val) {
         throw yaga.errors.YagaException(this, 'Can only write to variables');
-    }
+    },
     print(printer) {
         if (this.leadSyntax) printer.printLead(this.leadSyntax);
         printer.printElement(this.value);
@@ -158,21 +162,14 @@ function _asQuoted() {
     sym.typeName = 'QuotedSymbol';
     sym.isQuoted = true;
     sym.leadSyntax = '\'';
-    sym.bind = function (yi) {
-        return (Object.getPrototypeOf(sym));
-    };
-    sym.evaluate = function (yi) {
-        return (this);
-    }
+    sym.bind = _returnThis;
+    sym.evaluate = _returnPrototype;
     return (sym);
 }
 
 function _asQuasiQuoted() {
     let sym = this.asQuoted();
     sym.leadSyntax = '`';
-    sym.evaluate = function (yi) {
-        return (this);
-    }
     return (sym);
 }
 
@@ -184,10 +181,12 @@ function _asQuasiOverride() {
     sym.isQuasiOverride = true;
     sym.leadSyntax = ',';
     sym.bind = function (yi) {
-        return (Object.getPrototypeOf(this).bind(yi))
+        let e = Object.getPrototypeOf(this).bind(yi);
+        if (yaga.isaYagaType(e)) e = e.evaluate(yi);
+        return (e)
     };
     sym.evaluate = function (yi) {
-        return (this);
+        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
     }
     return (sym);
 }
@@ -198,11 +197,21 @@ function _asQuasiInjection() {
     sym.isQuasiInjection = true;
     sym.leadSyntax = ',@';
     sym.bind = function (yi) {
-        return (Object.getPrototypeOf(this).bind(yi))
+        let e = Object.getPrototypeOf(this).bind(yi);
+        if (yaga.isaYagaType(e)) e = e.evaluate(yi);
+        if (yaga.isaYagaType(e) && e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
+        return (e)
     };
+    sym.evaluate = function (yi) {
+        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
+    }
     return (sym);
 }
 
 function _returnThis() {
     return (this);
+}
+
+function _returnPrototype() {
+    return (Object.getPrototypeOf(this));
 }
