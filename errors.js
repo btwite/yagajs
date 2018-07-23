@@ -213,11 +213,12 @@ _inheritErrorPrototype(RisticValidationException, YagaException);
 
 function _newError(e, msg, attach) {
     let point;
-    if (yaga.isaYagaType(e) && e.isaParserPoint) {
+    if (e && e.isaParserPoint) {
         point = e;
         e = List.nil();
     } else {
         point = yaga.getParserPoint(e);
+        if (!yaga.isaYagaType(e)) e = yaga.Wrapper.new(e, point);
     }
     return {
         element: e,
@@ -225,12 +226,7 @@ function _newError(e, msg, attach) {
         message: msg,
         attachment: attach,
         formattedMessage() {
-            if (yaga.isaYagaType(this.e) && e.typeName) {
-                return (`${point.format()}: ${e.typeName} - ${msg}`)
-            }
-            if (point === undefined)
-                return (`<None>[0,0] - ${msg}`);
-            return (`${point.format()} - ${msg}`);
+            return (`${point.format()}: ${e.typeName} - ${msg}`)
         }
     }
 }

@@ -18,6 +18,8 @@ module.exports = {
     jsAdd: _jsAdd,
     jsDictName: _jsDictName,
     jsDictDependsOn: _jsDictDependsOn,
+    jsOpParse: _jsOpParse,
+    jsList: _jsList,
     Initialise: (y) => yaga = yaga ? yaga : y,
 };
 Object.freeze(module.exports);
@@ -25,10 +27,10 @@ Object.freeze(module.exports);
 function _jsPrimLoader(yi, list) {
     let r, arr = list.elements;
     let sReq = 'yaga';
-    let fn = arr.length == 3 ? (r = this)[arr[2].value] : (r = require(sReq = arr[2].value))[arr[3].value];
-    if (typeof fn !== 'function') _throw(list, `Function '${sReq}.${arr[arr.length-1].value}' could not be found`);
+    let fn = arr.length == 3 ? (r = this)[arr[2].name] : (r = require(sReq = arr[2].asStri))[arr[3].name];
+    if (typeof fn !== 'function') _throw(list, `Function '${sReq}.${arr[arr.length-1].name}' could not be found`);
     fn = fn.bind(r);
-    if (arr[1].value == 'macro')
+    if (arr[1].name == 'macro')
         return (yaga.Function.Macro.jsNew(list, fn));
     return (yaga.Function.jsNew(list, fn))
 }
@@ -36,11 +38,10 @@ function _jsPrimLoader(yi, list) {
 function _jsDefine(yi, list) {
     let arr = list.elements;
     let val = arr[2];
-    //    console.log(arr[1].value);
-    if (yaga.isaYagaType(val)) val = val.bind(yi);
-    yi.dictionary.define(arr[1], val);
-    if (yaga.isaYagaType(val)) val = val.asQuoted(); // Must quote as being a macro the value will be rebound.
-    return (yaga.Symbol.bind(arr[1], val));
+    //    console.log(arr[1].name);
+    val = val.bind(yi).evaluate(yi);
+    yi.dictionary.define(arr[1].asString(), val);
+    return (yaga.Symbol.bind(arr[1], val.asQuoted())); // Must quote as being a macro the value will be rebound.
 }
 
 function _jsLet(yi, list) {
@@ -50,12 +51,12 @@ function _jsLet(yi, list) {
         let sym = e,
             initValue = undefined,
             e = arr[i];
-        if (yaga.isaYagaType(e) && e.isaList) {
+        if (e.isaList) {
             if (e.elements.length != 2) _throw(e, 'Only variable name and initial value required');
             sym = e.elements[0];
             initValue = e.elements[1];
         }
-        if (!yaga.isaYagaType(sym) || !sym.isaSymbol) _throw(list, `'${sym}' is an invalid variable name`);
+        if (!sym.isaSymbol) _throw(list, `'${sym}' is an invalid variable name`);
         let v = yaga.newVariable(sym);
         arr1.push(yaga.List.new([yaga.Symbol.opAssign, v, initValue]), v.parserPoint);
     }
@@ -64,37 +65,34 @@ function _jsLet(yi, list) {
 }
 
 function _jsAdd(yi, list) {
-    let val, arr = list.elements;
+    let arr = list.elements;
     if (arr.length < 2) _throw(e, 'Addition requires 2 or more arguments');
-    if (typeof (val = arr[0]) !== 'string' && typeof val !== 'number') throw (list, `'${val}' invalid for addition`);
-    for (let i = 1; i < arr.length; i++) {
-        let e = arr[i];
-        if (typeof e !== 'string' && typeof e !== 'number') throw (list, `'${e}' invalid for addition`);
-        val += e;
-    }
-    return (val);
+    let val = arr[0].value() + arr[1].value();
+    for (let i = 2; i < arr.length; i++) val += arr[i].value();
+    return (yaga.Wrapper.new(val, list.parserPoint));
+}
+
+function _jsList(yi, list) {
+    return (list);
 }
 
 function _jsDictName(yi, list) {
     let arr = list.elements;
-    if (arr.length != 2 || !yaga.isaYagaType(arr[1]) || !arr[1].isaSymbol) _throw(e, 'Invalid name for a Dictionary');
-    yi.setDictName(arr[1].value);
+    if (arr.length < 2) _throw(e, 'Dictionary name required');
+    yi.setDictName(arr[1].asString());
 }
 
 function _jsDictDependsOn(yi, list) {
     let name, mod, arr = list.elements;
     if (arr.length < 2 || arr.length > 3) _throw(e, 'Invalid dependency for a Dictionary');
     name = arr[arr.length - 1];
-    if (arr.length == 3) mod = arr[2];
-    if (typeof name !== 'string') {
-        if (!yaga.isaYagaType(name) || !name.isaSymbol) _throw(e, 'Invalid dictionary name');
-        name = name.value;
+    if (arr.length == 3) {
+        mod = arr[2];
+        if (!mod.isaString && !mod.isaSymbol) _throw(name, 'Invalid dictionary module name');
+        mod = mod.asString();
     }
-    if (mod !== undefined && typeof mod !== 'string') {
-        if (!yaga.isaYagaType(name) || !name.isaSymbol) _throw(e, 'Invalid dictionary module name');
-        mod = mod.value;
-    }
-    yi.setDictDependsOn(name, mod);
+    if (!name.isaString && !name.isaSymbol) _throw(name, 'Invalid dictionary name');
+    yi.setDictDependsOn(name.asString(), mod);
 }
 
 function _jsFunction(yi, list) {
@@ -109,7 +107,6 @@ function __jsFuncType(yi, list, fnType) {
     let arr = list.elements;
     if (arr.length != 3) _throw(list, 'Parameter list and body expression required');
     let parms = arr[1];
-    if (!parms.isaYagaType) _throw(list, 'Missing parameter list');
     if (!parms.isaList) _throw(e, `'${parms.typeName}' is invalid as a parameter list`);
     return (fnType.new(__jsParms(yi, parms, (msg, e) => _throw(e ? e : arr[1], msg)), arr[2], list.parserPoint));
 }
@@ -124,7 +121,6 @@ function __jsParms(yi, args, fnErr) {
     // Parse the parameters specification.
     let prev, parms = [];
     args.forEach((arg) => {
-        if (!yaga.isaYagaType(arg)) fnErr(`'${arg}' is an invalid parameter`);
         let v = __getParm(yi, arg, undefined, fnErr);
         if (prev && prev.isaVariableParameter) {
             fnErr(`Additional parameters found after variable parameter declaration`);
@@ -135,20 +131,48 @@ function __jsParms(yi, args, fnErr) {
 }
 
 function __getParm(yi, name, defValue, fnErr) {
-    if (!yaga.isaYagaType(name)) fnErr(`'${name}' is an invalid parameter name`);
     if (name.isaList) {
         let arr = name.elements;
         if (arr.length != 2) fnErr(`Invalid defaulting parameter declaration`, list);
         return (__getParm(yi, arr[0]), arr[1], fnErr);
     }
     if (!name.isaSymbol) fnErr(`Symbol expected. Found '${arg.typeName}'`, arg);
-    if (name.value.indexof('...') == 0) {
-        if (name.value.length == 3) fnErr(`'...' is an invalid parameter name`, name);
+    if (name.name.indexof('...') == 0) {
+        if (name.namelength == 3) fnErr(`'...' is an invalid parameter name`, name);
         if (defValue !== undefined) fnErr(`Variable parameter cannot have a default value`, arg);
-        name = yaga.Symbol.new(name.value.splice(3), name.parserPoint);
+        name = yaga.Symbol.new(name.name.splice(3), name.parserPoint);
         return (yaga.Symbol.VariableParameter.new(name));
     }
     return (yaga.Symbol.Parameter.new(name, defValue));
+}
+
+function _jsOpParse(yi, list) {
+    let arr = list.elements;
+    if (arr.length == 0) _throw(arr[0], 'Missing operator specification');
+    let o = {};
+    arr.forEach(spec => __jsOpParse(yi, o, spec));
+    let wrap = yaga.Wrapper.new(o, arr[0].parserPoint);
+    wrap.referenceList = arr.length == 1 ? arr[0] : list;
+    return (wrap);
+}
+
+function __jsOpParse(yi, o, spec) {
+    let arr = spec.elements;
+    if (arr.length != 4) _throw(spec, 'Operator spec must be (type precedence direction function');
+    let type = arr[0].asString();
+    if (!' prefix postfix binary '.includes(type)) _throw(spec, "Operator type values are 'prefix', 'postfix' and 'binary'");
+    let prec = arr[1].value();
+    if (typeof prec !== 'number') _throw(spec, "Operator precedence must be a number");
+    let dir = arr[2].asString();
+    if (!' none leftToRight rightToLeft '.includes(dir)) _throw(spec, "Operator direction values are 'none', 'leftToRight' and 'rightToLeft'");
+    let fnDef = arr[3];
+    if (!yi.dictionary.find(fnDef)) _throw(spec, "Operator function not found in the dictionary");
+
+    o[type] = {
+        precedence: prec,
+        direction: dir,
+        function: fnDef
+    }
 }
 
 function _throw(e, msg) {

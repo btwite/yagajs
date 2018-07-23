@@ -91,30 +91,24 @@ _dictionary = {
 }
 
 function _define(sym, e) {
-	if (e === undefined) {
+	if (e.value() === undefined) {
 		throw yaga.errors.DictionaryException(sym, `'undefined' can not be assigned to a definition`);
 	}
-	let s = sym;
-	if (typeof sym !== 'string') s = sym.value;
-	if (this._space[s] && Object.getOwnPropertyDescriptor(this._space, s)) {
-		throw yaga.errors.DictionaryException(sym, `'${s}' is already defined`);
+	if (this._space[sym] && Object.getOwnPropertyDescriptor(this._space, sym)) {
+		throw yaga.errors.DictionaryException(sym, `'${sym}' is already defined`);
 	}
-	this._space[s] = e;
+	this._space[sym] = e;
 }
 
 function _redefine(sym, e) {
 	if (e === undefined) {
 		throw yaga.errors.DictionaryException(sym, `'undefined' can not be assigned to a definition`);
 	}
-	let s = sym;
-	if (typeof sym !== 'string') s = sym.value;
-	this._space[s] = e;
+	this._space[sym] = e;
 }
 
 function _find(sym) {
-	let s = sym;
-	if (typeof sym !== 'string') s = sym.value;
-	return (this._space[s]);
+	return (this._space[sym.asString()]);
 }
 
 function _setDependsOn(yi, path, mod) {

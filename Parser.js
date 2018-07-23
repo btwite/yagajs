@@ -15,13 +15,14 @@ module.exports = {
     Point: {
         new: _newParserPoint,
     },
-    defaultParserPoint: _defParserPoint,
-    Initialise: (y) => {
+    defaultParserPoint: undefined,
+    Initialise(y) {
         yaga = yaga ? yaga : y;
         _defParserPoint = _newParserPoint(undefined, '<None>');
+        this.defaultParserPoint = _defParserPoint;
+        Object.freeze(this);
     }
 };
-Object.freeze(module.exports);
 
 function _newParser(yi) {
     let parser = Object.create(_parser);
@@ -309,28 +310,20 @@ function __parseExpressions(parser, bracket, fnErr) {
 }
 
 function _parseQuasiQuotedElement(parser) {
-    let e = _nextExpression(parser);
-    if (yaga.isaYagaType(e))
-        return (e.asQuasiQuoted());
-    return (e);
+    return (_nextExpression(parser).asQuasiQuoted());
 }
 
 function _parseQuasiOverride(parser) {
     let at = parser._peekNextChar();
-    if (at === '@') parser._readChar();
-    let e = _nextExpression(parser);
-    if (e.isaYagaType) {
-        if (at === '@') return (e.asQuasiInjection());
-        else return (e.asQuasiOverride());
+    if (at === '@') {
+        parser._readChar();
+        return (_nextExpression(parser).asQuasiInjection());
     }
-    return (e);
+    return (_nextExpression(parser).asQuasiOverride());
 }
 
 function _parseQuotedElement(parser) {
-    let e = _nextExpression(parser);
-    if (e.isaYagaType)
-        return (e.asQuoted());
-    return (e);
+    return (_nextExpression(parser).asQuoted());
 }
 
 function _parseSymbol(parser, tok) {
@@ -403,12 +396,12 @@ function _parseNumber(parser) {
     let s = tok.toString();
     if (flType) s = s.substr(0, s.length - 1);
     if (flExponent) {
-        return (parseFloat(s));
+        return (yaga.Wrapper.new(parseFloat(s), parser._lastParserPoint));
     }
     if (flDecimal) {
-        return (parseFloat(s));
+        return (yaga.Wrapper.new(parseFloat(s), parser._lastParserPoint));
     }
-    return (parseFloat(s));
+    return (yaga.Wrapper.new(parseFloat(s), parser._lastParserPoint));
 }
 
 function _parseString(parser, delimiter) {
@@ -489,7 +482,7 @@ function _parseString(parser, delimiter) {
                 break;
             str.append(ch);
         }
-        return (str.toString());
+        return (yaga.Wrapper.new(str.toString(), parser._lastParserPoint));
     } catch (err) {
         if (err.isaParserException() && err.reason === ENDOFINPUT) {
             _addError(parser, "Missing end of STRING", undefined, err);
