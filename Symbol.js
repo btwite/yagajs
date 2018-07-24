@@ -6,11 +6,11 @@
 
 'use strict';
 
-const Operators = '`~!@#$%^&*_-+=|\:;"\'<,>.?/';
 var yaga, _symbol;
 
 module.exports = {
     new: _newSymbol,
+    newOperator: _newOperator,
     Variable: {
         new: _newVariable,
     },
@@ -41,6 +41,14 @@ function _newSymbol(symName, optPoint) {
     sym.reference = sym;
     if (optPoint)
         sym.parserPoint = optPoint;
+    return (sym);
+}
+
+function _newOperator(symName, specs, optPoint) {
+    let sym = _newSymbol(symName, optPoint);
+    sym = _newUnboundSymbol(sym);
+    sym.isanOperator = true;
+    sym.specs = specs;
     return (sym);
 }
 
@@ -143,9 +151,8 @@ _symbol = {
         // Now try the Dictionaries.
         let expr = yi.dictionary.find(this);
         if (expr !== undefined) return (_bindSymbol(this, expr));
-        // Failed, try pulling the symbol token apart and look for operators that we can split the token
-        // up by.
-        throw yaga.errors.BindException(this, `'${this.name}' is not declared or defined`);
+        // Can't bind the symbol so answer an unbound symbol.
+        return (_newUnboundSymbol(this));
     },
     evaluate(yi) {
         return (this.bind(yi).evaluate(yi));
@@ -162,92 +169,94 @@ _symbol = {
     }
 };
 
-function _splitToken(yi, s, point) {
-    // Try and split the token up by know operators. Operator reduction is from the end to the front
-    // shifting the front up on each failed pass.
-    for (let i = 0, iFromt = 0; i < s.length; i++) {
-        if (Operators.includes(s[i]) {
-                // Determine the end of this operator character sequence
-                for (let j = i + 1; j < s.length && Operators.includes(s[j]); j++);
-                let opSeq = s.substr(i, j - i);
-                for (j = 0; j < opSeq.length; j++) {
-                    let op = _findOperator(yi, opSeq);
-                    if (!op) continue;
+function _newUnboundSymbol(sym) {
+    sym = Object.create(sym);
+    sym.typeName = 'UnboundSymbol';
+    sym.isUnbound = true;
+    sym.bind = _returnThis;
 
-                }
-            }
-        }
-    }
-
-    function _asQuoted() {
-        let sym = Object.create(this);
-        sym.typeName = 'QuotedSymbol';
-        sym.isQuoted = true;
-        sym.leadSyntax = '\'';
-        sym.bind = _returnThis;
-        sym.evaluate = _returnPrototype;
-        return (sym);
-    }
-
-    function _asQuasiQuoted() {
-        let sym = this.asQuoted();
-        sym.leadSyntax = '`';
-        return (sym);
-    }
-
-    // May change bind so that parent list is passed to handle quasi overrides rather than the parent having
-    // to check every element.
-    function _asQuasiOverride() {
-        let sym = Object.create(this);
-        sym.typeName = 'QuasiOverrideSymbol';
-        sym.isQuasiOverride = true;
-        sym.leadSyntax = ',';
-        sym.bind = function (yi) {
-            let sym = Object.getPrototypeOf(this);
-            return (_newBoundQuasiOverride(sym, sym.bind(yi)));
-        };
-        sym.evaluate = function (yi) {
-            throw new yaga.errors.YagaException(this, "Misplaced quasi override");
-        }
-        return (sym);
-    }
-
-    function _newBoundQuasiOverride(sym, val) {
-        let bind = _bindSymbol(sym, val);
-        bind.isQuasiOverride = true;
-        return (bind);
-    }
-
-    function _asQuasiInjection() {
-        let sym = this.asQuasiOverride();
-        sym.typeName = 'QuasiInjectionSymbol';
-        sym.isQuasiInjection = true;
-        sym.leadSyntax = ',@';
-        sym.bind = function (yi) {
-            let sym = Object.getPrototypeOf(this);
-            return (_newBoundQuasiInjection(sym, sym.bind(yi)));
-        };
-        sym.evaluate = function (yi) {
-            throw new yaga.errors.YagaException(this, "Misplaced quasi override");
-        }
-        return (sym);
-    }
-
-    function _newBoundQuasiInjection(sym, val) {
-        let bind = _newBoundQuasiOverride(sym, val);
-        bind.isQuasiInjection = true;
-        bind.evaluate = function (yi) {
-            let e = Object.getPrototypeOf(this).evaluate(yi);
-            if (e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
-            return (e)
-        };
-        return (bind);
-    }
-
-    function _returnThis() {
+    function _unboundMessage() {
+        return (`'${sym.name}' is not declared or defined`);
+    };
+    sym.evaluate = function (yi) {
+        throw yaga.errors.YagaException(this, _unboundMessage());
+    };
+    sym.raiseError = function (yi) {
+        yi.addError(this, _unboundMessage());
         return (this);
-    }
+    };
+    return (sym)
+}
 
-    function _returnPrototype() {
-        return (Object.getPrototypeOf(this));
+function _asQuoted() {
+    let sym = Object.create(this);
+    sym.typeName = 'QuotedSymbol';
+    sym.isQuoted = true;
+    sym.leadSyntax = '\'';
+    sym.bind = _returnThis;
+    sym.evaluate = _returnPrototype;
+    return (sym);
+}
+
+function _asQuasiQuoted() {
+    let sym = this.asQuoted();
+    sym.leadSyntax = '`';
+    return (sym);
+}
+
+// May change bind so that parent list is passed to handle quasi overrides rather than the parent having
+// to check every element.
+function _asQuasiOverride() {
+    let sym = Object.create(this);
+    sym.typeName = 'QuasiOverrideSymbol';
+    sym.isQuasiOverride = true;
+    sym.leadSyntax = ',';
+    sym.bind = function (yi) {
+        let sym = Object.getPrototypeOf(this);
+        return (_newBoundQuasiOverride(sym, sym.bind(yi)));
+    };
+    sym.evaluate = function (yi) {
+        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
     }
+    return (sym);
+}
+
+function _newBoundQuasiOverride(sym, val) {
+    let bind = _bindSymbol(sym, val);
+    bind.isQuasiOverride = true;
+    return (bind);
+}
+
+function _asQuasiInjection() {
+    let sym = this.asQuasiOverride();
+    sym.typeName = 'QuasiInjectionSymbol';
+    sym.isQuasiInjection = true;
+    sym.leadSyntax = ',@';
+    sym.bind = function (yi) {
+        let sym = Object.getPrototypeOf(this);
+        return (_newBoundQuasiInjection(sym, sym.bind(yi)));
+    };
+    sym.evaluate = function (yi) {
+        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
+    }
+    return (sym);
+}
+
+function _newBoundQuasiInjection(sym, val) {
+    let bind = _newBoundQuasiOverride(sym, val);
+    bind.isQuasiInjection = true;
+    bind.evaluate = function (yi) {
+        let e = Object.getPrototypeOf(this).evaluate(yi);
+        if (e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
+        return (e)
+    };
+    return (bind);
+}
+
+function _returnThis() {
+    return (this);
+}
+
+function _returnPrototype() {
+    return (Object.getPrototypeOf(this));
+}

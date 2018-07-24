@@ -207,7 +207,7 @@ function _evaluateArray(yi, es) {
     let arr = [];
     es.forEach(e => {
         e = e.evaluate(yi);
-        if (e.isInsertable) arr.concat(e.elements);
+        if (e.isInsertable) arr = arr.concat(e.elements);
         else arr.push(e);
     });
     return (arr);

@@ -44,6 +44,9 @@ _parser = {
     typeName: 'Parser',
     parseFile: _parseFile,
     parseStrings: _parseStrings,
+    parseString(s) {
+        return (this.parseStrings([s])[0]);
+    },
     newPoint: _newPoint,
     sourceName: undefined,
     yi: undefined,
@@ -166,6 +169,7 @@ function _initParser(parser, fnRead) {
     if (parser.yi._options.tabCount) parser._tabCount = parser.yi._options.tabCount;
     parser._parentPoints = [];
     parser._parentPoint = _defParserPoint;
+    parser._flEOS = false;
 
     let iStr = 0,
         strLength = 0,
@@ -247,8 +251,6 @@ function _nextExpression(parser) {
             return (null); // End of expression detected.
         case '(':
             return (_parseExpression(parser));
-        case '{':
-            return (_parseBlock(parser));
         case '\'':
             return (_parseQuotedElement(parser));
         case '`':
@@ -265,7 +267,6 @@ function _nextExpression(parser) {
             }
             break;
         case '-':
-        case '+':
             peek = parser._peekNextChar();
             if (_isDigit(parser, peek))
                 return (_parseNumber(parser));
@@ -285,13 +286,6 @@ function _parseExpression(parser) {
     return (__parseExpressions(parser, ')', () => {
         throw ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION)
     }));
-}
-
-function _parseBlock(parser) {
-    let list = __parseExpressions(parser, '}', () => {
-        throw ParserException(parser._lastParserPoint, "Missing end of block", ENDOFBLOCK)
-    });
-    return (yaga.Function.Block.new(list, list.parserPoint));
 }
 
 function __parseExpressions(parser, bracket, fnErr) {
@@ -356,7 +350,7 @@ function _parseNumber(parser) {
         flType = undefined;
     let i = 0,
         c = tok.atGet(i);
-    if (c == '+' || c == '-')
+    if (c == '-')
         i++;
 
     // If we don't have a valid number then just answer a Symbol.

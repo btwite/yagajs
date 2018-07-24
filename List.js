@@ -51,11 +51,26 @@ function _newBoundList(arr, point) {
 	if (!Array.isArray(arr)) return (arr); // This can happen if macros transform a list into a value.
 	let list = _newList(arr, point);
 	list.typeName = 'BoundList';
-	list.isaBoundList = true;
+	list.isBound = true;
 	list.bind = _returnThis;
 	list.evaluate = function (yi) {
 		let es = this.elements;
-		return (es[0].call(yi, es.splice(1), point));
+		return (es[0].call(yi, es.slice(1), point));
+	};
+	return (list);
+}
+
+function _newUnboundList(list, rsn) {
+	list = Object.create(list);
+	list.typeName = 'UnboundList';
+	list.isUnbound = true;
+	list.bind = _returnThis;
+	list.evaluate = function (yi) {
+		throw yaga.errors.YagaException(this, rsn);
+	};
+	list.raiseError = function (yi) {
+		yi.addError(this, rsn);
+		return (this);
 	};
 	return (list);
 }
@@ -87,7 +102,7 @@ _list = {
 	trailSyntax: ')',
 
 	bind(yi) {
-		return (_newBoundList(_bindList(yi, this), this.parserPoint));
+		return (_bindList(yi, this));
 	},
 	evaluate: _returnThis,
 
@@ -103,21 +118,34 @@ _list = {
 	},
 }
 
-
 function _bindList(yi, list) {
 	let isCallable, arr = [],
 		es = list.elements;
 	if (es.length == 0) return (this);
 	let head = es[0].bind(yi);
 	if ((isCallable = yaga.isCallable(head)) && head.isaMacro) {
-		head = head.evaluate(yi); // Setup the context for the macro call
-		head = head.call(yi, list); // Call will take the context and instaniate
+		// Evaluate prepares the context call will take the context and instaniate
+		head = head.evaluate(yi).call(yi, list);
 		if (head.isaList && head.isInsertable) return (head);
 		return (head.bind(yi));
 	}
-	if (!isCallable) throw yaga.errors.BindException(this, 'Head element must be a function or macro');
 	arr.push(head);
-	return (_bindElements(yi, arr, es, 1));
+	_bindElements(yi, arr, es, 1);
+	// Check if all the elements have been bound.
+	if (_checkBindings(arr)) {
+		if (!isCallable) console.log(arr[1].isUnbound, arr[1].spec, (arr[1].isUnbound && !arr[1].spec), arr);
+		return (isCallable ? _newBoundList(arr, list.parserPoint) :
+			(_newUnboundList(list, 'Head element must be a function or macro').raiseError(yi)));
+	}
+	// We have some unbound bindings so now we can attempt to process any operators, however
+	// if our head is callable then we just raise errors and return an unboundlist
+	if (isCallable) return (_raiseListErrors(yi, list, arr, 'List is a function or macro but has unbound elements or operators'));
+	// Our head is not callable so now we can attempt to process operators
+	arr = _parseOperators(yi, arr);
+	if (!_checkBindings(arr)) return (_raiseListErrors(yi, list, arr));
+	// Now have an expression with resolved operators, rearrange the expression into
+	// nested bound lists that can be evaluated.
+	return (_bindOperators(yi, arr, arr[0]).bind(yi));
 }
 
 function _bindElements(yi, arr, es, iStart) {
@@ -129,11 +157,166 @@ function _bindElements(yi, arr, es, iStart) {
 	return (arr);
 }
 
+function _bindOperators(yi, es, er) {
+	if (es.length === 0) throw yaga.errors.BindException(er, `Missing argument for operator '${er.value()}'`);
+	if (es.length === 1) return (es[0]); // Down to the last element in this branch
+	const dirPrec = {
+		none: {},
+		leftToRight: {
+			rightToLeft: true,
+			none: true
+		},
+		rightToLeft: {
+			rightToLeft: true,
+			none: true
+		}
+	};
+	let curSpec, iOp;
+	for (let i = 0; i < es.length; i++) {
+		let e = es[i];
+		if (!e.spec) continue;
+		if (!curSpec || e.spec.precedence < curSpec.precedence) {
+			curSpec = e.spec;
+			iOp = i;
+			continue;
+		}
+		if (e.spec.precedence > curSpec.precedence) continue;
+		if (dirPrec[curSpec.direction][e.spec.direction]) {
+			// Direction table will determine how a spec can take precedence at the same precedence level.
+			curSpec = e.spec;
+			iOp = i;
+		}
+	}
+	if (!curSpec) throw yaga.errors.InternalException('Missing operator specification when binding an operator expression');
+	if (iOp === 0) {
+		if (curSpec.type !== 'prefix') throw yaga.errors.InternalException(`Expecting a prefix operator. Found('${curSpec.type}')`);
+		let symFn = yaga.Symbol.new(curSpec.function, es[0].parserPoint);
+		return (_newList([symFn, _bindOperators(yi, es.slice[1], es[0])]));
+	}
+	if (iOp === es.length - 1) {
+		if (curSpec.type !== 'postfix') throw yaga.errors.InternalException(`Expecting a postfix operator Found('${curSpec.type}')`);
+		let symFn = yaga.Symbol.new(curSpec.function, es[iOp].parserPoint);
+		return (_newList([symFn, _bindOperators(yi, es.slice[0, iOp], es[iOp])]));
+	}
+	let symFn = yaga.Symbol.new(curSpec.function, es[iOp].parserPoint);
+	switch (curSpec.type) {
+		case 'binary':
+			return (_newList([symFn, _bindOperators(yi, es.slice(0, iOp), es[iOp]), _bindOperators(yi, es.slice(iOp + 1), es[iOp])]));
+		case 'prefix':
+			return (_newList([symFn, _bindOperators(yi, es.slice(iOp + 1), es[iOp])]));
+		case 'postfix':
+			return (_newList([symFn, _bindOperators(yi, es.slice(0, iOp), es[iOp])]));
+	}
+	throw yaga.errors.InternalException(`Invalid operator specification type '${curSpec.type}'`);
+}
+
+function _parseOperators(yi, arr) {
+	let es = [];
+	// First of all split up any symbols that have been aggregated
+	let i;
+	for (i = 0; i < arr.length; i++) {
+		let e = arr[i];
+		if (!e.isUnbound || !e.isaSymbol) {
+			es.push(e);
+			continue;
+		}
+		es = es.concat(_splitSymbol(yi, e));
+	}
+	// Work through our resolved operator expression.
+	let e, eNext, ePrevSpec, eNextSpecs, spec;
+	for (i = 0; i < es.length; i++, ePrevSpec = spec) {
+		e = es[i];
+		eNext = i + 1 < es.length ? es[i + 1] : undefined;
+		spec = undefined;
+		if (!e.isanOperator) continue;
+		let specs = e.specs;
+		if (ePrevSpec) {
+			switch (ePrevSpec.type) {
+				case 'binary':
+				case 'prefix':
+					e.spec = spec = specs.prefix;
+					break;
+				case 'postfix':
+					if (eNext) {
+						if (!(spec = specs.binary)) spec = specs.postfix;
+						e.spec = spec;
+						break;
+					}
+					e.spec = spec = specs.postfix;
+					break;
+			}
+		} else if (i == 0) {
+			e.spec = spec = specs.prefix;
+		} else if (eNext) {
+			e.spec = spec = specs.binary;
+		} else {
+			e.spec = spec = specs.postfix;
+		}
+	}
+	return (es);
+}
+
+function _splitSymbol(yi, e) {
+	// Try and split the token up by know operators. Operator reduction is from the end to the front
+	// shifting the front up on each failed pass.
+	let arr = [];
+	let s = e.name;
+	let i, j, k, iStart;
+	for (i = 0, iStart = 0; i < s.length; i++) {
+		if (!yi._operators.includes(s[i])) continue;
+		let specs, sOp;
+		// Determine the end of this operator character sequence
+		for (j = i + 1; j < s.length && yi._operators.includes(s[j]); j++);
+		for (k = j; k > i; k--) {
+			sOp = s.substring(i, k);
+			if (specs = yi.dictionary.findString(yi.getOperatorName(sOp))) {
+				specs = specs.value();
+				break;
+			}
+		}
+		if (!specs) continue;
+		if (iStart < i) {
+			let e1 = yi.parser.parseString(s.substring(iStart, i));
+			e1.parserPoint = e.parserPoint;
+			arr.push(e1);
+		}
+		arr.push(yaga.Symbol.newOperator(sOp, specs, e.parserPoint));
+		iStart = k;
+		i = k - 1; // Need to allow for loop incrementer
+	}
+	if (arr.length === 0) return ([e]);
+	if (iStart < s.length) {
+		let e1 = yi.parser.parseString(s.substr(iStart));
+		e1.parserPoint = e.parserPoint;
+		arr.push(e1);
+	}
+	return (arr);
+}
+
+function _raiseListErrors(yi, list, arr, msg) {
+	arr.forEach(e => {
+		// Allow unbound operators that have an implementation spec.
+		if (e.isUnbound && !e.spec) e.raiseError(yi);
+	});
+	if (!msg) return (_newUnboundList(list, 'List had bind errors'))
+	return (_newUnboundList(list, msg).raiseError(yi))
+}
+
+function _checkBindings(es) {
+	for (let i = 0; i < es.length; i++) {
+		let e = es[i];
+		// Allow unbound operators that have an implementation spec.
+		if (e.isUnbound && !e.spec) return (false);
+	};
+	return (true);
+}
+
+
 function _evaluateArray(yi, es) {
 	let arr = [];
 	es.forEach(e => {
 		e = e.evaluate(yi);
-		if (e.isInsertable) arr.concat(e.elements);
+		if (e.isInsertable) arr = arr.concat(e.elements);
 		else arr.push(e);
 	});
 	return (arr);
@@ -177,7 +360,7 @@ function _newBoundQuasiQuoted(arr, point) {
 		this.elements.forEach(e => {
 			if (e.isQuasiOverride) {
 				if ((e = e.evaluate(yi)).isInsertable) {
-					arr.concat(e.elements);
+					arr = arr.concat(e.elements);
 					return;
 				}
 			}

@@ -79,6 +79,7 @@ _runInitPhase('PostInitialise');
 function _newYagaInstance(options = {}) {
     let yi = Object.create(_instance);
     yi._options = options;
+    yi.parser = yaga.Parser.new(yi);
     yi.dictionary = yaga.Dictionary.load(yi, options.dictionaryPath);
     if (yi.hasErrors()) {
         throw yaga.errors.YagaException(undefined, 'Dictionary load failed', yi._errors);
@@ -169,6 +170,7 @@ var _instance = Object.assign(Object.create(_exports), {
     typeName: 'YagaInstance',
     isInitialised: false,
     dictionary: undefined,
+    parser: undefined,
     evaluateDictionary: _evaluateDictionary,
     bind: _bind,
     evaluate: _evaluate,
@@ -176,6 +178,9 @@ var _instance = Object.assign(Object.create(_exports), {
     printDictionaries: _printDictionaries,
     setDictName: _setDictName,
     setDictDependsOn: _setDictDependsOn,
+    registerOperator: _registerOperator,
+    getOperatorName: _getOperatorName,
+    _operators: '',
     binder: {
         closures: undefined,
         curDesc: undefined,
@@ -327,6 +332,17 @@ function _printDictionaries(stream) {
     if (!stream) stream = process.stdout;
     stream.write('---------------- Loaded Dictionaries ----------------\n');
     this.dictionary.printAll(this, stream);
+}
+
+function _registerOperator(sOp, wrap) {
+    this._operators += sOp;
+    sOp = _getOperatorName(sOp);
+    this.dictionary.define(sOp, wrap);
+    return (sOp);
+}
+
+function _getOperatorName(sOp) {
+    return (`..op__${sOp}`);
 }
 
 function _print(exprs, stream, initIndent = 0) {

@@ -16,9 +16,10 @@ module.exports = {
     jsParms: _jsParms,
     jsLet: _jsLet,
     jsAdd: _jsAdd,
+    jsMul: _jsMul,
     jsDictName: _jsDictName,
     jsDictDependsOn: _jsDictDependsOn,
-    jsOpParse: _jsOpParse,
+    jsDefop: _jsDefop,
     jsList: _jsList,
     Initialise: (y) => yaga = yaga ? yaga : y,
 };
@@ -65,10 +66,18 @@ function _jsLet(yi, list) {
 }
 
 function _jsAdd(yi, list) {
+    return (__jsListOp(yi, list, (v1, v2) => v1 + v2))
+}
+
+function _jsMul(yi, list) {
+    return (__jsListOp(yi, list, (v1, v2) => v1 * v2))
+}
+
+function __jsListOp(yi, list, fnOp) {
     let arr = list.elements;
     if (arr.length < 2) _throw(e, 'Addition requires 2 or more arguments');
-    let val = arr[0].value() + arr[1].value();
-    for (let i = 2; i < arr.length; i++) val += arr[i].value();
+    let val = fnOp(arr[0].value(), arr[1].value());
+    for (let i = 2; i < arr.length; i++) val = fnOp(val, arr[i].value());
     return (yaga.Wrapper.new(val, list.parserPoint));
 }
 
@@ -140,23 +149,26 @@ function __getParm(yi, name, defValue, fnErr) {
     if (name.name.indexof('...') == 0) {
         if (name.namelength == 3) fnErr(`'...' is an invalid parameter name`, name);
         if (defValue !== undefined) fnErr(`Variable parameter cannot have a default value`, arg);
-        name = yaga.Symbol.new(name.name.splice(3), name.parserPoint);
+        name = yaga.Symbol.new(name.name.slice(3), name.parserPoint);
         return (yaga.Symbol.VariableParameter.new(name));
     }
     return (yaga.Symbol.Parameter.new(name, defValue));
 }
 
-function _jsOpParse(yi, list) {
+function _jsDefop(yi, list) {
     let arr = list.elements;
-    if (arr.length == 0) _throw(arr[0], 'Missing operator specification');
+    if (arr.length < 3) _throw(arr[0], 'Invalid operator definition');
+    let op = arr[1];
+    if (!(op.isaString || op.isaSymbol)) _throw(op, 'Operator must be a string or symbol');
     let o = {};
-    arr.forEach(spec => __jsOpParse(yi, o, spec));
-    let wrap = yaga.Wrapper.new(o, arr[0].parserPoint);
-    wrap.referenceList = arr.length == 1 ? arr[0] : list;
-    return (wrap);
+    arr.slice(2).forEach(e => __jsDefop(yi, o, e.bind(yi).evaluate(yi)));
+    let wrap = yaga.Wrapper.new(o, arr[2].parserPoint);
+    wrap.referenceList = list;
+    yi.registerOperator(op.asString(), wrap);
+    return (undefined);
 }
 
-function __jsOpParse(yi, o, spec) {
+function __jsDefop(yi, o, spec) {
     let arr = spec.elements;
     if (arr.length != 4) _throw(spec, 'Operator spec must be (type precedence direction function');
     let type = arr[0].asString();
@@ -165,10 +177,11 @@ function __jsOpParse(yi, o, spec) {
     if (typeof prec !== 'number') _throw(spec, "Operator precedence must be a number");
     let dir = arr[2].asString();
     if (!' none leftToRight rightToLeft '.includes(dir)) _throw(spec, "Operator direction values are 'none', 'leftToRight' and 'rightToLeft'");
-    let fnDef = arr[3];
-    if (!yi.dictionary.find(fnDef)) _throw(spec, "Operator function not found in the dictionary");
+    let fnDef = arr[3].asString();
+    if (!yi.dictionary.findString(fnDef)) _throw(spec, "Operator function not found in the dictionary");
 
     o[type] = {
+        type: type,
         precedence: prec,
         direction: dir,
         function: fnDef

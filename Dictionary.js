@@ -86,6 +86,7 @@ _dictionary = {
 	define: _define,
 	redefine: _redefine,
 	find: _find,
+	findString: _findString,
 	print: _print,
 	printAll: _printAll,
 }
@@ -109,6 +110,10 @@ function _redefine(sym, e) {
 
 function _find(sym) {
 	return (this._space[sym.asString()]);
+}
+
+function _findString(s) {
+	return (this._space[s]);
 }
 
 function _setDependsOn(yi, path, mod) {
