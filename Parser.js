@@ -99,7 +99,7 @@ function _parseStrings(arr) {
     let iArr = 0;
     _initParser(this, () => {
         if (iArr >= arr.length) return (null);
-        this._line++;
+        this._lineNo = 1;
         return (arr[iArr++]);
     });
     return (_parse(this));
@@ -142,6 +142,9 @@ _parserPoint = {
     line: 0,
     column: 0,
     parent: undefined,
+    increment(nCols) {
+        return (_newParserPoint(this, this.sourceName, this.line, this.column + nCols));
+    },
     format() {
         return (`${this.sourceName}[${this.line},${this.column}]`);
     }

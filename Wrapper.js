@@ -27,6 +27,7 @@ function _newWrapper(val, optPoint) {
 
 _wrapper = {
     typeName: 'Wrapper',
+    isaWrapper: true,
     parserPoint: undefined,
     asQuoted: _returnThis,
     asQuasiQuoted: _returnThis,

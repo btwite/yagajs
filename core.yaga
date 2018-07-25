@@ -7,6 +7,7 @@
 (define dictionaryName (.jsPrim macro jsDictName))
 (define dictionaryDependsOn (.jsPrim macro jsDictDependsOn))
 (define defop (.jsPrim macro jsDefop))
+(define call (.jsPrim function jsCall))
 
 (define .assign null)
 (define .if null)
@@ -32,43 +33,45 @@
 (define .postfxdec null)
 (define .postfxinc null)
 
-(define .precAssign 0)
-(defop = `(binary ,.precAssign rightToLeft .assign))
-(defop ? `(binary ,(.add .precAssign 1) rightToLeft .if))
+(define .precList 0)
+
+(define .precAssign (.add .precList 5))
+(defop '= `(binary ,.precAssign rightToLeft .assign))
+(defop '? `(binary ,(.add .precAssign 1) rightToLeft .if))
 
 (define .precLogical (.add .precAssign 3))
-(defop || `(binary ,.precLogical leftToRight  .or))
-(defop && `(binary ,(.add .precLogical 1) leftToRight  .and))
+(defop '|| `(binary ,.precLogical leftToRight  .or))
+(defop '&& `(binary ,(.add .precLogical 1) leftToRight  .and))
 
 (define .precEquality (.add .precLogical 2))
-(defop !== `(binary ,.precEquality leftToRight  .strictneq))
-(defop === `(binary ,.precEquality leftToRight  .stricteq))
-(defop !=  `(binary ,.precEquality leftToRight  .neq))
-(defop ==  `(binary ,.precEquality leftToRight  .eq))
+(defop '!== `(binary ,.precEquality leftToRight  .strictneq))
+(defop '=== `(binary ,.precEquality leftToRight  .stricteq))
+(defop '!=  `(binary ,.precEquality leftToRight  .neq))
+(defop '==  `(binary ,.precEquality leftToRight  .eq))
 
 (define .precCompare (.add .precEquality 1))
-(defop >= `(binary ,.precCompare leftToRight  .ge))
-(defop >  `(binary ,.precCompare leftToRight  .gt))
-(defop <= `(binary ,.precCompare leftToRight  .le))
-(defop <  `(binary ,.precCompare leftToRight  .lt))
+(defop '>= `(binary ,.precCompare leftToRight  .ge))
+(defop '>  `(binary ,.precCompare leftToRight  .gt))
+(defop '<= `(binary ,.precCompare leftToRight  .le))
+(defop '<  `(binary ,.precCompare leftToRight  .lt))
 
 (define .precAddition (.add .precCompare 1))
-(defop + `(binary ,.precAddition leftToRight  .add))
-// (defop - `(binary ,.precAddition leftToRight  .sub))	Overloaded - see below
+(defop '+ `(binary ,.precAddition leftToRight  .add))
+// (defop '- `(binary ,.precAddition leftToRight  .sub))	Overloaded - see below
 
 (define .precMultiplication (.add .precAddition 1))
-(defop % `(binary ,.precMultiplication leftToRight  .rem))
-(defop / `(binary ,.precMultiplication leftToRight  .div))
-(defop * `(binary ,.precMultiplication leftToRight  .mul))
-(defop ** `(binary ,(.add .precMultiplication 1) rightToLeft  .exp))
+(defop '% `(binary ,.precMultiplication leftToRight  .rem))
+(defop '/ `(binary ,.precMultiplication leftToRight  .div))
+(defop '* `(binary ,.precMultiplication leftToRight  .mul))
+(defop '** `(binary ,(.add .precMultiplication 1) rightToLeft  .exp))
 
 (define .precUnary (.add .precMultiplication 2))
-(defop -- `(prefix ,.precUnary none  .pfxdec)
+(defop '-- `(prefix ,.precUnary none  .pfxdec)
 		  `(postfix ,(.add .precUnary 1) none  .postfxdec))
-(defop ++ `(prefix ,.precUnary none  .pfxinc)
+(defop '++ `(prefix ,.precUnary none  .pfxinc)
 		  `(postfix ,(.add .precUnary 1) none  .postfxinc))
-(defop -  `(prefix ,.precUnary none  .pfxneg)
-		  `(binary ,.precAddition leftToRight  .sub))
+(defop '-  `(prefix ,.precUnary none  .pfxneg)
+		   `(binary ,.precAddition leftToRight  .sub))
 
 (define .precEnd (.add .precUnary 2))
 
@@ -81,212 +84,3 @@
 //(define end (.jsPrim function jsEnd))
 //(define front (.jsPrim function jsFront))
 //(define tail (.jsPrim function jsTail))
-
-/*
-	Core and Yaga definitions that must be loaded at startup.
-	The CoreNamespace name .core must be preloaded into the
-	core namespace at yaga startup time. All named namespaces
-	are defined in the core namespace.
-// Declare the core ristic classes. Note that the names are also defined in the .core namespace
-*/
-/*
-// abcd
-(.ristic #.rPrim 		#yaga.core.ristic.PrimRistic)
-Hello world
-( '(a b c) `( f g ,h ,@( s c d)))
-
-(.ristic #.rData 		#yaga.core.ristic.DataRistic)
-(.ristic #.rInj 		#yaga.core.ristic.InjRistic)
-(.ristic #.rPipe 		#yaga.core.ristic.PipeRistic)
-(.ristic #.rBindpipe 	#yaga.core.ristic.BindpipeRistic)
-(.ristic #.rExpr 		#yaga.core.ristic.ExprRistic)
-(.ristic #.rAlias 		#yaga.core.ristic.AliasRistic)
-
-/* 
-	Declare the core level define macro .def.
-	We also create a backup of .ristic that calls a primitive to answer
-	the .ristic binding.
-*/
-((.rPrim #yaga.core.prim.Core #Define) .def (.rPrim #yaga.core.prim.Core #Define))
-(.def .rDotRistic	(.rPrim #yaga.core.prim.Core #DotRistic))
-(.def .undef 		(.rPrim #yaga.core.prim.Core #Undefine))
-
-/* Create definitions for .fn and .macro to abstract simple Ristic */
-(.def .PRECDEFAULT		100)
-(.def .PRECDEFAULT-1	99)
-(.def .PRECDEFAULT-2	98)
-
-(.def .fn 				(.rPipe .PRECDEFAULT))	// Simple function will assume DefaultPrecedence. 
-(.def .macro 			(.rBindpipe))
-(.def .fndef 			(.fn .def))
-
-// Aliasing. fnAlias is an evaluation function, while .alias is bind time ristic "/
-(.def .alias 			(.rAlias))
-(.def .fnAlias 			(.fn .alias))
-(.def .dealias			(.fn (.rPrim #yaga.core.prim.Core #DeAlias)))
-/* 
-	Injected Lists. Note that using the Injection ristic will immediately enforce injection
-	in the reference list. If this is not the desired outcome then use the .asInjection
-	function to answer the parameters as an Injection list.
-	Typical use of injection ristic is to create an injection within an expression from a
-	binding pipeline. Place ristic at the end of the pipeline. Can also employ injected
-	variables which are prefixed with a '^' character. This will force a non single element
-	to be injected at the reference position.
-*/
-(.def .inj			(.rInj))
-(.def .asInjection	(.fn .inj))
-
-/* Useful macros to create simple pipelines with defined arguments */
-(.def .fnx 		(.rPipe .PRECDEFAULT (#args #x)))
-(.def .fny 		(.rPipe .PRECDEFAULT (#args #y)))
-(.def .fnz 		(.rPipe .PRECDEFAULT (#args #z)))
-(.def .fnxy 	(.rPipe .PRECDEFAULT (#args #x #y)))
-(.def .fnxz 	(.rPipe .PRECDEFAULT (#args #x #z)))
-(.def .fnyz 	(.rPipe .PRECDEFAULT (#args #y #z)))
-(.def .fnxyz 	(.rPipe .PRECDEFAULT (#args #x #y #z)))
-
-(.def .macx 	(.rBindpipe (#args #x)))
-(.def .macy 	(.rBindpipe (#args #y)))
-(.def .macz 	(.rBindpipe (#args #z)))
-(.def .macxy 	(.rBindpipe (#args #x #y)))
-(.def .macxz 	(.rBindpipe (#args #x #z)))
-(.def .macyz 	(.rBindpipe (#args #y #z)))
-(.def .macxyz 	(.rBindpipe (#args #x #y #z)))
-
-// Element printing services. Prints to stdout. It is aliased to prevent further ristic reduction as it  answers a Ristic
-(.def .rPrint			(.macx (.rPrim #yaga.core.prim.Core #Print x) .alias ))
-
-(.def .print			(.fn (.rPrint 0)))
-(.def .eprint			(.fn (.rPrint 1)))
-(.def .rprint			(.fn (.rPrint 2)))
-(.def .bprint			(.macro (.rPrint 3)))
-(.def .rawprint			(.macro (.rPrint 4)))
-
-(.def .xprint			(.fn (.rPrint 5)))
-(.def .xeprint			(.fn (.rPrint 6)))
-(.def .xrprint			(.fn (.rPrint 7)))
-(.def .xbprint			(.macro (.rPrint 8)))
-(.def .xrawprint		(.macro (.rPrint 9)))
-
-/* 
-	Production invocation of parse, bind, step, evaluate and reduce operations. Note that parse, bind have higher precedence.
-	Note that 'step' will treat elements after the first as parameters to be applied to the first.
-*/
-(.def .rParse 			(.rPrim #yaga.core.prim.Core #Parse))
-(.def .rBind 			(.rPrim #yaga.core.prim.Core #Bind))
-(.def .rStep 			(.rPrim #yaga.core.prim.Core #Step))
-(.def .rEval 			(.rPrim #yaga.core.prim.Core #Evaluate))
-(.def .rReduce 			(.rPrim #yaga.core.prim.Core #Reduce))
-
-(.def .parse 			((.rPipe .PRECDEFAULT-2) .rParse))
-(.def .bind 			((.rPipe .PRECDEFAULT-1) .rBind))
-(.def .step				(.fn .rStep))
-(.def .eval 			(.fn .rEval))
-(.def .reduce 			(.fn .rReduce))
-
-/* 
-   Simple macro for defining constants expressions at bind time. 
-   The '|z' is the declaration of the Pipe variable 'z' that takes the output from 
-   previous pipeline step. All subsequent references are read only. Variables in the 
-   pipeline evaluate to their reference. The reference is not evaluated. If this is 
-   required then add a .rEval as the next step. Note |z will override any other 
-   variables or defines of the same name when they appear in the pipeline.
-   Pipe variables must have an alpha after the Pipe qualifier.
-*/
-(.def .const (.macxy y .rBind .rReduce |z [x z] .def))
-
-// List services "/
-(.def .rHead 			(.rPrim #yaga.core.prim.Core #Head))
-(.def .rTail 			(.rPrim #yaga.core.prim.Core #Tail))
-(.def .rEnd 			(.rPrim #yaga.core.prim.Core #End))
-(.def .rFront 			(.rPrim #yaga.core.prim.Core #Front))
-(.def .rAppend 			(.rPrim #yaga.core.prim.Core #Append))
-
-(.def .head 			(.fn .rHead))
-(.def .tail 			(.fn .rTail))
-(.def .end 				(.fn .rEnd))
-(.def .front 			(.fn .rFront))
-(.def .append 			(.fn .rAppend))
-
-// Ristic defines for creating productive and data expressions with bound and unbound elements "/
-(.def .xProd			(.rExpr #prod))
-(.def .xBoundProd		(.rExpr #prod #bind))
-(.def .xData			(.rExpr #prod))
-(.def .xBoundData		(.rExpr #prod #bind))
-
-// Predefined precedence values. Higher precedence has lower value. "/
-(.def .PRECOPSTART			1000)
-(.def .PRECADDER			1020)	// Must equal .PRECADDITIVE "/
-
-(.def .ADDITIVE	(.rPipe .PRECADDER))
-(.def .+ (.ADDITIVE (.rPrim #yaga.core.prim.Operators #Add)))
-
-(.const .PRECUNARY			(.PRECOPSTART .+ 0))		// + - ! ~ "/
-(.const .PRECMULTIPLICATIVE	(.PRECOPSTART .+ 10))		// * / % "/
-(.const .PRECADDITIVE		(.PRECOPSTART .+ 20))		// + - "/
-(.const .PRECSHIFT			(.PRECOPSTART .+ 30))		// >> << "/
-(.const .PRECRELATIONAL		(.PRECOPSTART .+ 40))		// < <= > >= "/
-(.const .PRECEQUALITY		(.PRECOPSTART .+ 50))		// == != "/
-(.const .PRECBITAND			(.PRECOPSTART .+ 60))		// & "/
-(.const .RECBITXOR			(.PRECOPSTART .+ 61))		// ^ "/
-(.const .PRECBITOR			(.PRECOPSTART .+ 62))		// | "/
-(.const .PRECAND			(.PRECOPSTART .+ 70))		// && "/
-(.const .PRECOR				(.PRECOPSTART .+ 71))		// ^ "/
-(.const .PRECASSIGNMENT		(.PRECOPSTART .+ 80))		// = ... "/
-
-(.def .UNARY			(.rPipe .PRECUNARY))
-(.def .MULTIPLICATIVE	(.rPipe .PRECMULTIPLICATIVE))
-
-(.def .negate 	(.UNARY (.rPrim #yaga.core.prim.Operators #Negate)))			
-(.def .- 		(.ADDITIVE (.rPrim #yaga.core.prim.Operators #Subtract)))
-(.def .* 		(.MULTIPLICATIVE (.rPrim #yaga.core.prim.Operators #Multiply)))
-(.def ./ 		(.MULTIPLICATIVE (.rPrim #yaga.core.prim.Operators #Divide)))
-(.def .% 		(.MULTIPLICATIVE (.rPrim #yaga.core.prim.Operators #Remainder)))
-
-
-// Create the core namespace allocation and assignment macro "/
-(.def .setPublicSpace 		(.rPrim #yaga.core.prim.Core #SetNamespace))
-(.def .newPublicSpace 		(.rPrim #yaga.core.prim.Core #NewNamespace))
-(.def .newLocalSpace 		(.rPrim #yaga.core.prim.Core #NewNamespace #local))
-(.def .space 				(.rPrim #yaga.core.prim.Core #Namespace))
-(.def .parentSpace 			(.rPrim #yaga.core.prim.Core #ParentNamespace))
-(.def .setParentAsPublic	(.macro .space .parentSpace .setPublicSpace))
-
-(.def .fnSetPublicSpace		(.fn .setPublicSpace))
-(.def .fnNewPublicSpace		(.fn .newPublicSpace))
-(.def .fnNewLocalSpace		(.fn .newPublicSpace))
-(.def .fnSpace				(.fn .space))
-(.def .fnParentSpace		(.fn .parentSpace))
-(.def .fnSetParentAsPublic	(.fn .space .parentSpace .setPublicSpace))
-
-/* 
-	Pushing a namespace alters the behaviour of the expression. The elements
-	to the right of any parameters for the push operation are treated and
-	are evaluated as an Expression. This effectively means that the head of
-	the expression is shifted. This enables the expression to be treated as
-	if the .privateSpace/.publicSpace ristic was not present.
-*/
-(.def .privateSpace 	(.rPrim #yaga.core.prim.Core #PushPrivateNamespace))
-(.def .publicSpace		(.rPrim #yaga.core.prim.Core #PushPublicNamespace))
-
-(.def .fnPrivateSpace	(.fn .privateSpace))
-(.def .fnPublicSpace	(.fn .publicSpace))
-
-
-// All other core definitions need to go here "/
-
-
-// Create and switch to the yaga namespace which extends the core namespace (default). "/
-(.setPublicSpace (.newPublicSpace .yaga .core))
-
-// Create yaga language definitions "/
-(.def define ((.rBindpipe (#nparms 2)) .def))
-(.def .rBinop (.macx (.rPipe x (#nparms 2 1))))
-
-(.def + (.rBinop .PRECADDER .+))
-(.def - (.rBinop .PRECADDER .-))
-(.def * (.rBinop .PRECMULTIPLICATIVE .*))
-(.def / (.rBinop .PRECMULTIPLICATIVE ./))
-(.def % (.rBinop .PRECMULTIPLICATIVE .%))
-
-*/

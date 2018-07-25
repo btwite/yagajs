@@ -191,11 +191,13 @@ _jsFunction = Object.assign(Object.create(_function), {
 
     bind: _returnThis,
     evaluate: _returnThis,
-    call(yi, args) {
+    call(yi, args, optPoint) {
         // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
-        // Not going to implement arguments at this level. Will allow a jsFunction to ne associated as the implementation
-        // of a Yaga function. Will need a separate call type to accept aruments as is.
-        if (Array.isArray(args)) args = yaga.List.new(_evaluateArray(yi, args));
+        // Not going to implement arguments at this level. Will allow a jsFunction to be wrapped as a
+        // a Yaga function. Will need a separate Yaga call type to accept arguments as is.
+        // Note that js macros come through here, but always pass a list which will not be evaluated.
+        if (!args.elements) args = _evaluateArgs(yi, args, optPoint);
+        if (args.hasNone) return (_newjsPartialFunction(this, args, optPoint));
         return (yaga.Wrapper.new(this.jfn(yi, args), args.parserPoint));
     },
     print(printer) {
@@ -203,14 +205,51 @@ _jsFunction = Object.assign(Object.create(_function), {
     }
 });
 
-function _evaluateArray(yi, es) {
-    let arr = [];
-    es.forEach(e => {
-        e = e.evaluate(yi);
-        if (e.isInsertable) arr = arr.concat(e.elements);
-        else arr.push(e);
+function _newjsPartialFunction(jsfn, args) {
+    let fn = Object.create(jsfn);
+    fn.isaPartialFunction = true;
+    fn.partialArgs = args;
+    fn.call = function (yi, args, optPoint) {
+        if (!args.elements) args = _evaluateArgs(yi, args);
+        args = _mergeArgs(this.partialArgs, args, optPoint);
+        return (Object.getPrototypeOf(this).call(yi, args, optPoint));
+    };
+    return (fn);
+}
+
+function _mergeArgs(partArgs, args, optPoint) {
+    let e, arr = partArgs.elements.slice(0),
+        es = args.elements,
+        iArgs = 0,
+        newMap = [];
+    partArgs.hasNone.forEach(idx => {
+        if (iArgs >= es.length || (e = es[iArgs++]).isNone) newMap.push(idx);
+        else arr[idx] = e;
     });
-    return (arr);
+    for (; iArgs < es.length; iArgs++) {
+        if ((e = es[iArgs]).isNone) newMap.push(iArgs);
+        arr.push(e);
+    }
+    let list = yaga.List.new(arr, optPoint ? optPoint : arr[0].parserPoint);
+    if (newMap.length > 0) list.hasNone = newMap;
+    return (list);
+}
+
+function _evaluateArgs(yi, es, optPoint) {
+    if (es.length === 0) return (yaga.List.nil());
+    let noneMap = [],
+        arr = [];
+    for (let i = 0; i < es.length; i++) {
+        let e = es[i].evaluate(yi);
+        if (e.isInsertable) arr = arr.concat(e.elements);
+        else if (e.isNone) {
+            noneMap.push(i);
+            arr.push(e);
+        } else arr.push(e);
+    };
+    let list = yaga.List.new(arr, optPoint ? optPoint : arr[0].parserPoint);
+    if (noneMap.length > 0) list.hasNone = noneMap;
+    return (list);
 }
 
 function _returnThis() {

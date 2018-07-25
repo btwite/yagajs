@@ -216,7 +216,7 @@ function _bind(exprs) {
     if (Array.isArray(exprs)) {
         exprs.forEach(expr => binds.push(_doPhase(this, fn, expr)));
     } else {
-        binds = _doPhase(this, fn, expr);
+        binds = _doPhase(this, fn, exprs);
     }
     _resetBinder(this);
     return (binds);
@@ -335,14 +335,16 @@ function _printDictionaries(stream) {
 }
 
 function _registerOperator(sOp, wrap) {
-    this._operators += sOp;
+    for (let i = 0; i < sOp.length; i++) {
+        if (!this._operators.includes(sOp[i])) this._operators += sOp[i];
+    }
     sOp = _getOperatorName(sOp);
     this.dictionary.define(sOp, wrap);
     return (sOp);
 }
 
 function _getOperatorName(sOp) {
-    return (`..op__${sOp}`);
+    return (`..<${sOp}>..`);
 }
 
 function _print(exprs, stream, initIndent = 0) {

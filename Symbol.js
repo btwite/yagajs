@@ -49,6 +49,9 @@ function _newOperator(symName, specs, optPoint) {
     sym = _newUnboundSymbol(sym);
     sym.isanOperator = true;
     sym.specs = specs;
+    sym._unboundMessage = function () {
+        return (`Incorrect placement of operator '${sym.name}'`);
+    };
     return (sym);
 }
 
@@ -56,8 +59,10 @@ function _newParameter(sym, defaultValue) {
     let parm = Object.assign(Object.create(sym), {
         typeName: 'Parameter',
         isaParameter: true,
+        isDeclared: true,
         idxClosure: undefined,
         idx: undefined,
+        isBindable: () => true,
         bind: _returnThis,
         evaluate(yi) {
             return (yi.context.argLists[this.idxClosure][this.idx]);
@@ -85,8 +90,10 @@ function _newVariable(boundFnType, sym) {
     let v = Object.assign(Object.create(sym), {
         typeName: 'Variable',
         isaVariable: true,
+        isDeclared: true,
         idxClosure: undefined,
         idx: undefined,
+        isBindable: () => true,
         bind: _returnThis,
         evaluate(yi) {
             return (yi.context.curClosure[this.name]);
@@ -107,9 +114,12 @@ function _newReference(v) {
 }
 
 function _none(optPoint) {
-    let none = _newsymbol('_', optPoint);
+    let none = _newSymbol('_', optPoint);
     none.typeName = 'None';
     none.isNone = true;
+    none.isBindable = () => true;
+    none.bind = _returnThis;
+    none.evaluate = _returnThis;
     return (none);
 }
 
@@ -143,16 +153,19 @@ _symbol = {
     isQuasiOverride: false,
     isQuasiInjection: false,
     leadSyntax: undefined,
-    bind(yi) {
+    isBindable(yi) {
         // Check if the Symbol is in the closures
         let varMap = yi.binder.curDesc.varMap;
         let v = varMap && varMap[this.name];
-        if (v) return (_newReference(v))
+        if (v) return (v)
         // Now try the Dictionaries.
-        let expr = yi.dictionary.find(this);
-        if (expr !== undefined) return (_bindSymbol(this, expr));
-        // Can't bind the symbol so answer an unbound symbol.
-        return (_newUnboundSymbol(this));
+        return (yi.dictionary.find(this));
+    },
+    bind(yi) {
+        let binding = this.isBindable(yi);
+        if (!binding) return (_newUnboundSymbol(this));
+        if (binding.isDeclared) return (_newReference(v));
+        return (_bindSymbol(this, binding));
     },
     evaluate(yi) {
         return (this.bind(yi).evaluate(yi));
@@ -175,14 +188,14 @@ function _newUnboundSymbol(sym) {
     sym.isUnbound = true;
     sym.bind = _returnThis;
 
-    function _unboundMessage() {
+    sym._unboundMessage = function () {
         return (`'${sym.name}' is not declared or defined`);
     };
     sym.evaluate = function (yi) {
-        throw yaga.errors.YagaException(this, _unboundMessage());
+        throw yaga.errors.YagaException(this, this._unboundMessage());
     };
     sym.raiseError = function (yi) {
-        yi.addError(this, _unboundMessage());
+        yi.addError(this, this._unboundMessage());
         return (this);
     };
     return (sym)
@@ -193,6 +206,7 @@ function _asQuoted() {
     sym.typeName = 'QuotedSymbol';
     sym.isQuoted = true;
     sym.leadSyntax = '\'';
+    sym.isBindable = () => false;
     sym.bind = _returnThis;
     sym.evaluate = _returnPrototype;
     return (sym);

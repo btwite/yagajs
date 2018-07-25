@@ -15,6 +15,7 @@ module.exports = {
     jsMacro: _jsMacro,
     jsParms: _jsParms,
     jsLet: _jsLet,
+    jsCall: _jsCall,
     jsAdd: _jsAdd,
     jsMul: _jsMul,
     jsDictName: _jsDictName,
@@ -73,9 +74,14 @@ function _jsMul(yi, list) {
     return (__jsListOp(yi, list, (v1, v2) => v1 * v2))
 }
 
+function _jsCall(yi, list) {
+    let es = list.elements;
+    return (es[0].call(yi, es.slice(1), list.parserPoint));
+}
+
 function __jsListOp(yi, list, fnOp) {
     let arr = list.elements;
-    if (arr.length < 2) _throw(e, 'Addition requires 2 or more arguments');
+    if (arr.length < 2) _throw(list, 'Addition requires 2 or more arguments');
     let val = fnOp(arr[0].value(), arr[1].value());
     for (let i = 2; i < arr.length; i++) val = fnOp(val, arr[i].value());
     return (yaga.Wrapper.new(val, list.parserPoint));
@@ -161,18 +167,36 @@ function _jsDefop(yi, list) {
     let op = arr[1];
     if (!(op.isaString || op.isaSymbol)) _throw(op, 'Operator must be a string or symbol');
     let o = {};
-    arr.slice(2).forEach(e => __jsDefop(yi, o, e.bind(yi).evaluate(yi)));
+    arr.slice(2).forEach(e => __jsDefop(yi, op.asString(), o, e.bind(yi).evaluate(yi)));
+    let sOp = op.asString();
+    if (o.list) {
+        sOp = o.list.op;
+        let x = yi.dictionary.findString(yi.getOperatorName(o.list.sfx));
+        if (!x) {
+            let wrap = yaga.Wrapper.new({
+                endlist: {
+                    type: 'endlist',
+                    precedence: o.list.precedence,
+                    direction: 'none',
+                    function: undefined,
+                    op: o.list.sfx,
+                }
+            }, arr[2].parserPoint);
+            wrap.referenceList = list;
+            yi.registerOperator(o.list.sfx, wrap);
+        } else if (!x.isaWrapper && typeof (x = x.value()) !== 'object' && !x.endlist) _throw(op, 'List suffix is already defined');
+    }
     let wrap = yaga.Wrapper.new(o, arr[2].parserPoint);
     wrap.referenceList = list;
-    yi.registerOperator(op.asString(), wrap);
+    yi.registerOperator(sOp, wrap);
     return (undefined);
 }
 
-function __jsDefop(yi, o, spec) {
+function __jsDefop(yi, sOp, o, spec) {
     let arr = spec.elements;
     if (arr.length != 4) _throw(spec, 'Operator spec must be (type precedence direction function');
     let type = arr[0].asString();
-    if (!' prefix postfix binary '.includes(type)) _throw(spec, "Operator type values are 'prefix', 'postfix' and 'binary'");
+    if (!' prefix postfix binary list '.includes(type)) _throw(spec, "Operator type values are 'prefix', 'postfix', 'binary' and list");
     let prec = arr[1].value();
     if (typeof prec !== 'number') _throw(spec, "Operator precedence must be a number");
     let dir = arr[2].asString();
@@ -180,12 +204,42 @@ function __jsDefop(yi, o, spec) {
     let fnDef = arr[3].asString();
     if (!yi.dictionary.findString(fnDef)) _throw(spec, "Operator function not found in the dictionary");
 
-    o[type] = {
+    let oSpec = {
         type: type,
         precedence: prec,
         direction: dir,
-        function: fnDef
+        function: fnDef,
+        op: sOp,
+    };
+    if (type === 'list') {
+        if (Object.keys(o).length > 0) _throw(spec, "List operators can only have single specification");
+        // Have a list type so need to split up the operator to determine the end list sequence
+        // and the number of elements the list can hold.
+        // Form is <pfx> (<_>* | <...> | <_>+<...>) <sfx>
+        let i, j;
+        if ((i = sOp.indexOf('_')) < 0) {
+            if ((i = sOp.indexOf('...')) < 0) _throw(spec, "List operator requires '_' or '...' specification");
+            if (i + 3 === sOp.length) _throw(spec, "Missing list operator suffix");
+            oSpec.op = sOp.substring(0, i);
+            oSpec.sfx = sOp.substring(i + 3);
+        } else {
+            if (i === 0) _throw(spec, "Missing list operator prefix");
+            for (j = i; i < sOp.length && sOp[i] === '_'; i++);
+            if (i >= sOp.length) _throw(spec, "Missing list operator suffix");
+            oSpec.op = sOp.substring(0, j);
+            oSpec.minElements = i - j;
+            if ((j = sOp.indexOf('...', i)) === i) {
+                if (j + 3 === sOp.length) _throw(spec, "Missing list operator suffix");
+                oSpec.sfx = sOp.substring(j + 3);
+            } else {
+                if (i === sOp.length) _throw(spec, "Missing list operator suffix");
+                oSpec.sfx = sOp.substring(i);
+                oSpec.maxElements = oSpec.minElements;
+            }
+            if (oSpec.direction !== 'none') _throw(spec, "Lists must have a direction of 'none'");
+        }
     }
+    o[type] = oSpec;
 }
 
 function _throw(e, msg) {
