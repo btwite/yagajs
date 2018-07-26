@@ -10,19 +10,28 @@ var yaga, _wrapper;
 
 module.exports = {
     new: _newWrapper,
+    wrap: _wrap,
     Initialise: y => yaga = yaga ? yaga : y,
     PostInitialise: () => yaga.newType(_wrapper),
 };
 Object.freeze(module.exports);
 
 function _newWrapper(val, optPoint) {
+    let ty = typeof val;
+    if (ty === 'function') return (yaga.Function.jsNewNative(val));
     if (yaga.isaYagaType(val)) return (val);
     let wrap = Object.create(_wrapper);
-    if ((wrap.typeName = typeof val) === 'string') wrap.isaString = true;
+    if ((wrap.typeName = ty) === 'string') wrap.isaString = true;
     if (val !== undefined) wrap._value = val;
     if (optPoint)
         wrap.parserPoint = optPoint;
     return (wrap);
+}
+
+function _wrap(es) {
+    let arr = [];
+    for (let i = 0; i < es.length; i++) es[i] = _newWrapper(arr[i]);
+    return (es);
 }
 
 _wrapper = {
@@ -35,6 +44,9 @@ _wrapper = {
     asQuasiInjection: _returnThis,
     referenceList: undefined,
     value() {
+        return (this._value);
+    },
+    nativeValue() {
         return (this._value);
     },
     asString() {

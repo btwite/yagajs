@@ -33,9 +33,19 @@
 (define .postfxdec null)
 (define .postfxinc null)
 
-(define .precList 0)
+/* Can't have quote or quasiquote as operators, but may we can find a use for these later on
+(define .quote (.jsPrim macro jsQuote))
+(define .quasi (.jsPrim macro jsQuasiQuote))
+(define .quasiOverride (.jsPrim macro jsQuasiOverride))
+(define .quasiInjection (.jsPrim macro jsQuasiOverride))
+*/
 
-(define .precAssign (.add .precList 5))
+(define .precHighest 0)
+
+(define .precList (.add .precHighest 4))
+(define .precConnector (.add .precList 4))
+
+(define .precAssign (.add .precConnector 4))
 (defop '= `(binary ,.precAssign rightToLeft .assign))
 (defop '? `(binary ,(.add .precAssign 1) rightToLeft .if))
 
@@ -73,7 +83,7 @@
 (defop '-  `(prefix ,.precUnary none  .pfxneg)
 		   `(binary ,.precAddition leftToRight  .sub))
 
-(define .precEnd (.add .precUnary 2))
+(define .precLowest (.add .precUnary 2))
 
 
 //(define return (.jsPrim function jsReturn))

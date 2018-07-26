@@ -14,6 +14,7 @@ var yaga, _function, _block, _jsFunction;
 module.exports = {
     new: _newFunction,
     jsNew: _jsNewFunction,
+    jsNewNative: _jsNewNativeFunction,
     Macro: {
         new: _newMacro,
         jsNew: _jsNewMacro,
@@ -35,7 +36,7 @@ function _newFunction(parms, expr, point) {
 }
 
 function _newMacro(parms, expr, point) {
-    let mac = _newFunction(parms, statements, point);
+    let mac = _newFunction(parms, expr, point);
     mac.typeName = 'Macro';
     mac.isaMacro = true;
     return (mac);
@@ -48,16 +49,29 @@ function _newBlock(stmtList, point) {
     return (func);
 }
 
-function _jsNewFunction(list, jfn, point) {
+function _jsNewFunction(jNames, jfn, point) {
     let func = Object.create(_jsFunction);
-    func._list = list;
+    func._jNames = jNames;
     func.jfn = jfn;
     if (point) func.parserPoint = point;
     return (func);
 }
 
-function _jsNewMacro(list, jfn, point) {
-    let mac = _jsNewFunction(list, jfn, point);
+function _jsNewNativeFunction(jfn) {
+    // Native function object is a special from of Wrapper to allow native functions to
+    // be called with yaga. 'value' method will return the actual function.
+    let func = Object.create(_jsFunction);
+    func._jPrim = jfn.name;
+    func.isaNativeFunction = true;
+    func.jfn = jfn;
+    func.nativeValue = func.value = function () {
+        return (this.jfn);
+    };
+    return (func);
+}
+
+function _jsNewMacro(jNames, jfn, point) {
+    let mac = _jsNewFunction(jNames, jfn, point);
     mac.typeName = 'jsMacro';
     mac.isaMacro = true;
     mac.isajsMacro = true;
@@ -75,6 +89,7 @@ _function = {
     isaClosure: true,
     parms: undefined,
     expression: undefined,
+    nativeValue: _nativeWrap,
 
     bind: _bindFunction,
     evaluate(yi) {
@@ -88,6 +103,14 @@ _function = {
         if (this.leadSyntax) printer.printLead(this.leadSyntax);
         printer.printElement(this.value());
     }
+}
+
+function _nativeWrap(yi) {
+    return ((...args) => {
+        let arr = [];
+        args.forEach(a => arr.push(yaga.Wrapper.new(a)));
+        return (this.call(yi, arr).nativeValue(this));
+    });
 }
 
 function _bindFunction(yi) {
@@ -187,7 +210,8 @@ _jsFunction = Object.assign(Object.create(_function), {
     typeName: 'jsFunction',
     isajsFunction: true,
     jfn: undefined,
-    _list: undefined,
+    _jPrim: '.jsPrim',
+    _jNames: undefined,
 
     bind: _returnThis,
     evaluate: _returnThis,
@@ -198,10 +222,18 @@ _jsFunction = Object.assign(Object.create(_function), {
         // Note that js macros come through here, but always pass a list which will not be evaluated.
         if (!args.elements) args = _evaluateArgs(yi, args, optPoint);
         if (args.hasNone) return (_newjsPartialFunction(this, args, optPoint));
+        if (this.isaNativeFunction) {
+            // Need to unwrap the arguments to make the call
+            let arr = [];
+            args.elements.forEach(e => arr.push(e.nativeValue(yi)));
+            return (yaga.Wrapper.new(this.jfn.apply(yi, arr), args.parserPoint));
+        }
         return (yaga.Wrapper.new(this.jfn(yi, args), args.parserPoint));
     },
     print(printer) {
-        this._list.print(printer);
+        printer.printLead('(').printElement(this._jPrim);
+        this._jNames.forEach(n => printer.printElement(n.asString()));
+        printer.printTrail(')');
     }
 });
 
@@ -209,7 +241,9 @@ function _newjsPartialFunction(jsfn, args) {
     let fn = Object.create(jsfn);
     fn.isaPartialFunction = true;
     fn.partialArgs = args;
+    fn.nativeValue = _nativeWrap;
     fn.call = function (yi, args, optPoint) {
+        if (args.length === 0) return (this);
         if (!args.elements) args = _evaluateArgs(yi, args);
         args = _mergeArgs(this.partialArgs, args, optPoint);
         return (Object.getPrototypeOf(this).call(yi, args, optPoint));

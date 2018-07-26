@@ -11,6 +11,7 @@ let _exports = {
     Instance: {
         new: _newYagaInstance,
     },
+    installGrammarExtensions: _installGrammarExtensions,
     newType: _newType,
     resolveFileName: _resolveFileName,
     isaYagaType: _isaYagaType,
@@ -37,6 +38,9 @@ var _typeTemplate = {
     isaYagaType: true,
     value() {
         return (`Type(${this.typeName})`);
+    },
+    nativeValue(yi) {
+        return (this.value());
     },
     parse() {
         throw yaga.errors.YagaException(this, `'${this.value()}' cannot be parsed`);
@@ -86,6 +90,36 @@ function _newYagaInstance(options = {}) {
     }
     yi.isInitialised = true;
     return (yi);
+}
+
+function _installGrammarExtensions() {
+    if (String.prototype['_']) return;
+    let yi = yaga.Instance.new({
+        dictionaryPath: _resolveFileName('exprjs.yaga'),
+    });
+    let exprMap = new Map();
+    String.prototype['_'] = function (...args) {
+        try {
+            yi.clearErrors();
+            let fn = exprMap.get(this);
+            if (!fn) {
+                let str, l = this.length;
+                if (l == 0 || this[0] != '(' || this[l - 1] != ')') str = `(${this})`;
+                let e = yi.parser.parseString(str)
+                if (yi.hasErrors()) throw yaga.errors.YagaException(undefined, 'Expression parse failed', yi._errors);
+                fn = e.bind(yi);
+                if (yi.hasErrors()) throw yaga.errors.YagaException(undefined, 'Expression bind failed', yi._errors);
+                exprMap.set(this, (fn = fn.nativeValue(yi)));
+            }
+            return (fn(...args));
+        } catch (err) {
+            if (yi.hasErrors()) {
+                if (err.isaYagaException && err.errors) throw err;
+                throw yaga.errors.YagaException(undefined, err.message, yi._errors);
+            }
+            throw err;
+        }
+    }
 }
 
 function _newType(oType) {
@@ -174,6 +208,7 @@ var _instance = Object.assign(Object.create(_exports), {
     evaluateDictionary: _evaluateDictionary,
     bind: _bind,
     evaluate: _evaluate,
+    call: _call,
     newVariable: _newVariable,
     printDictionaries: _printDictionaries,
     setDictName: _setDictName,
@@ -233,6 +268,11 @@ function _evaluate(exprs) {
         result = _doPhase(this, fn, exprs);
     }
     return (result);
+}
+
+function _call(fn, ...args) {
+    if (!_isaYagaType(fn) || !fn.isaClosure) throw yaga.errors.YagaException(undefined, 'Require a Yaga function type');
+    return (fn.call(this, yaga.Wrapper.wrap(args)).nativeValue(this));
 }
 
 function _doPhase(yi, fn, expr) {

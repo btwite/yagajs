@@ -129,7 +129,9 @@ function _bindList(yi, list) {
 	let head = es[0].bind(yi);
 	if ((isCallable = yaga.isCallable(head)) && head.isaMacro) {
 		// Evaluate prepares the context call will take the context and instaniate
-		head = head.evaluate(yi).call(yi, list);
+		let args = _newList(es.slice(1), es[0].parserPoint);
+		args.isaMacroCall = true;
+		head = head.evaluate(yi).call(yi, args);
 		if (head.isaList && head.isInsertable) return (head);
 		return (head.bind(yi));
 	}
@@ -168,6 +170,9 @@ function _processOperators(yi, es) {
 	});
 	if (flBindable) return (es); // Nothing that could be an operator so nothing to do
 	if (!_checkOperators((arr = _parseOperators(yi, arr)))) return (es);
+	//es = _bindOperators(yi, arr);
+	//	yi.print(_newList(es));
+	//	return (es);
 	return (_bindOperators(yi, arr));
 }
 
@@ -219,6 +224,7 @@ function _bindOperators(yi, es, er) {
 		case 'list':
 		case 'postfix':
 		case 'prefix':
+		case 'connector':
 			return (_bindSequenceOp(yi, curSpec, es, iOp));
 	}
 	throw yaga.errors.BindException(es[iOp], `Invalid operator specification type '${curSpec.type}'`);
@@ -238,13 +244,13 @@ function _bindSequenceOp(yi, spec, es, iOp) {
 			if (es.length == 2) return ([symFn, es[1]])
 			if (iOp > 0) arr = es.slice(0, iOp);
 			arr.push(_newList([symFn, es[iOp + 1]], es[iOp].parserPoint));
-			if (iOp + 2 < es.length) arr = arr.concat(iOp + 2);
+			if (iOp + 2 < es.length) arr = arr.concat(es.slice(iOp + 2));
 			break;
 		case 'postfix':
 			if (es.length == 2) return ([symFn, es[0]])
 			if (iOp > 1) arr = es.slice(0, iOp - 1);
 			arr.push(_newList([symFn, es[iOp - 1]], es[iOp].parserPoint));
-			if (iOp + 1 < es.length) arr = arr.concat(iOp + 1);
+			if (iOp + 1 < es.length) arr = arr.concat(es.slice(iOp + 1));
 			break;
 		case 'list':
 			let iEnd = _findEndOfList(yi, spec, es, iOp);
@@ -252,6 +258,13 @@ function _bindSequenceOp(yi, spec, es, iOp) {
 			if (iOp > 0) arr = es.slice(0, iOp);
 			arr.push(_newList([symFn].concat(es.slice(iOp + 1, iEnd)), es[iOp].parserPoint));
 			if (iEnd < es.length - 1) arr = arr.concat(es.slice(iEnd + 1));
+			break;
+		case 'connector':
+			let seq = [symFn, es[iOp - 1], es[iOp + 1]];
+			if (es.length === 3) return (seq);
+			if (iOp > 1) arr = es.slice(0, iOp - 1);
+			arr.push(_newList(seq, es[iOp].parserPoint));
+			if (iOp + 1 < es.length - 1) arr = arr.concat(es.slice(iOp + 2));
 			break;
 		default:
 			throw yaga.errors.InternalException('Invalid bind sequence');
@@ -306,25 +319,26 @@ function _parseOperators(yi, es) {
 		if (ePrevSpec) {
 			switch (ePrevSpec.type) {
 				case 'endlist':
-					spec = specs.list || specs.endlist || specs.binary || specs.suffix;
+					spec = specs.list || specs.endlist || specs.binary || specs.connector || specs.suffix;
 					break;
 				case 'list':
 					spec = specs.endlist || specs.prefix;
 					break;
+				case 'connector':
 				case 'binary':
 				case 'prefix':
 					spec = specs.list || specs.prefix;
 					break;
 				case 'postfix':
 					if (eNext) {
-						spec = specs.list || specs.endlist || specs.binary || specs.postfix;
+						spec = specs.list || specs.endlist || specs.binary || specs.connector || specs.postfix;
 						break;
 					}
 					spec = specs.endlist || specs.postfix;
 					break;
 			}
 		} else if (i == 0) spec = specs.list || specs.prefix;
-		else if (eNext) spec = specs.list || specs.endlist || specs.binary;
+		else if (eNext) spec = specs.list || specs.endlist || specs.binary || specs.connector;
 		else spec = specs.endlist || specs.postfix;
 		e.spec = spec;
 	}

@@ -9,17 +9,6 @@
 
 var yaga;
 
-let _evaluateTypes = {
-    EXPRESSION: 'EXPRESSION',
-    RISTIC: 'RISTIC',
-    PIPELINE: 'PIPELINE',
-    PRIMITIVE: 'PRIMITIVE',
-    CONTEXT: 'CONTEXT',
-    EVALUATOR: 'EVALUATOR',
-    INDEX: 'INDEX',
-    PARSE: 'PARSE'
-};
-
 module.exports = {
     YagaException: _errorMethod(YagaException),
     InternalException: _errorMethod(InternalException),
@@ -39,8 +28,6 @@ module.exports = {
     RisticValidationException: _errorMethod(RisticValidationException),
 
     Error: _newError,
-
-    evaluateTypes: _evaluateTypes,
 
     Initialise: _init
 };

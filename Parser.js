@@ -8,6 +8,15 @@
 const ENDOFINPUT = 'ENDOFINPUT';
 const ENDOFEXPRESSION = 'ENDOFEXPRESSION';
 const ENDOFBLOCK = 'ENDOFBLOCK';
+const BRACKETS = 'BRACKETS';
+
+const EXPRESSION = 'EXPRESSION';
+const RISTIC = 'RISTIC';
+const PIPELINE = 'PIPELINE';
+const PRIMITIVE = 'PRIMITIVE';
+const CONTEXT = 'CONTEXT';
+const INDEX = 'INDEX';
+const PARSE = 'PARSE'
 
 var yaga, _parser, _parserPoint, _defParserPoint;
 module.exports = {
@@ -250,7 +259,7 @@ function _nextExpression(parser) {
             if (parser._lvlExpr.length == 0)
                 throw yaga.errors.ParserException(parser._lastParserPoint, "Missing start of expression or block");
             if (parser._lvlExpr.pop() != ch)
-                throw new ParserException(ParserException.ErrorType.BRACKETS, `Mismatching brackets. Expecting '${ch}'`);
+                throw yaga.errors.ParserException(parser._lastParserPoint, `Mismatching brackets. Expecting '${ch}'`, BRACKETS);
             return (null); // End of expression detected.
         case '(':
             return (_parseExpression(parser));
@@ -287,7 +296,7 @@ function _nextExpression(parser) {
 
 function _parseExpression(parser) {
     return (__parseExpressions(parser, ')', () => {
-        throw ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION)
+        throw yaga.errors.ParserException(parser._lastParserPoint, "Missing end of expression", ENDOFEXPRESSION)
     }));
 }
 

@@ -1,0 +1,10 @@
+/*
+*  Contains expression extensions for Javascript.
+*  Example:
+*           "_->[_]"._(this, fn);   - Binds 'this' to function.
+*/
+(dictionaryName "JavaScript Expressions")
+
+(define .jsExprBind (.jsPrim macro jsExprBind))
+(defop '-> `(connector ,.precConnector leftToRight .jsExprBind))
+(defop '[_] `(list ,.precList none list))
