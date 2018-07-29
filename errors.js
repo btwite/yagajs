@@ -12,7 +12,7 @@ var yaga;
 module.exports = {
     YagaException: _errorMethod(YagaException),
     InternalException: _errorMethod(InternalException),
-    ParserException: _errorMethod(ParserException),
+    ReaderException: _errorMethod(ParserException),
     DictionaryException: _errorMethod(DictionaryException),
     BindException: _errorMethod(BindException),
 
@@ -61,13 +61,13 @@ function InternalException(msg) {
 }
 _inheritErrorPrototype(InternalException, YagaException);
 
-function ParserException(src, msg, rsn) {
-    _setErrorDetails(this, src, msg, ParserException);
-    _captureStackTrace(this, module.exports.ParserException, msg);
-    this.reason = rsn ? rsn : 'PARSER';
+function ReaderException(src, msg, rsn) {
+    _setErrorDetails(this, src, msg, ReaderException);
+    _captureStackTrace(this, module.exports.ReaderException, msg);
+    this.reason = rsn ? rsn : 'READER';
     return (this);
 }
-_inheritErrorPrototype(ParserException, YagaException);
+_inheritErrorPrototype(ReaderException, YagaException);
 
 function DictionaryException(e, msg) {
     _setErrorDetails(this, e, msg, DictionaryException);

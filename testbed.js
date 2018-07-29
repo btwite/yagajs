@@ -7,8 +7,18 @@
 let yaga = require('./yaga');
 
 test();
+//testGrammarExtensions();
 
 function test() {
+    let yi = yaga.Instance.new();
+    let reader = yaga.Reader.new(yi);
+    log(reader);
+    let o = {};
+    o[''] = 'fred';
+    console.log(o['']);
+}
+
+function testGrammarExtensions() {
     yaga.installGrammarExtensions();
     let obj = {
         foobar() {

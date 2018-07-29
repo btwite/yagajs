@@ -25,6 +25,8 @@ module.exports = yaga = _exports;
 _exports.StringBuilder = require('./StringBuilder');
 _exports.Symbol = require('./Symbol');
 _exports.Dictionary = require('./Dictionary');
+_exports.Reader = require('./Reader');
+_exports.YagaReaderTable = require('./YagaReaderTable');
 _exports.Parser = require('./Parser');
 _exports.errors = require('./errors');
 _exports.List = require('./List');

@@ -35,6 +35,14 @@ function _newStringBuilder() {
         },
         toString() {
             return (_strings.join(''));
+        },
+        substr(iStart, len) {
+            if (iStart + len > _strings.length) len = _strings.length - iStart;
+            if (len === 0) return ('');
+            return (_strings.slice(iStart, iStart + len).join(''));
+        },
+        splice(...args) {
+            return (_strings.splice(...args));
         }
     }));
 }
