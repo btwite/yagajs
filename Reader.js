@@ -35,7 +35,6 @@ const INDEX = 'INDEX';
 const PARSE = 'PARSE'
 
 var yaga, _reader, _readerContext, _Private, _readPoint, _defReadPoint;
-let _tableMap = new WeakMap();
 
 module.exports = {
     new: _newReader,
@@ -57,7 +56,7 @@ function _newReader(yi, optReadTable) {
     let ctxt, reader = Object.create(_reader);
     _Private(reader).context = (ctxt = Object.create(_readerContext));
     if (yi._options.tabCount) ctxt.tabCount = yi._options.tabCount;
-    ctxt.initReadTable = _initReadTable(optReadTable || yaga.ReaderTable.yaga());
+    ctxt.initReadTable = yaga.ReaderTable.new(optReadTable || yaga.YagaReader.readerTable());
     ctxt.reader = reader;
     ctxt.stateFns = _getStateFunctions(ctxt);
     ctxt.startReaderState = _startReaderState(ctxt);
@@ -65,6 +64,7 @@ function _newReader(yi, optReadTable) {
     ctxt.eolState = _eolState(ctxt);
     ctxt.tokenCreatedState = _tokenCreatedState(ctxt);
     ctxt.patternState = _patternState(ctxt);
+    ctxt.tokBuf = yaga.StringBuilder.new();
     _defineProtectedProperty(reader, 'yi', yi);
     return (reader);
 }
@@ -141,58 +141,15 @@ function __readStrings(arr, srcName) {
 }
 
 function _splitToken(tok, readTable) {
+    // Change this to just call the token pattern matching interface.
+    // Will only use the pattern matching component of the reader table. Other handlers will not
+    // come into play.
     if (!yaga.isaYagaType(tok) || !tok.isaToken) throw yaga.errors.YagaException(undefined, `Expecting a token. Found(${tok})`);
-    let rp = tok.readPoint;
-    this.sourceName = rp.sourceName;
-    let flDone = false;
-    let ctxt = _initReaderContext(this, () => flDone ? null : (flDone = true, tok.chars));
-    ctxt.stateFns.fnPushReaderTable(readTable);
-    this.lineNo = rp.line;
-    this.column = rp.column;
-    return (_read(ctxt));
-}
+    readTable = yaga.ReaderTable.new(readTable); // Validate the reader table
 
-let _readTableTemplate = {
-    startReader: _valTableFunction,
-    endReader: _valTableFunction,
-    eol: _valTableFunction,
-    tokenCreated: _valTableFunction,
-    patterns: _valTablePatterns,
-};
+    // Init code to all pattern matching
 
-function _initReadTable(readTable) {
-    let table = _tableMap.get(readTable); // Have we been here before.
-    if (table) return (table);
-
-    if (typeof readTable !== 'object') throw yaga.erros.YagaException(undefined, 'Invalid reader table provided');
-    // Validat that the table is correct.
-    table = Object.assign({}, readTable);
-    Object.keys(readTable).forEach(key => {
-        if (!_readTableTemplate[key]) throw yaga.errors.YagaException(undefined, `Invalid Reader table entry '${key}'`);
-        _readTableTemplate[key](key, readTable[key]);
-    });
-    return (table);
-}
-
-function _valTableFunction(name, val) {
-    if (typeof val !== 'function') throw yaga.erros.YagaException(undefined, `Function required for Reader table entry '${name}'`);
-}
-
-function _valTablePatterns(name, patterns) {
-    if (typeof patterns !== 'object') throw yaga.errors.YagaException(undefined, `Object required for Reader table '${name}'`);
-    let maxlen = -1;
-    Object.keys(patterns).forEach(pat => {
-        _valTablePattern(pat, patterns[pat]);
-        maxlen = maxlen < pat.length ? pat.length : maxlen
-    });
-    patterns.maxPatternLength = maxlen;
-}
-
-function _valTablePattern(name, pat, val) {
-    if (typeof val !== 'function' && val !== undefined)
-        throw yaga.errors.YagaException(undefined, `Pattern '${pat}' must be a function or undefined. Found '${val}' in '${name}'`);
-    if (pat === '' && typeof val !== 'function')
-        throw yaga.errors.YagaException(undefined, `Function required for empty string pattern in '${name}'`);
+    // Call pattern matching interface
 }
 
 // Internal context of the reader.
@@ -218,6 +175,8 @@ _readerContext = {
     lineNo: 0,
     column: 0,
     lastToken: undefined,
+    curToken: undefined,
+    tokStream: undefined,
     tokBuf: undefined,
 
     startReader: __stateHandler('startReader', _newStartReader),
@@ -242,7 +201,6 @@ _readerContext = {
     _strLength: 0,
     _str: undefined,
     _pushbackChar: undefined,
-    _curChar: undefined,
 };
 
 function _initReaderContext(reader, fnRead) {
@@ -255,9 +213,10 @@ function _initReaderContext(reader, fnRead) {
     ctxt.parentPoints = [];
     ctxt.parentPoint = _defReadPoint;
     ctxt._fnRead = fnRead;
-    ctxt.readTable = ctxt.readTable;
+    ctxt.readTable = ctxt.initReadTable;
     ctxt.readTableStack = [];
-    ctxt.tokBuf = yaga.StringBuilder.new();
+    ctxt.tokStream = [];
+    ctxt.curToken = undefined;
     return (ctxt);
 }
 
@@ -288,6 +247,7 @@ function _tokenCreated(tok) {
 
 // Pattern match against the current token.
 function _patternMatch() {
+    // Must handle EOS and EOL tokens. Returns true if not EOS and false otherwise.
     if (this.readTable.patterns)
         _matchPatterns(this);
     // Handle any left over token string
@@ -301,8 +261,6 @@ function _readChar(fnEOS) {
             let peek = this.peekNextChar();
             if (peek === '\n') this.readNextChar(fnEOS);
         case '\n':
-            this.lineNo++;
-            this.column = 0;
             return ('\n');
         case '\t':
             let tc = this.tabCount;
@@ -405,49 +363,49 @@ function _newParentPoint(ctxt) {
 
 
 function _read(ctxt) {
-    ctxt.curChar = ' ';
+    ctxt._flActive = true;
     try {
-        ctxt._flActive = true;
         ctxt.startReader();
-        while (_nextToken(ctxt));
-        ctxt.expression = ctxt.endReader(); // The endReader handler must answer the expression object that is to be returned.
+        while (_moreTokens(ctxt));
     } catch (err) {
         _addError(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err);
     } finally {
         ctxt._flActive = false;
     }
-    return (ctxt.expression);
+    return (ctxt.endReader()); // The endReader handler must answer the expression object that is to be returned.
+}
+
+function _moreTokens(ctxt) {
+    ctxt.lastToken = ctxt.curToken;
+    if (ctxt.tokStream.length > 0) {
+        ctxt.curToken = ctxt.tokStream.splice(0, 1)[0];
+        return (_patternMatch(ctxt, ctxt.curToken));
+    }
+    return (_patternMatch(ctxt, ctxt.curToken = _nextToken(ctxt)));
 }
 
 function _nextToken(ctxt) {
-    // Check whether we have a newline or we have run out of input to process.
-    if (ctxt._curChar === '\n') this.eol();
-    else if (ctxt._curChar === '') return (false);
-
     // Skip any initial white space
-    let ch, peek;
-    for (;;) {
-        while (_isWhitespace(ch = _nextChar(ctxt)));
-        if (ch === '') {
-            if (ctxt.column !== 0) this.eol(); // Don't want two end of lines if EOS occurs straight after a NL
-            return (false);
+    let ch, ;
+    while (_isWhitespace(ch = _nextChar(ctxt)));
+    if (ch === '') {
+        if (ctxt.column !== 0) {
+            // Don't want two end of lines if EOS occurs straight after a NL
+            ctxt.pushbackChar(ch);
+            return (_newEOLToken(ctxt));
         }
-        if (ch !== '\n') break;
-        this.eol();
+        return (_newEOSToken(ctxt));
     }
+    if (ch === '\n') return (_newEOLToken(ctxt));
+
     ctxt.tokBuf.clear();
     let readPoint = ctxt.lastReadPoint = ctxt.newPoint();
     do {
         ctxt.tokBuf.append(ch);
-    } while (!_isWhitespace(ch = _nextChar(ctxt)) && ch !== '' && ch !== '\n');
+    } while (!_isEndToken(ch = _nextChar(ctxt)));
+    ctxt.pushbackChar(ch);
 
-    // Need to save the current character as we may not get back from pattern matching at the same
-    // read point.
-    ctxt._curChar = ch;
-    // Can now process the pattern matching. This will take responsibility for creating tokens and
-    // adding to the current expression.
-    _patternMatch(ctxt);
-    return (true);
+    return (_newToken(ctxt.tokBuf.toString(), readPoint));
 }
 
 function _nextChar(ctxt) {
@@ -509,6 +467,10 @@ function _isOperator(ch) {
 function _isWhitespace(ch) {
     // Will need to be extended to handle ucs-2 extended whitespace
     return (ch === ' ');
+}
+
+function _isEndtoken(ch) {
+    return (_isWhitespace(ch) || ch === '' || ch === '\n');
 }
 
 function _addError(ctxt, msg, e, attach) {
@@ -626,6 +588,28 @@ function _newToken(chs, readPoint) {
         isaReaderToken: true,
         readPoint: readPoint,
         chars: chs,
+    }
+}
+
+function _newEOLToken(ctxt) {
+    let readPoint = ctxt.newPoint();
+    ctxt.lineNo++;
+    ctxt.column = 0;
+    return {
+        typeName: 'ReaderToken:EOL',
+        isaReaderToken: true,
+        isEOL,
+        readPoint: readPoint,
+    }
+}
+
+function _newEOSToken() {
+    let readPoint = ctxt.newPoint();
+    return {
+        typeName: 'ReaderToken:EOS',
+        isaReaderToken: true,
+        isEOS,
+        readPoint: readPoint,
     }
 }
 
