@@ -19,7 +19,7 @@
  */
 "use strict";
 
-let scopes = require('prop-scopes');
+let Scopes = require('prop-Scopes');
 
 const ENDOFINPUT = 'ENDOFINPUT';
 const ENDOFEXPRESSION = 'ENDOFEXPRESSION';
@@ -34,7 +34,7 @@ const CONTEXT = 'CONTEXT';
 const INDEX = 'INDEX';
 const PARSE = 'PARSE'
 
-var yaga, _reader, _readerContext, _Private, _readPoint, _defReadPoint;
+var Yaga, _reader, _readerContext, _Private, _readPoint, _defReadPoint;
 
 module.exports = {
     new: _newReader,
@@ -44,7 +44,7 @@ module.exports = {
     },
     defaultReadPoint: undefined,
     Initialise(y) {
-        yaga = yaga ? yaga : y;
+        Yaga = Yaga ? Yaga : y;
         _defReadPoint = _newReadPoint(undefined, '<None>');
         _defReadPoint.isDefault = true;
         this.defaultReadPoint = _defReadPoint;
@@ -56,7 +56,7 @@ function _newReader(yi, optReadTable) {
     let ctxt, reader = Object.create(_reader);
     _Private(reader).context = (ctxt = Object.create(_readerContext));
     if (yi._options.tabCount) ctxt.tabCount = yi._options.tabCount;
-    ctxt.initReadTable = yaga.ReaderTable.new(optReadTable || yaga.YagaReader.readerTable());
+    ctxt.initReadTable = Yaga.ReaderTable.new(optReadTable || Yaga.YagaReader.readerTable());
     ctxt.reader = reader;
     ctxt.stateFns = _getStateFunctions(ctxt);
     ctxt.startReaderState = _startReaderState(ctxt);
@@ -64,21 +64,12 @@ function _newReader(yi, optReadTable) {
     ctxt.eolState = _eolState(ctxt);
     ctxt.tokenCreatedState = _tokenCreatedState(ctxt);
     ctxt.patternState = _patternState(ctxt);
-    ctxt.tokBuf = yaga.StringBuilder.new();
+    ctxt.tokBuf = Yaga.StringBuilder.new();
     _defineProtectedProperty(reader, 'yi', yi);
     return (reader);
 }
 
-function _newReadPoint(parent, srcName, line, col) {
-    let point = Object.create(_readPoint);
-    if (parent) point.parent = parent;
-    point.sourceName = srcName;
-    if (line) point.line = line;
-    if (col) point.column = col;
-    return (point);
-}
-
-_reader = scopes.read({
+_reader = Scopes.read({
     typeName: 'Reader',
     readStream: _readStream,
     readFile: _readFile,
@@ -88,8 +79,8 @@ _reader = scopes.read({
     private_var__context: undefined,
 });
 Object.freeze(_reader);
-_Private = scopes.getScopeFns(_reader).private;
-scopes.lock(_reader);
+_Private = Scopes.getScopeFns(_reader).private;
+Scopes.lock(_reader);
 
 function _readFile(path) {
     let fs = require('fs');
@@ -98,7 +89,7 @@ function _readFile(path) {
         fd = fs.openSync(path, 'r');
         this.sourceName = fs.realpathSync(path);
     } catch (err) {
-        throw yaga.errors.ParserException(undefined, `Failed to open yaga file. Rsn(${err.message})`);
+        throw Yaga.errors.ParserException(undefined, `Failed to open Yaga file. Rsn(${err.message})`);
     }
     let oPos = 0,
         buf = Buffer.alloc(8192),
@@ -120,7 +111,7 @@ function _readFile(path) {
 }
 
 function _readStream(stream) {
-    throw yaga.errors.InternalException(`Streams are not currently supported`);
+    throw Yaga.errors.InternalException(`Streams are not currently supported`);
 }
 
 function _readStrings(arr) {
@@ -144,8 +135,8 @@ function _splitToken(tok, readTable) {
     // Change this to just call the token pattern matching interface.
     // Will only use the pattern matching component of the reader table. Other handlers will not
     // come into play.
-    if (!yaga.isaYagaType(tok) || !tok.isaToken) throw yaga.errors.YagaException(undefined, `Expecting a token. Found(${tok})`);
-    readTable = yaga.ReaderTable.new(readTable); // Validate the reader table
+    if (!Yaga.isaYagaType(tok) || !tok.isaToken) throw Yaga.errors.YagaException(undefined, `Expecting a token. Found(${tok})`);
+    readTable = Yaga.ReaderTable.new(readTable); // Validate the reader table
 
     // Init code to all pattern matching
 
@@ -205,7 +196,7 @@ _readerContext = {
 
 function _initReaderContext(reader, fnRead) {
     let ctxt = _Private(reader).context;
-    if (ctxt._flActive) throw yaga.errors.YagaException(undefined, 'Reader is already active');
+    if (ctxt._flActive) throw Yaga.errors.YagaException(undefined, 'Reader is already active');
 
     ctxt.lastReadPoint = _newReadPoint(undefined, reader.sourceName);
     ctxt.expression = _newExpresson(ctxt.lastReadPoint);
@@ -230,7 +221,7 @@ function __stateHandler(stateName, fn) {
 function _endReader() {
     if (!this.readTable.endReader) {
         if (ctxt.exprStack.length > 0)
-            throw yaga.errors.ReaderException(ctxt.lastReadPoint, "Missing end of expression");
+            throw Yaga.errors.ReaderException(ctxt.lastReadPoint, "Missing end of expression");
         return (ctxt.expression);
     }
     return (this.readTable.endReader(_newEndReader(this, ctxt.expression, ctxt.exprStack)));
@@ -279,7 +270,7 @@ function _readNextChar(fnEOS) {
     } else if (this._iStr >= this._strLength) {
         if (this._flEOS) {
             if (fnEOS) return (fnEOS());
-            throw yaga.errors.ParserException(this.lastParserPoint, "End of input detected", ENDOFINPUT);
+            throw Yaga.errors.ParserException(this.lastParserPoint, "End of input detected", ENDOFINPUT);
         }
         if ((this._str = this._fnRead()) == null) {
             this._flEOS = true;
@@ -312,7 +303,7 @@ function _peekNextChar() {
 
 function _pushbackChar() {
     if (this._pushbackChar) {
-        throw yaga.errors.InternalException(undefined, "Attempting mulitple pushbacks");
+        throw Yaga.errors.InternalException(undefined, "Attempting mulitple pushbacks");
     }
     /*    
     Needs to be rewritten once we work out the readtable functions will use peek and pushback.
@@ -329,22 +320,6 @@ function _newPoint(parent, line, col) {
     this.lastParserPoint = _newParserPoint(parent, this.sourceName, line, col);
     return (this.lastParserPoint)
 }
-
-_readPoint = {
-    typeName: 'ReadPoint',
-    isaReadPoint: true,
-    sourceName: undefined,
-    line: 0,
-    column: 0,
-    parent: undefined,
-    increment(nCols) {
-        return (_newReadPoint(this, this.sourceName, this.line, this.column + nCols));
-    },
-    format() {
-        return (`${this.sourceName}[${this.line},${this.column}]`);
-    }
-}
-
 
 function _pushParentPoint(ctxt, point) {
     ctxt.parentPoints.push(ctxt.parentPoint);
@@ -418,12 +393,12 @@ function _emitBufferToken(ctxt, nChars) {
     let len = ctxt.tokBuf.length();
     if (len === 0) return;
     if (nChars !== undefined && len < nChars)
-        throw yaga.errors.InternalException(`Invalid request`);
+        throw Yaga.errors.InternalException(`Invalid request`);
     let str;
     if (nChars === undefined) str = ctxt.tokBuf.toString();
     else str = ctxt.tokBuf.substr(0, nChars);
     ctxt.tokBuf.splice(0, str.length);
-    let tok = yaga.Token.newReaderToken(str, ctxt.lastReadPoint);
+    let tok = Yaga.Token.newReaderToken(str, ctxt.lastReadPoint);
     ctxt.lastReadPoint = ctxt.lastReadPoint.increment(str.length);
     ctxt.tokenCreated(tok); // This function has respossibility for ensuring that the token is added to the expression
 }
@@ -432,41 +407,6 @@ function _matchPatterns(ctxt) {
     let patterns = ctxt.readTable.patterns;
     let maxlen = patterns.maxPatternLength;
     if (maxlen < 0) return; // No patterns to match on
-}
-
-// Will need to be extend the following functions properly handle ucs-2 extended characters
-
-function _isSpecial(ch) {
-    return (!_isAlphaNumeric(ch) && !_isWhitespace(ch) && !_isOperator(ch) && !_isControl(ch));
-}
-
-function _isAlpha(ch) {
-    return ('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.includes(ch));
-}
-
-function _isAlphaNumeric(ch) {
-    return ('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.includes(ch));
-}
-
-function _isDigit(ch) {
-    return ('0123456789'.includes(ch));
-}
-
-function _isNumeric(ch) {
-    return (_isDigit(ch));
-}
-
-function _isControl(ch) {
-    return ('\n\t\b\f\r'.includes(ch));
-}
-
-function _isOperator(ch) {
-    return ('~!@#$%^&*()_+-={}|[]\\:";\'<>?,./'.includes(ch));
-}
-
-function _isWhitespace(ch) {
-    // Will need to be extended to handle ucs-2 extended whitespace
-    return (ch === ' ');
 }
 
 function _isEndtoken(ch) {
@@ -493,7 +433,7 @@ function _defineProtectedProperty(obj, name, val) {
 // Reader table callback functions
 function _getStateFunctions(ctxt) {
     return {
-        fnThrow: msg => yaga.errors.YagaException(ctxt.lastReadPoint, msg),
+        fnThrow: msg => Yaga.errors.YagaException(ctxt.lastReadPoint, msg),
         fnPushReaderTable: newTable => {
             let table = _initReadTable(newTable);
             ctxt.readTableStack.push(ctxt.readTable);

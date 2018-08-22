@@ -4,12 +4,33 @@
 
 "use strict"
 
-let yaga = require('./yaga');
+let yaga = require('./Yaga');
 
 test();
 //testGrammarExtensions();
 
 function test() {
+    log(yaga);
+    yaga();
+    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
+
+    let myInf = yaga.Influence({
+        name: 'myInf',
+        prototype: {
+            helloWorld() {
+                console.log('Hello World');
+                return (this);
+            }
+        },
+        constructor: {
+            myval: 100
+        }
+    });
+    log(myInf);
+    log(myInf.create().helloWorld().typeName);
+}
+
+function oldReader() {
     let yi = yaga.Instance.new();
     let reader = yaga.Reader.new(yi);
     log(reader);
