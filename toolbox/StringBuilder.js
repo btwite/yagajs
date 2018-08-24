@@ -7,9 +7,9 @@
 
 'use strict';
 
-module.exports = Object.freeze(StringBuilder);
+module.exports = Object.freeze(newStringBuilder);
 
-function StringBuilder() {
+function newStringBuilder() {
     let str, aStrings = [];
     return (Object.freeze({
         typeName: 'StringBuilder',

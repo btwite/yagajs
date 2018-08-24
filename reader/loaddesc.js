@@ -5,11 +5,10 @@
  */
 "use strict";
 
+let _ = undefined;
 module.exports = {
     modules: {
-        ReadPoint,
+        ReadPoint: _,
     },
     path: __dirname
 };
-
-var ReadPoint;

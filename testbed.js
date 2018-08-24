@@ -10,9 +10,9 @@ test();
 //testGrammarExtensions();
 
 function test() {
-    log(yaga);
-    yaga();
-    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
+    //    log(yaga);
+    //    yaga();
+    //    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
 
     let myInf = yaga.Influence({
         name: 'myInf',
@@ -23,11 +23,23 @@ function test() {
             }
         },
         constructor: {
-            myval: 100
+            myval: 100,
+            private_: {
+                myprivateval: []
+            }
         }
     });
     log(myInf);
-    log(myInf.create().helloWorld().typeName);
+    let o = myInf.create();
+    let o1 = myInf.create();
+    log(o.helloWorld().typeName);
+    log(myInf.private(o1));
+    myInf.private(o1).myprivateval.push(300);
+    log(myInf.private(o), myInf.private(o1));
+
+    log(yaga.Reader.ReadPoint.default.isaReadPoint);
+    let r = yaga.Reader.ReadPoint('mySource', 2, 3);
+    log(r.format(), r.increment(10).format(), yaga.Reader.ReadPoint.default.format());
 }
 
 function oldReader() {

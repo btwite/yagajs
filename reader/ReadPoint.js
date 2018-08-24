@@ -6,47 +6,34 @@
 "use strict";
 
 var Yaga = require('../Yaga');
-var Pack; // Reader package interfaces
+var DefaultReadPoint;
 
-let defaultReadPoint = undefined; // FIX this later.
-
-module.exports = ReadPoint;
-ReadPoint.default = defaultReadPoint;
-ReadPoint.Initialise = Initialise;
-ReadPoint.Yaga = Yaga;
-Object.freeze(ReadPoint);
-
-function Initialise(pack) {
-    Pack = Pack || pack;
-}
-
-function ReadPoint(parent, srcName, line, col) {
-    let point = Object.create(_readPoint);
-    if (parent) point.parent = parent;
-    point.sourceName = srcName;
-    if (line) point.line = line;
-    if (col) point.column = col;
-    return (point);
-}
-
-var ReadPoint = {
-    typeName: 'ReadPoint',
-    isaReadPoint: true,
-    sourceName: undefined,
-    line: 0,
-    column: 0,
-    parent: undefined,
-    increment: Yaga.thisArg(increment),
-    format() {
-        return (`${this.sourceName}[${this.line},${this.column}]`);
-    }
-}
-
-function increment(rp, nCols) {
-    let prot = Object.getPrototypeOf(rp);
-    if (prot.hasOwnProperty('isaReadPoint'))
-        prot = rp;
-    let rp1 = Object.create(prot);
-    rp1.column = rp.column + nCols;
-    return (rp1);
-}
+module.exports = Yaga.Influence({
+    name: 'ReadPoint',
+    prototype: {
+        sourceName: '<unknown>',
+        line: 0,
+        column: 0,
+        parent: undefined,
+        increment(nCols) {
+            let o = this.copy();
+            o.column += nCols;
+            return (o);
+        },
+        format() {
+            return (`${this.sourceName}[${this.line},${this.column}]`);
+        }
+    },
+    constructor(srcName, line, col, parent) {
+        if (parent) this.parent = parent;
+        this.sourceName = srcName;
+        if (line) this.line = line;
+        if (col) this.column = col;
+    },
+    static: {
+        get default() {
+            if (!DefaultReadPoint) DefaultReadPoint = this.influence.create('<None>');
+            return (DefaultReadPoint);
+        }
+    },
+}).create;
