@@ -73,9 +73,12 @@
  * 				4. '.least.' - Take property from least significant composable.
  * 				5. '.most.' - Take property from most significant composable.
  * 				6. ['.least.'] - Call matching property function for each composable in least significant order
- * 				7. ['.most.'] - Call matching property function for each composable in most significant order
- * 				8. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
- * 				9. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
+ * 				7. [['.least.]] - Array of property values in least significant order. Implemented as getter.
+ * 				8. ['.most.'] - Call matching property function for each composable in most significant order
+ * 				9. [['.most.]] - Array of property values in most significant order. Implemented as getter.
+ * 			   10. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
+ * 			   11. [[ ... ]] - Property values of ordered <idx>|<name> composables. Implemented as getter.
+ * 			   12. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
  * 				   named property. 'fHarmonizer' is called during the construcion of the composition influence and is 
  * 				   bound to an object that contains helper functions for assisting the construction of the harmonized property.
  * 						getComposable(<idx>|<name>) : Answer the composable access object by index or name.
@@ -160,7 +163,7 @@ function compositionInfluence(oInf, oDesc) {
 	processProperties(oDesc.harmonizers, {
 		prototype: () => harmonize(oInf, 'prototype', oDesc.harmonizers.prototype),
 		static: () => harmonize(oInf, 'staticObject', oDesc.harmonizers.static),
-		constructor: () => harmonizeProperty(oInf, 'constructor', oDesc.harmonizers),
+		constructor: () => harmonizeConstructor(oInf, oDesc.harmonizers.constructor),
 		_other_: () => {}
 	});
 	let harmDefaults = Object.assign({}, HarmonizerDefaults); // Fill the gaps
@@ -189,8 +192,67 @@ function harmonizeProtected(oInf, tProp, oDesc) {
 	harmonize(oInf, tProp, oDesc);
 }
 
-function harmonizeProperty(oInf, iProp, oDesc, prop = iProp) {
+function harmonizeConstructor(oInf, oDesc) {
+	_harmonizeProperty(oInf, oDesc, 'constructor',
+		(inf, prop) => Object.getOwnPropertyDescriptor(inf, prop));
+}
 
+function harmonizeProperty(oInf, iProp, oDesc, prop) {
+	oInf[iProp][prop]
+	_harmonizeProperty(oInf, oDesc, prop,
+		(inf, prop) => inf[iProp] && Object.getOwnPropertyDescriptor(inf[iProp], prop));
+}
+
+function _harmonizeProperty(oInf, oDesc, prop, fInfProp) {
+	let desc, inf, vHarm = oDesc[prop],
+		infs = oInf.temp.influences;
+	switch (typeof vHarm) {
+		case 'number':
+			if (vHarm < 0 || vHarm >= infs.length)
+				throw new Error(`Composable index '${vHarm}' is out of range`);
+			if (!(desc = fInfProp(infs[vHarm], prop)))
+				throw new Error(`Indexed composable property '${prop}' not found`);
+			return (desc);
+		case 'string':
+			switch (vHarm) {
+				case Least:
+					desc = fInfProp(infs[infs.length - 1], prop);
+					break;
+				case Most:
+					desc = fInfProp(infs[0], prop);
+					break;
+				case None:
+					desc = {
+						value: undefined,
+					};
+					break;
+				default:
+					if (!(inf = oInf.keyedComposables[vHarm]))
+						throw new Error(`Composable named '${vHarm}' not found`);
+					desc = fInfProp(inf, prop);
+					break;
+			}
+			if (!desc)
+				throw new Error(`Named composable property '${prop}' not found`);
+			return (desc);
+		case 'object':
+			if (!Array.isArray(vHarm))
+				throw new Error(`Invalid harmonizer '${vHarm}'`);
+			if (vHarm.length === 1) {
+				if (typeof vHarm[0] === 'string' && (vHarm[0] === Least || vHarm[0] === Most)) {
+
+				} else if (Array.isArray(vHarm[0]) && vHarm[0].length === 1 &&
+					(vHarm[0][0] === Least || vHarm[0][0] === Most)) {
+
+				} else
+					throw new Error(`Invalid harmonizer '${vHarm}'`);
+			}
+			break;
+		case 'function':
+			break;
+		default:
+			throw new Error(`Invalid harmonizer '${vHarm}'`);
+	}
 }
 
 //  * 					<property>: <idx> | <name> | '.none.' | '.least.' | '.most.' | ['.least.'] | 
@@ -201,7 +263,7 @@ function processComposition(oInf, oDesc) {
 		throw new Error(`Invalid influence composition descriptor '${oDesc.composition}'`);
 	oInf.temp = {};
 	oInf.temp.influences = [];
-	oInf.temp.keyedInfluences = {};
+	oInf.temp.keyedComposables = {};
 	oInf.composables = [];
 	oInf.composition.forEach(comp => {
 		let inf;
@@ -223,7 +285,7 @@ function processComposition(oInf, oDesc) {
 		oInf.composables.push(comp);
 		oInf.temp.influences.push(inf);
 		if (inf.name !== Anonymous)
-			oInf.keyedInfluences[inf.name] = inf;
+			oInf.keyedComposables[inf.name] = inf;
 	});
 	// Prepare a composite objects that contain all composable property names to process.
 	['prototype', 'protectedPrototype', 'staticObject', 'protectedStaticObject'].forEach(s => {
