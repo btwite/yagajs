@@ -24,10 +24,10 @@ function thisArg(f) {
 }
 
 yaga.thisArg = thisArg
-yaga.load = require('./toolbox/Loader')
-yaga.Character = require('./toolbox/Character')
-yaga.StringBuilder = require('./toolbox/StringBuilder');
-yaga.Influence = require('./toolbox/Influence');
+yaga.Loader = require('./toolbox/Loader').Loader;
+yaga.Character = require('./toolbox/Character');
+yaga.StringBuilder = require('./toolbox/StringBuilder').StringBuilder;
+yaga.Influence = require('./toolbox/Influence').Influence;
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
@@ -36,7 +36,7 @@ Object.defineProperty(yaga, 'Reader', {
     enumerable: true,
     get() {
         if (Reader) return (Reader);
-        let exps = yaga.load(require('./reader/loaddesc'));
+        let exps = yaga.Loader(require('./reader/loader'));
         Reader = (...args) => exps.Reader(...args);
         Object.assign(Reader, exps.Reader);
         Reader.ReadPoint = exps.ReadPoint;

@@ -20,12 +20,35 @@ function test() {
             helloWorld() {
                 console.log('Hello World');
                 return (this);
+            },
+            protected_: {
+                log() {
+                    console.log('XXX', this.myval, myInf.public(this).myval)
+                },
             }
         },
         constructor: {
             myval: 100,
             private_: {
                 myprivateval: []
+            },
+            protected_: {
+                myval: 1000
+            }
+        },
+        static: {
+            foo() {
+                console.log('bar =', this.bar)
+            },
+            foobar() {
+                myInf.protectedStatic(this).foo()
+            },
+            bar: 1000,
+            protected_: {
+                foo() {
+                    console.log('bar =', this.bar)
+                },
+                bar: 2000,
             }
         }
     });
@@ -33,13 +56,17 @@ function test() {
     let o = myInf.create();
     let o1 = myInf.create();
     log(o.helloWorld().typeName);
-    log(myInf.private(o1));
+    log(myInf.private(o1), myInf.protected(o1), myInf.public(o1));
+    myInf.protected(o1).log();
     myInf.private(o1).myprivateval.push(300);
     log(myInf.private(o), myInf.private(o1));
 
     log(yaga.Reader.ReadPoint.default.isaReadPoint);
     let r = yaga.Reader.ReadPoint('mySource', 2, 3);
     log(r.format(), r.increment(10).format(), yaga.Reader.ReadPoint.default.format());
+
+    myInf.create.foo();
+    myInf.create.foobar();
 }
 
 function oldReader() {

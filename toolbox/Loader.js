@@ -12,35 +12,47 @@
  *			},
  *
  *			modules: {
- *				<name> : <seqNo> | <sourceFile> |
- *					 	[ <seqNo>, <sourceFile> ] |
+ *				<name> : <seqNo> | <sourceFile> | fExpValue
+ *					 	[ <seqNo>, <sourceFile>, fExpValue ] |
  *					 	{
  *							sequence: <num>,
- *							source: <string>
+ *							source: <string>,
+ *							export: fExpValue
  *					 	},
  *				...,
  *			},
  *
  *			path: '<root path for each module to load>'
  *		}
+ *
+ *  Notes:
+ * 		1. Each module export object can contain an 'Initialise' function that is called
+ * 		   after the Loader has required each module. This function is passed the completed
+ * 		   package exports object.
+ * 		2. Each module export object can contain a 'PostInitialise' function that is called
+ * 		   after each module has been initialised. This permits package modules to perform
+ * 		   additional initialisation that requires access to module services.
+ * 		3. Sequence should be specified where one package module has a dependency on another
+ * 		   that cannot be resolved by the 'Initialise' & 'PostInitialise' phases.
+ * 		4. Export value functions are bound with the module export list can can return a specific
+ * 		   value or subset as required.
+ * 		5. A module entry object descriptor must have at least two entries of any combination.
  */
 "use strict";
 
-module.exports = Object.freeze(load);
+module.exports = Object.freeze({
+	Loader
+});
 
 /**
  * Package loader function.
  * Note: The path can typically be set to the module's __dirname argument.
  */
-function load(oInit, oDesc) {
+function Loader(oDesc, oInit) {
 	if (arguments.length <= 0)
-		throw new Error(`Loader call requires minimum of a loader specification argument`);
-	if (arguments.length === 1) {
-		oDesc = oInit;
-		oInit = undefined;
-	}
+		throw new Error(`Loader call requires minimum of a loader descriptor argument`);
 	if (typeof oDesc !== 'object')
-		throw new Error(`Invalid loader specification argument '${oDesc}'`);
+		throw new Error(`Invalid loader descriptor argument '${oDesc}'`);
 	if (oInit !== undefined && typeof oInit !== 'object')
 		throw new Error(`Invalid initialiser argument '${oInit}'`);
 
@@ -48,7 +60,7 @@ function load(oInit, oDesc) {
 	if (typeof modPath !== 'string')
 		throw new Error(`Invalid source path '${modPath}'`);
 	if (typeof oDesc.modules !== 'object')
-		throw new Error(`Invalid modules specification '${oDesc.modules}'`);
+		throw new Error(`Invalid modules descriptor '${oDesc.modules}'`);
 
 	let depList = [];
 	Object.keys(oDesc.modules).forEach(name => addRequire(depList, name, name, oDesc.modules[name]));
@@ -66,10 +78,10 @@ function load(oInit, oDesc) {
 	for (let i = 1; i < depList.length; i++) {
 		let list = depList[i];
 		if (!list) continue;
-		list.forEach(req => doRequire(exps, req[0], req[1], modPath));
+		list.forEach(req => doRequire(exps, req[0], req[1], req[2], modPath));
 	}
 	if (depList[0])
-		depList[0].forEach(req => doRequire(exps, req[0], req[1], modPath));
+		depList[0].forEach(req => doRequire(exps, req[0], req[1], req[2], modPath));
 	/**
 	 * Initialise each module if they have provided an Initialise method.
 	 */
@@ -95,15 +107,16 @@ function runInitPhase(exps, sPhase, ...args) {
 
 let RootExpr = /^(?:[a-zA-Z]\:)?\//;
 
-function doRequire(exps, name, src, modPath) {
+function doRequire(exps, name, src, fExport, modPath) {
 	// If the src path does not start at the file system root then we append to
 	// the callers provided source directory path.
 	if (!RootExpr.test(src))
 		src = modPath + '/' + src;
-	exps[name] = require(src);
+	let mod = require(src);
+	exps[name] = fExport ? fExport.call(mod) : mod;
 }
 
-function addRequire(depList, name, src, seq) {
+function addRequire(depList, name, src, seq, fExport) {
 	if (typeof src !== 'string')
 		throw new Error(`Invalid source file name for '${name}'. Found(${src})`);
 	switch (typeof seq) {
@@ -113,14 +126,21 @@ function addRequire(depList, name, src, seq) {
 			break;
 		case 'object':
 			if (Array.isArray(seq)) {
-				if (seq.length !== 2)
-					throw new Error(`Expecting sequence number and source file name for '${name}'`);
-				return (addRequire(depList, name, seq[1], seq[0]));
+				if (seq.length !== 3)
+					throw new Error(`Expecting sequence number, source name and export function for '${name}'`);
+				return (addRequire(depList, name, seq[1], seq[0], seq[2]));
 			}
-			return (addRequire(depList, name, seq.source, seq.sequence));
+			src = seq.source || name;
+			fExport = seq.export;
+			if ((seq = seq.sequence) === undefined) seq = 0;
+			return (addRequire(depList, name, src, seq, fExport));
 			break;
 		case 'string':
 			src = seq;
+			seq = 0;
+			break;
+		case 'function':
+			fExport = seq;
 			seq = 0;
 			break;
 		case 'undefined':
@@ -131,5 +151,5 @@ function addRequire(depList, name, src, seq) {
 			break;
 	}
 	if (!depList[seq]) depList[seq] = [];
-	depList[seq].push([name, src]);
+	depList[seq].push([name, src, fExport]);
 }

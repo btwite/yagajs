@@ -1,5 +1,5 @@
 /*
- *  loadspec: @file
+ *  loader: @file
  *
  *  Answers the loader descriptor for the reader package.
  */
@@ -8,7 +8,9 @@
 let _ = undefined;
 module.exports = {
     modules: {
-        ReadPoint: _,
+        ReadPoint() {
+            return (this.ReadPoint);
+        },
     },
     path: __dirname
 };

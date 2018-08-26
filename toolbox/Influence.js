@@ -1,11 +1,11 @@
 /*
  *  Influence: @file
  *
- *  Influence is an object composer that in its simplest form describes a prototype and 
- *  a one or more constructors for creating an instance. Simple influences can then be
- *  composed into a composite Influence that itself is a single prototype and set of constructors.
+ *  Influence is an object composer that in its simplest form describes a prototype  
+ *  a constructor for creating an instance and static properties. Simple influences can then be
+ *  composed into a composite Influence that itself is a single prototype, constructor and statics.
  *  A composition is an array (ordered form highest to lowest significance) of Influences.
- *  An influence may be in descriptor form which will firstly transformed into an influence
+ *  An influence may be in descriptor form which will be firstly transformed into an influence
  *  object.
  * 
  *  Descriptors:
@@ -40,12 +40,14 @@
  * 				...
  * 			],
  * 			harmonizers: {
- * 				default: {
- * 					prototype: 'none' | 'least' | 'most',	// Default is 'most'
- * 					static: 'none' | 'least' | 'most',		// Default is 'none'
- * 					constructor: 'none' | 'least' | 'most',	// Default is 'none'
+ * 				defaults: {
+ * 					prototype: <See below>,			// Default is '.most.'
+ * 					static: <See below>,			// Default is '.none.'
+ * 					constructor: <See below>,		// Default is '.none.'
  * 				},
  * 				prototype: {		// Harmonizers for prototype properties. Can also contain 'thisArg_'.
+ * 					<property>: <idx> | <name> | '.none.' | '.least.' | '.most.' | ['.least.'] | 
+ * 								['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
  * 					...
  * 					protected_: {	// Harmonizers for protected properties. Can also contain 'thisArg_'.
  * 					},
@@ -63,11 +65,25 @@
  * 		1. Both 'register' and 'name' are optional. Influence treated as anonymous. Mutually exclusive
  * 		2. Private properties cannot be harmonized. Remain accessible to original prototype functions.
  * 		3. The 'harmonization' property can be replaced with 'harmonizers' if Influence defaults apply.
- * 		4. Harmonizers are functions that are bound to the influence object and can access 
- * 		   composable prototype public properties to form a harmonized property value. A composable is 
- * 		   referencable by name or index position in composition list. Influence provides a short hand to
- * 		   map to a specific Influence occurrence or a ordered sequence of occurences with the one
- * 		   argument list.
+ * 		4. Harmonizers can be one of the following forms:
+ * 				1. <idx> - Take property from the composable at the given index position.
+ * 				2. <name> - Take property from the composable of the given name.
+ * 				3. '.none.' - Don't harmonize, will override a harmonizing default.
+ * 							  WARNING: Influence will not have this property.
+ * 				4. '.least.' - Take property from least significant composable.
+ * 				5. '.most.' - Take property from most significant composable.
+ * 				6. ['.least.'] - Call matching property function for each composable in least significant order
+ * 				7. ['.most.'] - Call matching property function for each composable in most significant order
+ * 				8. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
+ * 				9. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
+ * 				   named property. 'fHarmonizer' is called during the construcion of the composition influence and is 
+ * 				   bound to an object that contains helper functions for assisting the construction of the harmonized property.
+ * 						getComposable(<idx>|<name>) : Answer the composable access object by index or name.
+ * 						getProperty(<idx>|<name>, sProp) : Answer a property descriptor for a given composable
+ * 						getProperties(sProp, '.least.'|'.most.') : Answer all matching properties in '.least.' or '.most.'
+ * 															   	   significant order. Optional, defaults to '.least.'.
+ * 						makeCallable([composable fns ...]) : Answer a function that calls list of fns in order with the same
+ * 															 argument list and returns result of last function called.
  * 		5. A harmonizer function value will need to use .call, .apply or .bind to forward requests to composable prototype functions
  * 		6. Influence(oDesc) will answer the influence object to the caller. This will provide full access to the influence
  * 		   including the private scope. Only the influence 'create' function is registered and should only be provided as the 
@@ -85,21 +101,32 @@
 
 var Yaga = require('../Yaga');
 
-module.exports = newInfluence;
-newInfluence.lookup = lookupRegistry;
-Object.freeze(newInfluence);
+module.exports = Object.freeze({
+	Influence
+});
+Influence.lookup = lookupRegistry;
+Object.freeze(Influence);
 
 const Registry = new Map(); // Registry of well known Influences
 const InfCreators = new WeakMap(); // Map of Influence creators to Influence objects
-const PrivateScopes = new WeakMap(); // Map of private scope objects to public influence instances
-const ProtectedScopes = new WeakMap(); // Map of protected scope objects to public influence instances
+const Scopes = new WeakMap(); // Map of scope objects to public influence instances
 const SymPublic = Symbol.for('PUBLIC');
 const SymProtected = Symbol.for('PROTECTED');
 const SymPrivate = Symbol.for('PRIVATE');
+const Most = '.most.';
+const Least = '.least.';
+const None = '.none.';
+const Anonymous = '<anonymous>';
+
+const HarmonizerDefaults = {
+	prototype: Most,
+	static: None,
+	constructor: None
+};
 
 var ScopeID = 0; // Scope ID allocate to each private scope
 
-function newInfluence(oDesc) {
+function Influence(oDesc) {
 	if (typeof oDesc !== 'object' || (!oDesc.hasOwnProperty('prototype') && !oDesc.hasOwnProperty('composition')))
 		throw new Error(`Invalid influence descriptor '${oDesc}'`);
 	let oInf = {
@@ -109,13 +136,111 @@ function newInfluence(oDesc) {
 			copy: Yaga.thisArg(copy),
 		},
 	};
-	if (oDesc.prototype) prototypeInfluence(oInf, oDesc);
-	else compositionInfluence(oInf, oDesc);
+	if (oDesc.hasOwnProperty('prototype'))
+		prototypeInfluence(oInf, oDesc);
+	else if (oDesc.hasOwnProperty('composition'))
+		compositionInfluence(oInf, oDesc);
+	else
+		throw new Error("Influence descriptor missing 'prototype' or 'composition' property");
+	delete oInf.temp; // Only need 'temp' while we are constructing the composition
 	Object.seal(oInf.prototype);
 	Object.freeze(oInf.create);
 	Object.freeze(oInf);
+	InfCreators.set(oInf.create, oInf);
 	return (oInf);
 }
+
+function compositionInfluence(oInf, oDesc) {
+	if (typeof oDesc.composition !== 'object')
+		throw new Error(`Invalid influence composition descriptor '${oDesc.composition}'`);
+	oInf.isaPrototype = false;
+	oInf.isaComposition = true;
+	processName(oInf, oDesc);
+	processComposition(oInf, oDesc);
+	processProperties(oDesc.harmonizers, {
+		prototype: () => harmonize(oInf, 'prototype', oDesc.harmonizers.prototype),
+		static: () => harmonize(oInf, 'staticObject', oDesc.harmonizers.static),
+		constructor: () => harmonizeProperty(oInf, 'constructor', oDesc.harmonizers),
+		_other_: () => {}
+	});
+	let harmDefaults = Object.assign({}, HarmonizerDefaults); // Fill the gaps
+	harmDefaults = Object.assign(harmDefaults, oDesc.harmonizers.defaults || {});
+	applyHarmonizeProtoypeDefault(oInf, harmDefaults.prototype);
+	applyHarmonizeStaticDefault(oInf, harmDefaults.static);
+	applyHarmonizeConstructorDefault(oInf, harmDefaults.constructor);
+
+	makeCreator(oInf, makeConstructor(oInf, oDesc)); //???????
+}
+
+function harmonize(oInf, tProp, oDesc) {
+	if (oDesc === undefined) return;
+	if (typeof oDesc !== 'object')
+		throw new Error(`Invalid influence composition harmonizer '${oDesc}'`);
+	processProperties(oDesc, {
+		thisArg_: () => harmonize(oInf, tProp, copyThisArgProps({}, oDesc.thisArg_)),
+		protected_: () => harmonizeProtected(oInf, tProp, oDesc.protected_),
+		_other_: prop => harmonizeProperty(oInf, tProp, oDesc, prop)
+	});
+}
+
+function harmonizeProtected(oInf, tProp, oDesc) {
+	tProp = 'protected' + tProp[0].toUpperCase() + tProp.substr(1);
+	tProp === 'protectedStaticObject' ? allocateProtectedStaticScope(oInf) : allocateProtectedScope(oInf);
+	harmonize(oInf, tProp, oDesc);
+}
+
+function harmonizeProperty(oInf, iProp, oDesc, prop = iProp) {
+
+}
+
+//  * 					<property>: <idx> | <name> | '.none.' | '.least.' | '.most.' | ['.least.'] | 
+// * 								['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
+
+function processComposition(oInf, oDesc) {
+	if (!Array.isArray(oInf.composition))
+		throw new Error(`Invalid influence composition descriptor '${oDesc.composition}'`);
+	oInf.temp = {};
+	oInf.temp.influences = [];
+	oInf.temp.keyedInfluences = {};
+	oInf.composables = [];
+	oInf.composition.forEach(comp => {
+		let inf;
+		oInf.composables.push(comp);
+		switch (typeof comp) {
+			case 'object':
+				comp = inf = comp.isanInfluence ? comp : Influence(o);
+				break;
+			case 'function':
+				inf = InfCreators.get(comp);
+				break;
+			case 'string':
+				if ((inf = lookupRegistry(comp)) === undefined)
+					throw new Error(`Influence composable '${comp}' not found`);
+				break;
+			default:
+				throw new Error(`Influence composition contains the invalid element '${comp}'`);
+		}
+		oInf.composables.push(comp);
+		oInf.temp.influences.push(inf);
+		if (inf.name !== Anonymous)
+			oInf.keyedInfluences[inf.name] = inf;
+	});
+	// Prepare a composite objects that contain all composable property names to process.
+	['prototype', 'protectedPrototype', 'staticObject', 'protectedStaticObject'].forEach(s => {
+		mergeChildPropertyNames(oInf, s)
+	});
+	Object.freeze(oInf.composables);
+}
+
+function mergeChildPropertyNames(oInf, sParent) {
+	if (!inf[sParent]) return;
+	let oTgt = {};
+	oInf.temp[sParent] = oTgt;
+	oInf.temp.influences.forEach(inf => {
+		Object.keys(inf[sParent]).forEach(prop => oTgt[prop] = true);
+	});
+}
+
 
 function prototypeInfluence(oInf, oDesc) {
 	if (typeof oDesc.prototype !== 'object')
@@ -123,21 +248,11 @@ function prototypeInfluence(oInf, oDesc) {
 	oInf.isaPrototype = true;
 	oInf.isaComposition = false;
 	processName(oInf, oDesc);
-	Object.keys(oDesc.prototype).forEach(prop => {
-		switch (prop) {
-			case 'thisArg_':
-				copyThisArgProps(oInf.prototype, oDesc.prototype[prop]);
-				break;
-			case 'private_':
-				copyPrivatePrototypeProps(oInf, oDesc.prototype[prop]);
-				break;
-			case 'protected_':
-				copyProtectedPrototypeProps(oInf, oDesc.prototype[prop]);
-				break;
-			default:
-				copyProperty(oInf.prototype, prop, oDesc.prototype);
-				break;
-		}
+	processProperties(oDesc.prototype, {
+		thisArg_: () => copyThisArgProps(oInf.prototype, oDesc.prototype.thisArg_),
+		private_: () => copyPrivatePrototypeProps(oInf, oDesc.prototype.private_),
+		protected_: () => copyProtectedPrototypeProps(oInf, oDesc.prototype.protected_),
+		_other_: prop => copyProperty(oInf.prototype, prop, oDesc.prototype)
 	});
 	makeCreator(oInf, makeConstructor(oInf, oDesc));
 	makeStatics(oInf, oDesc);
@@ -147,60 +262,49 @@ function makeStatics(oInf, oDesc) {
 	if (!oDesc.static) return;
 	if (typeof oDesc.static !== 'object')
 		throw new error("Influence 'static' property must be an object");
-	oInf.static = {
+	oInf.staticObject = {
 		influence: oInf
 	};
-	Object.keys(oDesc.static).forEach(prop => {
-		switch (prop) {
-			case 'thisArg_':
-				copyThisArgProps(oInf.static, oDesc.static[prop]);
-				Object.keys(oDesc.static.thisArg_).forEach(p => staticToCreator(oInf, p));
-				break;
-			case 'protected_':
-				makeProtectedStatics(oInf, oDesc.static.protected_);
-				break;
-			default:
-				copyProperty(oInf.static, prop, oDesc.static);
-				staticToCreator(oInf, prop);
-				break;
-		}
+	processProperties(oDesc.static, {
+		thisArg_: () => copyThisArgProps(oInf.staticObject, oDesc.static[prop]),
+		protected_: () => copyProtectedStaticProps(oInf, oDesc.static.protected_),
+		_other_: prop => copyProperty(oInf.staticObject, prop, oDesc.static),
 	});
-	Object.seal(oInf.static);
+	Object.seal(oInf.staticObject);
+	copyStaticPropsToCreator(oInf);
 }
 
-function staticToCreator(oInf, prop) {
-	let desc = Object.getOwnPropertyDescriptor(oInf.static, prop);
-	if (typeof desc.value === 'function') {
-		oInf.create[prop] = desc.value.bind(oInf.static);
-	} else if (desc.get || desc.set) {
-		let getter = desc.get,
-			setter = desc.set;
-		if (desc.get) desc.get = () => getter.call(oInf.static);
-		if (desc.set) desc.set = (v) => setter.call(oInf.static, v);
-		defineProperty(oInf.create, prop, desc);
-	} else {
-		desc.get = () => oInf.static[prop];
-		if (desc.writable)
-			desc.set = (v) => oInf.static[prop] = v;
-		delete desc.value;
-		delete desc.writable;
-		defineProperty(oInf.create, prop, desc);
-	}
-}
-
-function makeProtectedStatics(oInf, oProt) {
-	if (typeof oProt !== 'object')
-		throw new error("Influence 'protected_' property must be an object");
-	Object.keys(oProt).forEach(prop => {
-		switch (prop) {
-			case 'thisArg_':
-				copyThisArgProps(oInf.static, oProt[prop]);
-				break;
-			default:
-				copyProperty(oInf.static, prop, oProt);
-				break;
+function copyStaticPropsToCreator(oInf) {
+	Object.keys(oInf.staticObject).forEach(prop => {
+		let desc = Object.getOwnPropertyDescriptor(oInf.staticObject, prop);
+		if (typeof desc.value === 'function') {
+			oInf.create[prop] = desc.value.bind(oInf.staticObject);
+		} else if (desc.get || desc.set) {
+			let getter = desc.get,
+				setter = desc.set;
+			if (desc.get) desc.get = () => getter.call(oInf.staticObject);
+			if (desc.set) desc.set = (v) => setter.call(oInf.staticObject, v);
+			defineProperty(oInf.create, prop, desc);
+		} else {
+			desc.get = () => oInf.staticObject[prop];
+			if (desc.writable)
+				desc.set = (v) => oInf.staticObject[prop] = v;
+			delete desc.value;
+			delete desc.writable;
+			defineProperty(oInf.create, prop, desc);
 		}
 	});
+}
+
+function copyProtectedStaticProps(oInf, oSrc) {
+	if (typeof oSrc !== 'object')
+		throw new error(`Influence static 'protected_' property must be an object`);
+	allocateProtectedStaticScope(oInf);
+	processProperties(oSrc, {
+		thisArg_: () => copyThisArgProps(oInf.protectedStaticObject, oSrc[prop]),
+		_other_: prop => copyProperty(oInf.protectedStaticObject, prop, oSrc)
+	});
+	Object.seal(oInf.protectedStaticObject);
 }
 
 function makeCreator(oInf, fConstructor) {
@@ -243,7 +347,7 @@ function makePrivateProtectedInitialiser(oInf, oInit) {
 		let oPrivate = oInit.private_;
 		if (typeof oPrivate !== 'object')
 			throw new Error("Constructor private initialiser must be an object");
-		allocatePrivateAccessScope(oInf);
+		allocatePrivateScope(oInf);
 		delete oInit.private_;
 		oInit[SymPrivate] = oPrivate;
 	}
@@ -251,7 +355,7 @@ function makePrivateProtectedInitialiser(oInf, oInit) {
 		let oProtected = oInit.protected_;
 		if (typeof oProtected !== 'object')
 			throw new Error("Constructor protected initialiser must be an object");
-		allocateProtectedAccessScope(oInf);
+		allocateProtectedScope(oInf);
 		delete oInit.protected_;
 		oInit[SymProtected] = oProtected;
 	}
@@ -261,7 +365,7 @@ function makePrivateProtectedInitialiser(oInf, oInit) {
 function processName(oInf, oDesc) {
 	if (oDesc.register && oDesc.name)
 		throw new error(`Influence descriptor contains both 'register' and 'name' properties`);
-	oInf.name = oDesc.register || oDesc.name || '<anonymous>';
+	oInf.name = oDesc.register || oDesc.name || Anonymous;
 	oInf.prototype.typeName = oInf.name;
 	oInf.prototype['isa' + oInf.name] = true;
 	if (oDesc.register)
@@ -271,72 +375,72 @@ function processName(oInf, oDesc) {
 function copyPrivatePrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new error(`Influence 'private_' property must be an object`);
-	allocatePrivateAccessScope(oInf);
-	Object.keys(oSrc).forEach(prop => {
-		switch (prop) {
-			case 'thisArg_':
-				copyThisArgProps(oInf.privatePrototype, oSrc[prop]);
-				break;
-			default:
-				copyProperty(oInf.privatePrototype, prop, oSrc);
-				break;
-		}
+	allocatePrivateScope(oInf);
+	processProperties(oSrc, {
+		thisArg_: () => copyThisArgProps(oInf.privatePrototype, oSrc[prop]),
+		_other_: prop => copyProperty(oInf.privatePrototype, prop, oSrc)
 	});
-	Object.freeze(oInf.privatePrototype);
+	Object.seal(oInf.privatePrototype);
 }
 
 function copyProtectedPrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new error(`Influence 'protected_' property must be an object`);
-	allocateProtectedAccessScope(oInf);
-	Object.keys(oSrc).forEach(prop => {
-		switch (prop) {
-			case 'thisArg_':
-				copyThisArgProps(oInf.protectedPrototype, oSrc[prop]);
-				break;
-			default:
-				copyProperty(oInf.protectedPrototype, prop, oSrc);
-				break;
-		}
+	allocateProtectedScope(oInf);
+	processProperties(oSrc, {
+		thisArg_: () => copyThisArgProps(oInf.protectedPrototype, oSrc[prop]),
+		_other_: prop => copyProperty(oInf.protectedPrototype, prop, oSrc)
 	});
-	Object.freeze(oInf.protectedPrototype);
+	Object.seal(oInf.protectedPrototype);
 }
 
-function allocatePrivateAccessScope(oInf) {
-	if (oInf.privatePrototype) return;
-	let scopeID = 'sid' + ++ScopeID;
-	oInf.scopeID = scopeID;
-	oInf.private = oPublic => {
-		oPublic = oPublic[SymPublic] || oPublic;
-		let oScopes = PrivateScopes.get(oPublic);
-		if (!oScopes) {
-			(oScopes = {})[SymPublic] = oPublic;
-			PrivateScopes.set(oPublic, oScopes);
-		}
-		let oScope = oScopes[scopeID];
-		if (!oScope) oScopes[scopeID] = oScope = Object.create(oInf.privatePrototype);
-		return (oScope);
-	};
+function processProperties(o, oDesc) {
+	if (typeof o !== 'object')
+		throw new error(`Object expected found '${o}'`);
+	Object.keys(o).forEach(prop => {
+		if (oDesc.hasOwnProperty(prop))
+			return (oDesc[prop](prop));
+		return (oDesc._other_(prop));
+	});
+}
+
+function allocatePrivateScope(oInf) {
+	if (oInf.private) return;
+	oInf.private = allocateScope(oInf, 'private', 'privatePrototype');
 	oInf.privatePrototype = {};
-	allocatePublicAccessScope(oInf);
+	allocatePublicScope(oInf);
 }
 
-function allocateProtectedAccessScope(oInf) {
-	if (oInf.protectedPrototype) return;
-	oInf.protected = oPublic => {
+function allocateProtectedScope(oInf) {
+	if (oInf.protected) return;
+	oInf.protected = allocateScope(oInf, 'protected', 'protectedPrototype');
+	oInf.protectedPrototype = {};
+	allocatePublicScope(oInf);
+}
+
+function allocateProtectedStaticScope(oInf) {
+	if (oInf.protectedStatic) return;
+	oInf.protectedStatic = allocateScope(oInf, 'protectedStatic', 'protectedStaticObject');
+	oInf.protectedStaticObject = {
+		influence: oInf
+	};
+	oInf.static = o => o[SymPublic] || o;
+}
+
+function allocateScope(oInf, sScope, sProt) {
+	if (!oInf.scopeID) oInf.scopeID = ++ScopeID;
+	let id = sScope + ':sid' + oInf.scopeID;
+	return oPublic => {
 		oPublic = oPublic[SymPublic] || oPublic;
-		let oScope = ProtectedScopes.get(oPublic);
-		if (oScope) {
-			(oScope = Object.create(oInf.protectedPrototype))[SymPublic] = oPublic;
-			ProtectedScopes.set(oPublic, oScope);
-		}
+		let oScopes = Scopes.get(oPublic);
+		if (!oScopes) Scopes.set(oPublic, (oScopes = {}));
+		let oScope = oScopes[id];
+		if (!oScope)(oScopes[id] = oScope = Object.create(oInf[sProt]))[SymPublic] = oPublic;
 		return (oScope);
 	};
-	oInf.protectedPrototype = {};
-	allocatePublicAccessScope(oInf);
 }
 
-function allocatePublicAccessScope(oInf) {
+function allocatePublicScope(oInf) {
 	if (oInf.public) return;
 	oInf.public = o => o[SymPublic] || o;
 }
@@ -350,6 +454,7 @@ function copyThisArgProps(oTgt, oSrc) {
 			sDesc.value = Yaga.thisArg(sDesc.value);
 		defineProperty(oTgt, prop, sDesc);
 	});
+	return (oTgt);
 }
 
 function copyProperty(oTgt, tProp, oSrc, sProp = tProp) {
@@ -366,6 +471,8 @@ function defineProperty(oTgt, prop, desc) {
 function copyInitialisers(oInf, oTgt, oInit) {
 	if (oInit[SymPrivate])
 		copyInitialiser(oInf.private(oTgt), oInit[SymPrivate]);
+	if (oInit[SymProtected])
+		copyInitialiser(oInf.protected(oTgt), oInit[SymProtected]);
 	copyInitialiser(oTgt, oInit);
 }
 
