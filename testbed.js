@@ -7,13 +7,73 @@
 let yaga = require('./Yaga');
 
 test();
+testComposition();
+//testInfluence();
 //testGrammarExtensions();
 
 function test() {
     //    log(yaga);
     //    yaga();
     //    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
+}
 
+function testComposition() {
+    let inf1 = yaga.Influence({
+        name: 'inf1',
+        prototype: {
+            helloWorld() {
+                console.log('Hello World from inf1');
+            }
+        },
+        static: {
+            helloWorld() {
+                console.log('Static Hello World from inf1');
+            }
+        }
+    });
+    let inf2 = yaga.Influence({
+        name: 'inf2',
+        prototype: {
+            helloWorld() {
+                console.log('Hello World from inf2');
+            }
+        },
+        static: {
+            helloWorld() {
+                console.log('Static Hello World from inf2');
+            }
+        }
+    });
+    inf1.create().helloWorld();
+    inf2.create().helloWorld();
+
+    let inf3 = yaga.Influence({
+        name: 'inf3',
+        composition: [inf1, inf2.create],
+        harmonizers: {
+            defaults: {
+                prototype: '.most.'
+            },
+            prototype: {
+                helloWorld: ['.least.'],
+                helloWorld1() {
+                    return (this.makeCallable(this.getProperties('helloWorld', '.most.', 'function')));
+                }
+            },
+            static: {
+                helloWorld: ['.least.'],
+            }
+        }
+    });
+    log(inf3);
+    let o = inf3.create();
+    o.helloWorld();
+    o.helloWorld1();
+    inf3.create.helloWorld();
+    log(o.isainf3, o.isainf1);
+}
+
+function testInfluence() {
     let myInf = yaga.Influence({
         name: 'myInf',
         prototype: {
@@ -43,12 +103,21 @@ function test() {
             foobar() {
                 myInf.protectedStatic(this).foo()
             },
+            foobar1() {
+                myInf.privateStatic(this).foo()
+            },
             bar: 1000,
             protected_: {
                 foo() {
                     console.log('bar =', this.bar)
                 },
                 bar: 2000,
+            },
+            private_: {
+                foo() {
+                    console.log('bar =', this.bar)
+                },
+                bar: 10000,
             }
         }
     });
@@ -67,6 +136,7 @@ function test() {
 
     myInf.create.foo();
     myInf.create.foobar();
+    myInf.create.foobar1();
 }
 
 function oldReader() {

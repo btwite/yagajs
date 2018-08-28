@@ -28,6 +28,8 @@
  * 				...
  * 				thisArg_: {			// Bounded prototype functions require 'this' argument not 'this' property.
  * 				},
+ * 				private_: {			// Private static properties of the Influence. Can also contain 'thisArg_'.
+ * 				},
  * 				protected_: {		// Protected static properties of the Influence. Can also contain 'thisArg_'.
  * 				},
  * 			}
@@ -73,19 +75,20 @@
  * 				4. '.least.' - Take property from least significant composable.
  * 				5. '.most.' - Take property from most significant composable.
  * 				6. ['.least.'] - Call matching property function for each composable in least significant order
- * 				7. [['.least.]] - Array of property values in least significant order. Implemented as getter.
- * 				8. ['.most.'] - Call matching property function for each composable in most significant order
- * 				9. [['.most.]] - Array of property values in most significant order. Implemented as getter.
- * 			   10. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
- * 			   11. [[ ... ]] - Property values of ordered <idx>|<name> composables. Implemented as getter.
- * 			   12. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
- * 				   named property. 'fHarmonizer' is called during the construcion of the composition influence and is 
+ * 				7. ['.most.'] - Call matching property function for each composable in most significant order
+ * 			    8. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
+ * 			    9. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
+ * 				   named property. Can also return a value for anything other than an object with a 'value', 'get' or 'set'.
+ * 				   fHarmonizer' is called during the construction of the composition influence and is 
  * 				   bound to an object that contains helper functions for assisting the construction of the harmonized property.
- * 						getComposable(<idx>|<name>) : Answer the composable access object by index or name.
+ * 						hasProperty(<idx>|<name>, sProp) : Will answer a property descriptor for a given composable or undefined.
  * 						getProperty(<idx>|<name>, sProp) : Answer a property descriptor for a given composable
- * 						getProperties(sProp, '.least.'|'.most.') : Answer all matching properties in '.least.' or '.most.'
- * 															   	   significant order. Optional, defaults to '.least.'.
- * 						makeCallable([composable fns ...]) : Answer a function that calls list of fns in order with the same
+ * 						getProperties(sProp, '.least.'|'.most.', ty) : Answer all matching properties in '.least.' or '.most.'
+ * 															   	       significant order. Optional, defaults to '.least.'. Can
+ * 																	   also nominate expected type such as 'function'.
+ * 						selectProperties(sProp, [<idx>|<name>], ty) :  Answer an array with the matching properties from the selected
+ * 																	   composables.
+ * 						makeCallable([composable fns ...]) : Answer a function descriptor that calls list of fns or descriptors in order with the same
  * 															 argument list and returns result of last function called.
  * 		5. A harmonizer function value will need to use .call, .apply or .bind to forward requests to composable prototype functions
  * 		6. Influence(oDesc) will answer the influence object to the caller. This will provide full access to the influence
@@ -135,17 +138,14 @@ function Influence(oDesc) {
 	let oInf = {
 		typeName: 'Influence',
 		isanInfluence: true,
-		prototype: {
-			copy: Yaga.thisArg(copy),
-		},
 	};
+	oInf.prototype = defineConstant({}, 'copy', Yaga.thisArg(copy), false);
 	if (oDesc.hasOwnProperty('prototype'))
 		prototypeInfluence(oInf, oDesc);
 	else if (oDesc.hasOwnProperty('composition'))
 		compositionInfluence(oInf, oDesc);
 	else
 		throw new Error("Influence descriptor missing 'prototype' or 'composition' property");
-	delete oInf.temp; // Only need 'temp' while we are constructing the composition
 	Object.seal(oInf.prototype);
 	Object.freeze(oInf.create);
 	Object.freeze(oInf);
@@ -168,21 +168,51 @@ function compositionInfluence(oInf, oDesc) {
 	});
 	let harmDefaults = Object.assign({}, HarmonizerDefaults); // Fill the gaps
 	harmDefaults = Object.assign(harmDefaults, oDesc.harmonizers.defaults || {});
-	applyHarmonizeProtoypeDefault(oInf, harmDefaults.prototype);
-	applyHarmonizeStaticDefault(oInf, harmDefaults.static);
-	applyHarmonizeConstructorDefault(oInf, harmDefaults.constructor);
+	applyDefaultHarmonizer(oInf, 'prototype', harmDefaults.prototype);
+	applyDefaultHarmonizer(oInf, 'staticObject', harmDefaults.static);
+	makeCreator(oInf, applyDefaultConstructorHarmonizer(oInf, harmDefaults.constructor));
+	if (oInf.staticObject) {
+		Object.seal(oInf.staticObject);
+		copyStaticPropsToCreator(oInf);
+	}
+	delete oInf.temp; // Only need 'temp' while we are constructing the composition
+}
 
-	makeCreator(oInf, makeConstructor(oInf, oDesc)); //???????
+function applyDefaultHarmonizer(oInf, tProp, vHarm) {
+	let oTgt = oInf[tProp];
+	if (!oInf.temp[tProp] || !oTgt || vHarm === None)
+		return;
+	Object.keys(oInf.temp[tProp]).forEach(prop => {
+		if (oTgt[prop]) return;
+		let desc = _harmonizeProperty(oInf, vHarm, prop,
+			getInternalHarmonizers(oInf, (inf, prop) => inf[tProp] && Object.getOwnPropertyDescriptor(inf[tProp], prop)));
+		defineProperty(oTgt, prop, desc);
+	});
+}
+
+function applyDefaultConstructorHarmonizer(oInf, vHarm) {
+	if (!oInf.hasOwnProperty('constructor')) {
+		if (vHarm === None)
+			oInf.constructor = () => undefined;
+		else
+			defineProperty(oInf, 'constructor', _harmonizeConstructor(oInf, vHarm));
+	}
+	return (oInf.constructor);
 }
 
 function harmonize(oInf, tProp, oDesc) {
+	let harmonizers = getInternalHarmonizers(oInf, (inf, prop) => inf[tProp] && Object.getOwnPropertyDescriptor(inf[tProp], prop));
+	_harmonize(oInf, tProp, oDesc, harmonizers);
+}
+
+function _harmonize(oInf, tProp, oDesc, harmonizers) {
 	if (oDesc === undefined) return;
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence composition harmonizer '${oDesc}'`);
 	processProperties(oDesc, {
-		thisArg_: () => harmonize(oInf, tProp, copyThisArgProps({}, oDesc.thisArg_)),
+		thisArg_: () => _harmonize(oInf, tProp, copyThisArgProps({}, oDesc.thisArg_), harmonizers),
 		protected_: () => harmonizeProtected(oInf, tProp, oDesc.protected_),
-		_other_: prop => harmonizeProperty(oInf, tProp, oDesc, prop)
+		_other_: prop => harmonizeProperty(oInf, tProp, oDesc, prop, harmonizers)
 	});
 }
 
@@ -193,114 +223,99 @@ function harmonizeProtected(oInf, tProp, oDesc) {
 }
 
 function harmonizeConstructor(oInf, oDesc) {
-	_harmonizeProperty(oInf, oDesc, 'constructor',
-		(inf, prop) => Object.getOwnPropertyDescriptor(inf, prop));
+	defineProperty(oInf, 'constructor', _harmonizeConstructor(oInf, oDesc.constructor));
 }
 
-function harmonizeProperty(oInf, iProp, oDesc, prop) {
-	oInf[iProp][prop]
-	_harmonizeProperty(oInf, oDesc, prop,
-		(inf, prop) => inf[iProp] && Object.getOwnPropertyDescriptor(inf[iProp], prop));
+function _harmonizeConstructor(oInf, vHarm) {
+	_harmonizeProperty(oInf, vHarm, 'constructor',
+		getInternalHarmonizers(oInf, (inf, prop) => Object.getOwnPropertyDescriptor(inf, prop)));
 }
 
-function _harmonizeProperty(oInf, oDesc, prop, fInfProp) {
-	let desc, inf, vHarm = oDesc[prop],
-		infs = oInf.temp.influences;
-	switch (typeof vHarm) {
-		case 'number':
-			if (vHarm < 0 || vHarm >= infs.length)
-				throw new Error(`Composable index '${vHarm}' is out of range`);
-			if (!(desc = fInfProp(infs[vHarm], prop)))
-				throw new Error(`Indexed composable property '${prop}' not found`);
-			return (desc);
-		case 'string':
-			switch (vHarm) {
-				case Least:
-					desc = fInfProp(infs[infs.length - 1], prop);
-					break;
-				case Most:
-					desc = fInfProp(infs[0], prop);
-					break;
-				case None:
-					desc = {
-						value: undefined,
-					};
-					break;
-				default:
-					if (!(inf = oInf.keyedComposables[vHarm]))
-						throw new Error(`Composable named '${vHarm}' not found`);
-					desc = fInfProp(inf, prop);
-					break;
-			}
-			if (!desc)
-				throw new Error(`Named composable property '${prop}' not found`);
-			return (desc);
-		case 'object':
+function harmonizeProperty(oInf, tProp, oDesc, prop, harmonizers) {
+	defineProperty(oInf[tProp], prop, _harmonizeProperty(oInf, oDesc[prop], prop, harmonizers));
+}
+
+function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
+	let err = () => {
+		throw new Error(`Invalid harmonizer '${vHarm}'`)
+	};
+	return ({
+		number: harmonizers.indexedProperty,
+		string: (...args) => {
+			return ({
+				[Least]: harmonizers.leastProperty,
+				[Most]: harmonizers.mostProperty,
+				[None]: harmonizers.noneProperty,
+			}[vHarm] || harmonizers.namedProperty)(...args);
+		},
+		object: (...args) => {
 			if (!Array.isArray(vHarm))
 				throw new Error(`Invalid harmonizer '${vHarm}'`);
 			if (vHarm.length === 1) {
-				if (typeof vHarm[0] === 'string' && (vHarm[0] === Least || vHarm[0] === Most)) {
-
-				} else if (Array.isArray(vHarm[0]) && vHarm[0].length === 1 &&
-					(vHarm[0][0] === Least || vHarm[0][0] === Most)) {
-
-				} else
-					throw new Error(`Invalid harmonizer '${vHarm}'`);
+				return ({
+					[Least]: harmonizers.leastAllFunctions,
+					[Most]: harmonizers.mostAllFunctions,
+				}[vHarm[0]] || err)(...args);
 			}
-			break;
-		case 'function':
-			break;
-		default:
-			throw new Error(`Invalid harmonizer '${vHarm}'`);
-	}
+			return (harmonizers.selectedFunctions(...args));
+		},
+		function: harmonizers.func
+	}[typeof vHarm] || err)(prop, vHarm);
 }
 
-//  * 					<property>: <idx> | <name> | '.none.' | '.least.' | '.most.' | ['.least.'] | 
-// * 								['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
-
 function processComposition(oInf, oDesc) {
-	if (!Array.isArray(oInf.composition))
+	if (!Array.isArray(oDesc.composition))
 		throw new Error(`Invalid influence composition descriptor '${oDesc.composition}'`);
 	oInf.temp = {};
 	oInf.temp.influences = [];
-	oInf.temp.keyedComposables = {};
+	oInf.temp.keyedInfluences = {};
 	oInf.composables = [];
-	oInf.composition.forEach(comp => {
-		let inf;
-		oInf.composables.push(comp);
-		switch (typeof comp) {
-			case 'object':
-				comp = inf = comp.isanInfluence ? comp : Influence(o);
-				break;
-			case 'function':
-				inf = InfCreators.get(comp);
-				break;
-			case 'string':
-				if ((inf = lookupRegistry(comp)) === undefined)
-					throw new Error(`Influence composable '${comp}' not found`);
-				break;
-			default:
-				throw new Error(`Influence composition contains the invalid element '${comp}'`);
-		}
+	oDesc.composition.forEach(comp => {
+		let inf = resolveInfluenceReference(comp, () => {
+			return (comp = Influence(comp));
+		});
+		if (!inf)
+			throw new Error(`Influence '${comp}' not found`);
 		oInf.composables.push(comp);
 		oInf.temp.influences.push(inf);
 		if (inf.name !== Anonymous)
-			oInf.keyedComposables[inf.name] = inf;
+			oInf.temp.keyedInfluences[inf.name] = inf;
 	});
 	// Prepare a composite objects that contain all composable property names to process.
 	['prototype', 'protectedPrototype', 'staticObject', 'protectedStaticObject'].forEach(s => {
 		mergeChildPropertyNames(oInf, s)
 	});
+	if (oInf.temp.staticObject)
+		oInf.staticObject = defineConstant({}, 'influence', oInf, false);
 	Object.freeze(oInf.composables);
 }
 
 function mergeChildPropertyNames(oInf, sParent) {
-	if (!inf[sParent]) return;
-	let oTgt = {};
-	oInf.temp[sParent] = oTgt;
+	let oTgt = {},
+		count = 0;
 	oInf.temp.influences.forEach(inf => {
-		Object.keys(inf[sParent]).forEach(prop => oTgt[prop] = true);
+		if (!inf[sParent])
+			return;
+		Object.keys(inf[sParent]).forEach(prop => {
+			count++;
+			oTgt[prop] = true;
+		});
 	});
+	if (count > 0)
+		oInf.temp[sParent] = oTgt;
+}
+
+function resolveInfluenceReference(rInf, fDescriptor) {
+	switch (typeof rInf) {
+		case 'object':
+			return (rInf.isanInfluence ? rInf : (fDescriptor ? fDescriptor(rInf) : Influence(rInf)));
+		case 'function':
+			return (InfCreators.get(rInf))
+		case 'string':
+			return (lookupRegistry(rInf));
+		default:
+			throw new Error(`Influence reference is invalid '${rInf}'`);
+	}
 }
 
 
@@ -324,11 +339,10 @@ function makeStatics(oInf, oDesc) {
 	if (!oDesc.static) return;
 	if (typeof oDesc.static !== 'object')
 		throw new error("Influence 'static' property must be an object");
-	oInf.staticObject = {
-		influence: oInf
-	};
+	oInf.staticObject = defineConstant({}, 'influence', oInf, false);
 	processProperties(oDesc.static, {
 		thisArg_: () => copyThisArgProps(oInf.staticObject, oDesc.static[prop]),
+		private_: () => copyPrivateStaticProps(oInf, oDesc.static.private_),
 		protected_: () => copyProtectedStaticProps(oInf, oDesc.static.protected_),
 		_other_: prop => copyProperty(oInf.staticObject, prop, oDesc.static),
 	});
@@ -356,6 +370,17 @@ function copyStaticPropsToCreator(oInf) {
 			defineProperty(oInf.create, prop, desc);
 		}
 	});
+}
+
+function copyPrivateStaticProps(oInf, oSrc) {
+	if (typeof oSrc !== 'object')
+		throw new error(`Influence static 'private_' property must be an object`);
+	allocatePrivateStaticScope(oInf);
+	processProperties(oSrc, {
+		thisArg_: () => copyThisArgProps(oInf.privateStaticObject, oSrc[prop]),
+		_other_: prop => copyProperty(oInf.privateStaticObject, prop, oSrc)
+	});
+	Object.seal(oInf.privateStaticObject);
 }
 
 function copyProtectedStaticProps(oInf, oSrc) {
@@ -428,8 +453,8 @@ function processName(oInf, oDesc) {
 	if (oDesc.register && oDesc.name)
 		throw new error(`Influence descriptor contains both 'register' and 'name' properties`);
 	oInf.name = oDesc.register || oDesc.name || Anonymous;
-	oInf.prototype.typeName = oInf.name;
-	oInf.prototype['isa' + oInf.name] = true;
+	defineConstant(oInf.prototype, 'typeName', oInf.name, false);
+	defineConstant(oInf.prototype, 'isa' + oInf.name, true, false);
 	if (oDesc.register)
 		Registry.set(oInf.name, oInf);
 }
@@ -467,29 +492,31 @@ function processProperties(o, oDesc) {
 }
 
 function allocatePrivateScope(oInf) {
-	if (oInf.private) return;
-	oInf.private = allocateScope(oInf, 'private', 'privatePrototype');
-	oInf.privatePrototype = {};
-	allocatePublicScope(oInf);
+	allocateScope(oInf, 'private', 'privatePrototype', 'public', {});
 }
 
 function allocateProtectedScope(oInf) {
-	if (oInf.protected) return;
-	oInf.protected = allocateScope(oInf, 'protected', 'protectedPrototype');
-	oInf.protectedPrototype = {};
-	allocatePublicScope(oInf);
+	allocateScope(oInf, 'protected', 'protectedPrototype', 'public', {});
+}
+
+function allocatePrivateStaticScope(oInf) {
+	allocateScope(oInf, 'privateStatic', 'privateStaticObject', 'static',
+		defineConstant({}, 'influence', oInf, false));
 }
 
 function allocateProtectedStaticScope(oInf) {
-	if (oInf.protectedStatic) return;
-	oInf.protectedStatic = allocateScope(oInf, 'protectedStatic', 'protectedStaticObject');
-	oInf.protectedStaticObject = {
-		influence: oInf
-	};
-	oInf.static = o => o[SymPublic] || o;
+	allocateScope(oInf, 'protectedStatic', 'protectedStaticObject', 'static',
+		defineConstant({}, 'influence', oInf, false));
 }
 
-function allocateScope(oInf, sScope, sProt) {
+function allocateScope(oInf, sScope, sProt, sPublic, oInit) {
+	if (oInf[sScope]) return;
+	oInf[sScope] = _allocateScope(oInf, sScope, sProt);
+	oInf[sProt] = oInit;
+	allocatePublicScope(oInf, sPublic);
+}
+
+function _allocateScope(oInf, sScope, sProt) {
 	if (!oInf.scopeID) oInf.scopeID = ++ScopeID;
 	let id = sScope + ':sid' + oInf.scopeID;
 	return oPublic => {
@@ -502,9 +529,9 @@ function allocateScope(oInf, sScope, sProt) {
 	};
 }
 
-function allocatePublicScope(oInf) {
-	if (oInf.public) return;
-	oInf.public = o => o[SymPublic] || o;
+function allocatePublicScope(oInf, prop) {
+	if (oInf[prop]) return;
+	oInf[prop] = o => o[SymPublic] || o;
 }
 
 function copyThisArgProps(oTgt, oSrc) {
@@ -523,11 +550,23 @@ function copyProperty(oTgt, tProp, oSrc, sProp = tProp) {
 	defineProperty(oTgt, tProp, Object.getOwnPropertyDescriptor(oSrc, sProp));
 }
 
-function defineProperty(oTgt, prop, desc) {
+function defineConstant(oTgt, prop, val, flEnum = true) {
+	Object.defineProperty(oTgt, prop, {
+		value: val,
+		configurable: false,
+		writable: false,
+		enumerable: flEnum
+	});
+	return (oTgt);
+}
+
+function defineProperty(oTgt, prop, desc, flEnum = true) {
 	if (typeof desc.value === 'function')
 		desc.writable = false;
 	desc.configurable = false;
+	desc.enumerable = flEnum;
 	Object.defineProperty(oTgt, prop, desc);
+	return (oTgt);
 }
 
 function copyInitialisers(oInf, oTgt, oInit) {
@@ -572,4 +611,171 @@ function lookupRegistry(name) {
 function copy(oInst) {
 	let o = Object.create(Object.getPrototypeOf(oInst));
 	return (Object.assign(o, oInst));
+}
+
+// Harmonizer support
+
+function getInternalHarmonizers(oInf, fPropDesc) {
+	// Prepare the helper functions for the harmonizers
+	let infs = oInf.temp.influences;
+	let keyInfs = oInf.temp.keyedInfluences;
+	let helpers = {
+		hasProperty(idInf, sProp) {
+			let desc, ty = typeof idInf;
+			switch (ty) {
+				case 'number':
+					if (idInf < 0 || idInf >= infs.length)
+						throw new Error(`Composable index '${idInf}' is out of range`);
+					desc = fPropDesc(infs[idInf], sProp);
+					break;
+				case 'string':
+					if (!keyInfs[idInf])
+						throw new Error(`Composable name '${idInf}' is missing`);
+					desc = fPropDesc(keyInfs[idInf], sProp);
+					break;
+				case 'object':
+					if (idInf.isanInfluence) { // Internal harmonizers only
+						desc = fPropDesc(idInf, sProp);
+						break;
+					}
+				default:
+					throw new Error(`Invalid composable identifier '${idInf}'`);
+			}
+			// Only enumerable properties can be returned.
+			return (desc.enumerable ? desc : undefined);
+		},
+		getProperty(idInf, sProp) {
+			let desc = this.hasProperty(idInf, sProp);
+			if (!desc) {
+				let name = typeof idInf === 'number' ? infs[idInf].name : (keyInfs[idInf] && keyInfs[idInf].name) || Anonymous;
+				throw new Error(`Composable property '${name}.${sProp}' not found`);
+			}
+			return (desc);
+		},
+		getProperties(sProp, sOrder, ty) {
+			if (sOrder === Least) {
+				let i = infs.length;
+				return (getProps(sProp, () => --i >= 0 ? infs[i] : undefined, ty));
+			} else if (sOrder === Most) {
+				let i = -1;
+				return (getProps(sProp, () => ++i < infs.length ? infs[i] : undefined, ty));
+			}
+			new Error(`Order '${sOrder}' is invalid`);
+		},
+		selectedProperties(sProp, aids, ty) {
+			if (!Array.isArray(aids))
+				throw new Error(`Composable list is not an array`);
+			let a = [];
+			aids.forEach(idInf => {
+				let desc = this.getProperty(idInf, sProp);
+				if (ty && typeof desc.value !== ty) {
+					let name = typeof idInf === 'number' ? infs[idInf].name : (keyInfs[idInf] && keyInfs[idInf].name) || Anonymous;
+					throw new Error(`Composable property '${name}.${sProp}' is not a '${ty}'`);
+				}
+				a.push(desc);
+			});
+			return (a);
+		},
+		makeCallable(aFns) {
+			if (!Array.isArray(aFns)) aFns = [aFns];
+			let fns = [];
+			aFns.forEach(f => {
+				if (typeof f !== 'function') {
+					if (typeof f !== 'object' || typeof f.value !== 'function')
+						throw new Error(`Function expected. Found '${f}'`);
+					f = f.value;
+				}
+				fns.push(f);
+			});
+			if (fns.length === 0)
+				return () => undefined;
+			if (fns.length === 1)
+				return (fns[0]);
+			return {
+				value(...args) {
+					let result;
+					fns.forEach(f => result = f(...args));
+					return (result);
+				}
+			}
+		}
+	}
+
+	function getProps(sProp, fNext, ty) {
+		let inf, a = [];
+		while (inf = fNext()) {
+			let desc = fPropDesc(inf, sProp);
+			if (!desc || !desc.enumerable) continue;
+			if (ty && typeof desc.value !== ty)
+				throw new Error(`Composable property '${inf.name}.${sProp}' is not a '${ty}'`);
+			a.push(desc);
+		}
+		return (a);
+	}
+
+	function indexedProperty(sProp, idx) {
+		return (this.getProperty(idx, sProp));
+	}
+
+	function leastProperty(sProp) {
+		let desc;
+		infs.forEach(inf => {
+			let d = this.hasProperty(inf, sProp);
+			if (d) desc = d;
+		})
+		if (!desc)
+			throw new Error(`Composable property '${sProp}' not found`);
+		return (desc);
+	}
+
+	function mostProperty(sProp) {
+		for (let i = 0; i < infs.length; i++) {
+			let d = this.hasProperty(infs[i], sProp);
+			if (d) return (d);
+		}
+		throw new Error(`Composable property '${sProp}' not found`);
+	}
+
+	function noneProperty(sProp) {
+		return {
+			value: undefined
+		}
+	}
+
+	function namedProperty(sProp, name) {
+		return (this.getProperty(name, sProp));
+	}
+
+	function leastAllFunctions(sProp) {
+		return (this.makeCallable(this.getProperties(sProp, Least, 'function')));
+	}
+
+	function mostAllFunctions(sProp) {
+		return (this.makeCallable(this.getProperties(sProp, Most, 'function')));
+	}
+
+	function selectedFunctions(sProp, aidInf) {
+		return (this.makeCallable(this.selectedProperties(sProp, aidInf, 'function')));
+	}
+
+	function func(sProp, f) {
+		let desc = f.call(this, sProp);
+		if (typeof desc !== 'object' || (!desc.value && !(desc.get || desc.set)))
+			desc = {
+				value: desc
+			};
+		return (desc);
+	}
+
+	return {
+		indexedProperty: indexedProperty.bind(helpers),
+		leastProperty: leastProperty.bind(helpers),
+		mostProperty: mostProperty.bind(helpers),
+		noneProperty: noneProperty.bind(helpers),
+		namedProperty: namedProperty.bind(helpers),
+		leastAllFunctions: leastAllFunctions.bind(helpers),
+		mostAllFunctions: mostAllFunctions.bind(helpers),
+		selectedFunctions: selectedFunctions.bind(helpers),
+		func: func.bind(helpers)
+	};
 }
