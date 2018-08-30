@@ -8,7 +8,7 @@
 var Yaga = require('../Yaga');
 var DefaultReadPoint;
 
-module.exports = {
+module.exports = Object.freeze({
     ReadPoint: Yaga.Influence({
         name: 'ReadPoint',
         prototype: {
@@ -33,9 +33,12 @@ module.exports = {
         },
         static: {
             get default() {
-                if (!DefaultReadPoint) DefaultReadPoint = this.influence.create('<None>');
+                if (!DefaultReadPoint) {
+                    DefaultReadPoint = this.influence.create('<None>');
+                    DefaultReadPoint.isDefault = true;
+                }
                 return (DefaultReadPoint);
             }
         },
     }).create
-};
+});

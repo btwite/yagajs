@@ -8,9 +8,8 @@
 let _ = undefined;
 module.exports = {
     modules: {
-        ReadPoint() {
-            return (this.ReadPoint);
-        },
+        ReadPoint: mod => mod.ReadPoint,
+        ReaderTable: mod => mod.ReaderTable
     },
     path: __dirname
 };

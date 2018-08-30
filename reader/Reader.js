@@ -2,55 +2,57 @@
  *  Reader: @file
  *
  *  Generic reader object that can read source and produce expressions based on the actions
- *  set in a readertable. Default action is to produce a sequence of tokens that are whitespace
- *  separated. Structure of the reader table as follows (Note that all values are functions):
- *      {
- *          startReader:    // Called before read begins.
- *          endReader:      // Called at the end of input.
- *          eol:            // Called when end of line is reached.
- *          tokenCreated:   // Called when a token is created. Handler responsibility to add to current expression
- *          patterns: {
- *              '<...>':    // One or more characters. Longest sequence matched first.
- *                          // If there is no pattern then will force a to be created and possible token split.
- *              '':         // No pattern, matches every character. Last function to be called. Must be a function
- *          }
- *          
- *      }
+ *  defined in a ReaderTable. Default action is to produce a sequence of tokens that are whitespace
+ *  separated.
  */
 "use strict";
 
-let Scopes = require('prop-Scopes');
+let _ = undefined;
 
-const ENDOFINPUT = 'ENDOFINPUT';
-const ENDOFEXPRESSION = 'ENDOFEXPRESSION';
-const ENDOFBLOCK = 'ENDOFBLOCK';
-const BRACKETS = 'BRACKETS';
+var Yaga = require('../Yaga');
+var Character = Yaga.Character;
+var ReadPoint, ReaderTable;
 
-const EXPRESSION = 'EXPRESSION';
-const RISTIC = 'RISTIC';
-const PIPELINE = 'PIPELINE';
-const PRIMITIVE = 'PRIMITIVE';
-const CONTEXT = 'CONTEXT';
-const INDEX = 'INDEX';
-const PARSE = 'PARSE'
-
-var Yaga, _reader, _readerContext, _Private, _readPoint, _defReadPoint;
-
-module.exports = {
-    new: _newReader,
-    splitToken: _splittoken,
-    Point: {
-        new: _newReadPoint,
+var Reader = Yaga.Influence({
+    name: 'Reader',
+    prototype: {
+        thisArg_: {
+            readStream,
+            readFile,
+            readStrings,
+            readString,
+            currentSource
+        },
     },
-    defaultReadPoint: undefined,
-    Initialise(y) {
-        Yaga = Yaga ? Yaga : y;
-        _defReadPoint = _newReadPoint(undefined, '<None>');
-        _defReadPoint.isDefault = true;
-        this.defaultReadPoint = _defReadPoint;
-        Object.freeze(this);
+    constructor: {
+        private_: {
+            contextStack: [],
+            context: _
+        }
     }
-};
+});
+
+module.exports = Object.freeze({
+    Reader: Reader.create,
+    Initialise(pack) {
+        ReadPoint = pack.ReadPoint;
+        ReaderTable = pack.ReaderTable;
+    }
+});
+
+function pushReaderContext(r, ctxt) {
+    let ps = Reader.private(r);
+    ps.contextStack.push(ps.context);
+    ps.context = ctxt;
+}
+
+function popReaderContext(r) {
+    let ps = Reader.private(r);
+    if (ps.contextStack.length === 0)
+        throw new Error('No Reader context to pop');
+    ps.context = ps.contextStack.pop();
+}
+
 
 function _newReader(yi, optReadTable) {
     let ctxt, reader = Object.create(_reader);
@@ -69,134 +71,78 @@ function _newReader(yi, optReadTable) {
     return (reader);
 }
 
-_reader = Scopes.read({
-    typeName: 'Reader',
-    readStream: _readStream,
-    readFile: _readFile,
-    readStrings: _readStrings,
-    readString: _readString,
-    splitToken: _splitToken,
-    private_var__context: undefined,
-});
-Object.freeze(_reader);
-_Private = Scopes.getScopeFns(_reader).private;
-Scopes.lock(_reader);
+var ReaderContext = Yaga.Influence({
+    name: 'ReaderContext',
+    prototype: {
+        reader: _,
+        sourceName: _,
+        fnRead: _,
+        line: 0,
+        column: 0,
+        expression: _,
+        lastToken: _,
+        curToken: _,
+        tokStream: _,
+        tokBuf: _,
 
-function _readFile(path) {
-    let fs = require('fs');
-    let fd;
-    try {
-        fd = fs.openSync(path, 'r');
-        this.sourceName = fs.realpathSync(path);
-    } catch (err) {
-        throw Yaga.errors.ParserException(undefined, `Failed to open Yaga file. Rsn(${err.message})`);
-    }
-    let oPos = 0,
-        buf = Buffer.alloc(8192),
-        encoding = undefined;
-    let ctxt = _initReaderContext(this, () => {
-        let nBytes = fs.readSync(fd, buf, 0, buf.length, oPos);
-        if (!encoding) {
-            // Require a way of checking the encoding. For example package 'detect-character-encoding'
-            encoding = 'ascii';
+        lastReadPoint: _,
+        parentPoints: _,
+        parentPoint: _,
+        get currentPoint() {
+            return (this.lastReadPoint = ReadPoint(this.sourceName, this.line, this.column, this.parentPoint));
+        },
+
+        /*
+        newPoint: _newPoint,
+        readChar: _readChar,
+        readNextChar: _readNextChar,
+        peekNextChar: _peekNextChar,
+        pushbackChar: _pushbackChar,
+        */
+        exprStack: undefined,
+        expression: undefined,
+        readState: undefined,
+        initReadTable: undefined,
+        readTable: undefined,
+        readTableStack: undefined,
+        tabCount: 4,
+
+        /*
+                startReader: __stateHandler('startReader', _newStartReader),
+                endReader: _endReader,
+                eol: __stateHandler('eol', _newEOL),
+                tokenCreated: _tokenCreated,
+                patternMatch: _patternMatch,
+        */
+        stateFns: undefined,
+        startReaderState: undefined,
+        endReaderState: undefined,
+        eolState: undefined,
+        tokenCreatedState: undefined,
+        patternState: undefined,
+
+
+        _flEOS: false,
+        _fnThrow: undefined,
+        _iStr: 0,
+        _strLength: 0,
+        _str: undefined,
+        _pushbackChar: undefined,
+    },
+    constructor: [
+        function (r, srcName, fnRead) {
+            this.reader = r;
+            this.sourceName = srcName;
+            this.fnRead = fnRead;
+        },
+        {
+
         }
-        oPos += nBytes;
-        return (nBytes == 0 ? null : buf.toString(encoding, 0, nBytes));
-    });
-    ctxt.lineNo = 1;
-    ctxt.column = 0;
-    _read(ctxt);
-    fs.closeSync(fd);
-    return (ctxt.expression);
-}
-
-function _readStream(stream) {
-    throw Yaga.errors.InternalException(`Streams are not currently supported`);
-}
-
-function _readStrings(arr) {
-    return (__readStrings(arr, 'Strings'));
-}
-
-function _readString(s) {
-    return (__readStrings([s], 'String'));
-}
-
-function __readStrings(arr, srcName) {
-    this.sourceName = srcName;
-    let iArr = 0;
-    let ctxt = _initReaderContext(this, () => iArr >= arr.length ? null : arr[iArr++]);
-    this.lineNo = 1;
-    this.column = 0;
-    return (_read(ctxt));
-}
-
-function _splitToken(tok, readTable) {
-    // Change this to just call the token pattern matching interface.
-    // Will only use the pattern matching component of the reader table. Other handlers will not
-    // come into play.
-    if (!Yaga.isaYagaType(tok) || !tok.isaToken) throw Yaga.errors.YagaException(undefined, `Expecting a token. Found(${tok})`);
-    readTable = Yaga.ReaderTable.new(readTable); // Validate the reader table
-
-    // Init code to all pattern matching
-
-    // Call pattern matching interface
-}
-
-// Internal context of the reader.
-_readerContext = {
-    typeName: 'ReaderState',
-    reader: undefined,
-    newPoint: _newPoint,
-    readChar: _readChar,
-    readNextChar: _readNextChar,
-    peekNextChar: _peekNextChar,
-    pushbackChar: _pushbackChar,
-    lastReadPoint: undefined,
-    exprStack: undefined,
-    expression: undefined,
-    parentPoints: undefined,
-    parentPoint: undefined,
-    readState: undefined,
-    initReadTable: undefined,
-    readTable: undefined,
-    readTableStack: undefined,
-    tabCount: 4,
-
-    lineNo: 0,
-    column: 0,
-    lastToken: undefined,
-    curToken: undefined,
-    tokStream: undefined,
-    tokBuf: undefined,
-
-    startReader: __stateHandler('startReader', _newStartReader),
-    endReader: _endReader,
-    eol: __stateHandler('eol', _newEOL),
-    tokenCreated: _tokenCreated,
-    patternMatch: _patternMatch,
-
-    stateFns: undefined,
-    startReaderState: undefined,
-    endReaderState: undefined,
-    eolState: undefined,
-    tokenCreatedState: undefined,
-    patternState: undefined,
-
-
-    _flActive = false,
-    _flEOS: false,
-    _fnThrow: undefined,
-    _fnRead: undefined,
-    _iStr: 0,
-    _strLength: 0,
-    _str: undefined,
-    _pushbackChar: undefined,
-};
+    ],
+});
 
 function _initReaderContext(reader, fnRead) {
     let ctxt = _Private(reader).context;
-    if (ctxt._flActive) throw Yaga.errors.YagaException(undefined, 'Reader is already active');
 
     ctxt.lastReadPoint = _newReadPoint(undefined, reader.sourceName);
     ctxt.expression = _newExpresson(ctxt.lastReadPoint);
@@ -210,6 +156,119 @@ function _initReaderContext(reader, fnRead) {
     ctxt.curToken = undefined;
     return (ctxt);
 }
+
+function readFile(r, path) {
+    let fs = require('fs');
+    let fd = fs.openSync(path, 'r');
+    let encoding, oPos = 0,
+        buf = Buffer.alloc(8192);
+    let ctxt = ReaderContext(r, fs.realpathSync(path), () => {
+        let nBytes = fs.readSync(fd, buf, 0, buf.length, oPos);
+        if (!encoding) {
+            // Require a way of checking the encoding. For example package 'detect-character-encoding'
+            encoding = 'ascii';
+        }
+        oPos += nBytes;
+        return (nBytes == 0 ? null : buf.toString(encoding, 0, nBytes));
+    });
+    let expr = read(ctxt);
+    fs.closeSync(fd);
+    return (expr);
+}
+
+function readStream(r, stream) {
+    throw new Error('Streams are not currently supported');
+}
+
+function readStrings(r, a) {
+    return (_readStrings(r, a, 'Strings'));
+}
+
+function readString(r, s) {
+    return (_readStrings(r, [s], 'String'));
+}
+
+function _readStrings(r, a, srcName) {
+    let iArr = 0;
+    let ctxt = ReaderContext(r, srcName, () => iArr >= arr.length ? null : arr[iArr++]);
+    return (read(ctxt));
+}
+
+function currentSource(r) {
+    let ps = Reader.private(r);
+    return ((ps.context && ps.context.sourceName) || '<None>');
+}
+
+function _splitToken(tok, readTable) {
+    // Change this to a different object that provides a simple interface over a token.
+    // Doesn't need the complete overhead of a reader and context.
+
+
+    // Change this to just call the token pattern matching interface.
+    // Will only use the pattern matching component of the ReaderTable. Other handlers will not
+    // come into play.
+    if (!Yaga.isaYagaType(tok) || !tok.isaToken) throw Yaga.errors.YagaException(undefined, `Expecting a token. Found(${tok})`);
+    readTable = Yaga.ReaderTable.new(readTable); // Validate the ReaderTable
+
+    // Init code to all pattern matching
+
+    // Call pattern matching interface
+}
+
+
+function read(ctxt, line, col) {
+    pushReaderContext(ctxt.reader, ctxt);
+    ctxt.line = line !== undefined ? line : 1;
+    ctxt.column = col !== undefined ? col : 0;
+    try {
+        ctxt.startReader();
+        while (moreTokens(ctxt));
+    } catch (err) {
+        addError(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err);
+    }
+    popReaderContext(ctxt.reader);
+    return (ctxt.endReader()); // The endReader handler must answer the expression object that is to be returned.
+}
+
+function moreTokens(ctxt) {
+    ctxt.lastToken = ctxt.curToken;
+    if (ctxt.tokStream.length > 0) {
+        ctxt.curToken = ctxt.tokStream.splice(0, 1)[0];
+        return (patternMatch(ctxt, ctxt.curToken));
+    }
+    return (patternMatch(ctxt, ctxt.curToken = nextToken(ctxt)));
+}
+
+function nextToken(ctxt) {
+    // Skip any initial white space
+    let ch, ;
+    while (_isWhitespace(ch = _nextChar(ctxt)));
+    if (ch === '') {
+        if (ctxt.column !== 0) {
+            // Don't want two end of lines if EOS occurs straight after a NL
+            ctxt.pushbackChar(ch);
+            return (_newEOLToken(ctxt));
+        }
+        return (_newEOSToken(ctxt));
+    }
+    if (ch === '\n') return (_newEOLToken(ctxt));
+
+    ctxt.tokBuf.clear();
+    let readPoint = ctxt.currentPoint;
+    do {
+        ctxt.tokBuf.append(ch);
+    } while (!_isEndToken(ch = _nextChar(ctxt)));
+    ctxt.pushbackChar(ch);
+
+    return (_newToken(ctxt.tokBuf.toString(), readPoint));
+}
+
+function _nextChar(ctxt) {
+    return (ctxt.readChar(() => {
+        return ('');
+    }));
+}
+
 
 function __stateHandler(stateName, fn) {
     return function (...args) {
@@ -313,81 +372,21 @@ function _pushbackChar() {
         */
 };
 
-function _newPoint(parent, line, col) {
-    if (parent === undefined) parent = this.parentPoint;
-    if (line === undefined) line = this.lineNo;
-    if (col === undefined) col = this.column;
-    this.lastParserPoint = _newParserPoint(parent, this.sourceName, line, col);
-    return (this.lastParserPoint)
-}
-
-function _pushParentPoint(ctxt, point) {
+function pushParentPoint(ctxt, point) {
     ctxt.parentPoints.push(ctxt.parentPoint);
     ctxt.parentPoint = point;
 }
 
-function _popParentPoint(ctxt) {
+function popParentPoint(ctxt) {
     ctxt.parentPoint = ctxt.parentPoints.pop();
 }
 
-function _newParentPoint(ctxt) {
-    let point = ctxt.newPoint();
-    _pushParentPoint(ctxt, point);
+function newParentPoint(ctxt) {
+    let point = ctxt.currentPoint;
+    pushParentPoint(ctxt, point);
     return (point);
 }
 
-
-function _read(ctxt) {
-    ctxt._flActive = true;
-    try {
-        ctxt.startReader();
-        while (_moreTokens(ctxt));
-    } catch (err) {
-        _addError(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err);
-    } finally {
-        ctxt._flActive = false;
-    }
-    return (ctxt.endReader()); // The endReader handler must answer the expression object that is to be returned.
-}
-
-function _moreTokens(ctxt) {
-    ctxt.lastToken = ctxt.curToken;
-    if (ctxt.tokStream.length > 0) {
-        ctxt.curToken = ctxt.tokStream.splice(0, 1)[0];
-        return (_patternMatch(ctxt, ctxt.curToken));
-    }
-    return (_patternMatch(ctxt, ctxt.curToken = _nextToken(ctxt)));
-}
-
-function _nextToken(ctxt) {
-    // Skip any initial white space
-    let ch, ;
-    while (_isWhitespace(ch = _nextChar(ctxt)));
-    if (ch === '') {
-        if (ctxt.column !== 0) {
-            // Don't want two end of lines if EOS occurs straight after a NL
-            ctxt.pushbackChar(ch);
-            return (_newEOLToken(ctxt));
-        }
-        return (_newEOSToken(ctxt));
-    }
-    if (ch === '\n') return (_newEOLToken(ctxt));
-
-    ctxt.tokBuf.clear();
-    let readPoint = ctxt.lastReadPoint = ctxt.newPoint();
-    do {
-        ctxt.tokBuf.append(ch);
-    } while (!_isEndToken(ch = _nextChar(ctxt)));
-    ctxt.pushbackChar(ch);
-
-    return (_newToken(ctxt.tokBuf.toString(), readPoint));
-}
-
-function _nextChar(ctxt) {
-    return (ctxt.readChar(() => {
-        return ('');
-    }));
-}
 
 function _emitBufferToken(ctxt, nChars) {
     let len = ctxt.tokBuf.length();
@@ -532,7 +531,7 @@ function _newToken(chs, readPoint) {
 }
 
 function _newEOLToken(ctxt) {
-    let readPoint = ctxt.newPoint();
+    let readPoint = ctxt.currentPoint;
     ctxt.lineNo++;
     ctxt.column = 0;
     return {
@@ -544,7 +543,7 @@ function _newEOLToken(ctxt) {
 }
 
 function _newEOSToken() {
-    let readPoint = ctxt.newPoint();
+    let readPoint = ctxt.currentPoint;
     return {
         typeName: 'ReaderToken:EOS',
         isaReaderToken: true,

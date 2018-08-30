@@ -7,7 +7,8 @@
 let yaga = require('./Yaga');
 
 test();
-testComposition();
+//testReaderTable();
+//testComposition();
 //testInfluence();
 //testGrammarExtensions();
 
@@ -15,6 +16,53 @@ function test() {
     //    log(yaga);
     //    yaga();
     //    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
+    let d = Object.getOwnPropertyDescriptors({
+        [Symbol.for('fred')]: 200,
+        fred: 100,
+    });
+    let o = Object.defineProperties({}, d);
+    log(Object.getOwnPropertyDescriptors(o));
+    Object.getOwnPropertyNames(d).forEach(prop => log('name', d[prop]));
+    Object.getOwnPropertySymbols(d).forEach(sym => log('sym', d[sym]));
+
+}
+
+function oldReader() {
+    let yi = yaga.Instance.new();
+    let reader = yaga.Reader.new(yi);
+    log(reader);
+    let o = {};
+    o[''] = 'fred';
+    console.log(o['']);
+}
+
+function testReaderTable() {
+    let _ = undefined;
+    let rt = yaga.Reader.ReaderTable();
+    log(rt.match('Hello World'));
+    rt.addPattern('Hello');
+    log(rt.match('Hello World'));
+    rt.addTemplate({
+        patterns: {
+            'World': _,
+            'NONE': _,
+            '/World/': {
+                level: 2
+            },
+            '/^Hello/': {
+                level: 1
+            },
+            '+': _,
+            '++': _,
+            '-aa-': _,
+            '<=': _,
+        }
+    })
+    log(rt.match('HelloWorld'));
+    log(rt.match('HellWorld'));
+    log(rt.match('++'));
+    log(rt.match('+-'));
+    log(rt.match('-aa-xyz'));
 }
 
 function testComposition() {
@@ -137,15 +185,6 @@ function testInfluence() {
     myInf.create.foo();
     myInf.create.foobar();
     myInf.create.foobar1();
-}
-
-function oldReader() {
-    let yi = yaga.Instance.new();
-    let reader = yaga.Reader.new(yi);
-    log(reader);
-    let o = {};
-    o[''] = 'fred';
-    console.log(o['']);
 }
 
 function testGrammarExtensions() {

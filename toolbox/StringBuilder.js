@@ -39,7 +39,7 @@ function StringBuilder() {
             return (aStrings.length);
         },
         toString() {
-            return (str | (str = aStrings.join('')));
+            return (str || (str = aStrings.join('')));
         },
         substr(...args) {
             return (this.toString().substr(...args));

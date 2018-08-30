@@ -32,8 +32,6 @@ yaga.Influence = require('./toolbox/Influence').Influence;
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
 Object.defineProperty(yaga, 'Reader', {
-    configurable: false,
-    enumerable: true,
     get() {
         if (Reader) return (Reader);
         let exps = yaga.Loader(require('./reader/loader'));

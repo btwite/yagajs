@@ -113,7 +113,7 @@ function doRequire(exps, name, src, fExport, modPath) {
 	if (!RootExpr.test(src))
 		src = modPath + '/' + src;
 	let mod = require(src);
-	exps[name] = fExport ? fExport.call(mod) : mod;
+	exps[name] = fExport ? fExport(mod) : mod;
 }
 
 function addRequire(depList, name, src, seq, fExport) {
