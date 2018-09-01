@@ -92,6 +92,7 @@ var ReaderContext = Yaga.Influence({
         this.tokBuf = Yaga.StringBuilder();
         let ps = Reader.private(r);
         this.readerTable = ps.readerTable;
+        this.state = statePrototypes(this);
         if (ps.options) {
             if (ps.options.tabCount)
                 this.tabcount = ps.options.tabCount;
@@ -462,84 +463,96 @@ function _defineProtectedProperty(obj, name, val) {
     })
 }
 
-// Reader state functions
+// Reader state functions and prototypes
 
-function fnThrow(r, msg) {
-    throw ReaderError(Reader.private(r).context.lastReadPoint, msg);
+function statePrototypes(ctxt) {
+    function fnThrow(r, msg) {
+        throw ReaderError(ctxt.lastReadPoint, msg);
+    }
+
+    function fnPushReaderTable(r, rt) {
+        ctxt.readTableStack.push(ctxt.readTable);
+        return (ctxt.readTable = tr);
+    }
+
+    function fnPopReaderTable(r) {
+        return (ctxt.readTable = ctxt.readTableStack.pop());
+    }
+
+    return {
+        startReaderState: {
+            typeName: 'State:StartReader',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+        },
+        endReaderState: {
+            typeName: 'State:EndReader',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            popReaderTable: fnPopReaderTable,
+        },
+        startStreamState: {
+            typeName: 'State:StartReader',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+        },
+        endStreamState: {
+            typeName: 'State:EndReader',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            popReaderTable: fnPopReaderTable,
+        },
+        endLineState: {
+            typeName: 'State:EndLine',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+            popReaderTable: fnPopReaderTable,
+            startExpression: _,
+            endExpression: _,
+        },
+        errorState: {
+            typeName: 'State:Error',
+            reader: ctxt.reader,
+        }
+    }
 }
-
-function fnPushReaderTable(r, rt) {
-    let ctxt = Reader.private(r).context;
-    ctxt.readTableStack.push(ctxt.readTable);
-    return (ctxt.readTable = tr);
-}
-
-function fnPopReaderTable(r) {
-    let ctxt = Reader.private(r).context;
-    return (ctxt.readTable = ctxt.readTableStack.pop());
-}
-
 // Reader table functions state object templates.
 
 function startReaderState(ctxt) {
-    return {
-        typeName: 'State:StartReader',
-        reader: ctxt.reader,
-        throw: fnThrow,
-        pushReaderTable: fnPushReaderTable,
-    };
+    return (Object.create(ctxt.state.startReaderState));
 }
 
 function endReaderState(ctxt) {
-    return {
-        typeName: 'State:EndReader',
-        reader: ctxt.reader,
-        throw: fnThrow,
-        popReaderTable: fnPopReaderTable,
-    }
+    return (Object.create(ctxt.state.endReaderState));
 }
 
 function startStreamState(ctxt, expr) {
-    return {
-        typeName: 'State:StartReader',
-        reader: ctxt.reader,
-        throw: fnThrow,
-        pushReaderTable: fnPushReaderTable,
-        rootExpression: expr
-    };
+    let state = Object.create(ctxt.state.startStreamState);
+    state.rootExpression = expr;
+    return (state);
 }
 
 function endStreamState(ctxt, expr) {
-    return {
-        typeName: 'State:EndReader',
-        reader: ctxt.reader,
-        throw: fnThrow,
-        popReaderTable: fnPopReaderTable,
-        rootExpression: expr
-    }
+    let state = Object.create(ctxt.state.endStreamState);
+    state.rootExpression = expr;
+    return (state);
 }
 
 function endLineState(ctxt, tok) {
-    return {
-        typeName: 'State:EndLine',
-        reader: ctxt.reader,
-        throw: fnThrow,
-        pushReaderTable: fnPushReaderTable,
-        popReaderTable: fnPopReaderTable,
-        startExpression: _,
-        endExpression: _,
-        token: tok
-    }
+    let state = Object.create(ctxt.state.endLineState);
+    state.token = tok;
+    return (state);
 }
 
 function errorState(ctxt, msg, point, oAttach) {
-    return {
-        typeName: 'State:Error',
-        reader: ctxt.reader,
-        message: msg,
-        readPoint: point,
-        attachment: oAttach
-    }
+    let state = Object.create(ctxt.state.errorState);
+    state.message = msg;
+    state.readPoint = point;
+    state.attachment = oAttach;
+    return (state);
 }
 
 
