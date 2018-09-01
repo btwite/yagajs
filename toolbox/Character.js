@@ -5,18 +5,19 @@
  */
 "use strict";
 
-module.exports = {
-	isSpecial,
-	isAlpha,
-	isAlphaNumeric,
-	isDigit,
-	isNumeric,
-	isControl,
-	isOperator,
-	isWhitespace,
-};
-
-Object.freeze(module.exports);
+module.exports = Object.freeze({
+    isSpecial,
+    isAlpha,
+    isAlphaNumeric,
+    isDigit,
+    isNumeric,
+    isControl,
+    isOperator,
+    isWhitespace,
+    isEndOfLine,
+    LastUCS2Char: '\ufffd',
+    EndOfStream: '\uffff',
+});
 
 const Alphas = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const Digits = '0123456789';
@@ -65,3 +66,6 @@ function isWhitespace(ch) {
     return (Whitespace.includes(ch));
 }
 
+function isEndOfLine(ch) {
+    return (EndLine.includes(ch));
+}

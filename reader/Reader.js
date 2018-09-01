@@ -12,6 +12,7 @@ let _ = undefined;
 var Yaga = require('../Yaga');
 var Character = Yaga.Character;
 var ReadPoint, ReaderTable;
+var chEOS = Character.EndOfStream;
 
 var Reader = Yaga.Influence({
     name: 'Reader',
@@ -23,63 +24,43 @@ var Reader = Yaga.Influence({
             readString,
             currentSource
         },
-    },
-    constructor: {
         private_: {
-            contextStack: [],
-            context: _
+            readerTable: _,
+            options: _,
+            context: _,
+            contextStack: _
         }
+    },
+    constructor(rt, options) {
+        rt = ReaderTable(rt);
+        let ps = Reader.private(this);
+        ps.readerTable = rt;
+        ps.options = options;
+        ps.contextStack = [];
     }
 });
 
 module.exports = Object.freeze({
     Reader: Reader.create,
-    Initialise(pack) {
-        ReadPoint = pack.ReadPoint;
-        ReaderTable = pack.ReaderTable;
+    Initialise(exps) {
+        ReadPoint = exps.ReadPoint;
+        ReaderTable = exps.ReaderTable;
     }
 });
-
-function pushReaderContext(r, ctxt) {
-    let ps = Reader.private(r);
-    ps.contextStack.push(ps.context);
-    ps.context = ctxt;
-}
-
-function popReaderContext(r) {
-    let ps = Reader.private(r);
-    if (ps.contextStack.length === 0)
-        throw new Error('No Reader context to pop');
-    ps.context = ps.contextStack.pop();
-}
-
-
-function _newReader(yi, optReadTable) {
-    let ctxt, reader = Object.create(_reader);
-    _Private(reader).context = (ctxt = Object.create(_readerContext));
-    if (yi._options.tabCount) ctxt.tabCount = yi._options.tabCount;
-    ctxt.initReadTable = Yaga.ReaderTable.new(optReadTable || Yaga.YagaReader.readerTable());
-    ctxt.reader = reader;
-    ctxt.stateFns = _getStateFunctions(ctxt);
-    ctxt.startReaderState = _startReaderState(ctxt);
-    ctxt.endReaderState = _endReaderState(ctxt);
-    ctxt.eolState = _eolState(ctxt);
-    ctxt.tokenCreatedState = _tokenCreatedState(ctxt);
-    ctxt.patternState = _patternState(ctxt);
-    ctxt.tokBuf = Yaga.StringBuilder.new();
-    _defineProtectedProperty(reader, 'yi', yi);
-    return (reader);
-}
 
 var ReaderContext = Yaga.Influence({
     name: 'ReaderContext',
     prototype: {
         reader: _,
-        sourceName: _,
         fnRead: _,
+        readerTable: _,
+        readerTableStack: _,
+
+        sourceName: _,
         line: 0,
         column: 0,
         expression: _,
+        exprStack: _,
         lastToken: _,
         curToken: _,
         tokStream: _,
@@ -92,70 +73,31 @@ var ReaderContext = Yaga.Influence({
             return (this.lastReadPoint = ReadPoint(this.sourceName, this.line, this.column, this.parentPoint));
         },
 
-        /*
-        newPoint: _newPoint,
-        readChar: _readChar,
-        readNextChar: _readNextChar,
-        peekNextChar: _peekNextChar,
-        pushbackChar: _pushbackChar,
-        */
-        exprStack: undefined,
-        expression: undefined,
-        readState: undefined,
-        initReadTable: undefined,
-        readTable: undefined,
-        readTableStack: undefined,
+        text: _,
+        textPosition: 0,
+        textLength: 0,
         tabCount: 4,
-
-        /*
-                startReader: __stateHandler('startReader', _newStartReader),
-                endReader: _endReader,
-                eol: __stateHandler('eol', _newEOL),
-                tokenCreated: _tokenCreated,
-                patternMatch: _patternMatch,
-        */
-        stateFns: undefined,
-        startReaderState: undefined,
-        endReaderState: undefined,
-        eolState: undefined,
-        tokenCreatedState: undefined,
-        patternState: undefined,
-
-
-        _flEOS: false,
-        _fnThrow: undefined,
-        _iStr: 0,
-        _strLength: 0,
-        _str: undefined,
-        _pushbackChar: undefined,
+        eos: false,
+        pushbackChar: _,
     },
-    constructor: [
-        function (r, srcName, fnRead) {
-            this.reader = r;
-            this.sourceName = srcName;
-            this.fnRead = fnRead;
-        },
-        {
-
+    constructor(r, srcName, fnRead) {
+        this.reader = r;
+        this.sourceName = srcName;
+        this.fnRead = fnRead;
+        this.parentPoint = ReadPoint.default;
+        this.exprStack = [];
+        this.parentPoints = [];
+        this.readerTableStack = [];
+        this.tokStream = [];
+        this.tokBuf = Yaga.StringBuilder();
+        let ps = Reader.private(r);
+        this.readerTable = ps.readerTable;
+        if (ps.options) {
+            if (ps.options.tabCount)
+                this.tabcount = ps.options.tabCount;
         }
-    ],
+    },
 });
-
-function _initReaderContext(reader, fnRead) {
-    let ctxt = _Private(reader).context;
-
-    ctxt.lastReadPoint = _newReadPoint(undefined, reader.sourceName);
-    ctxt.expression = _newExpresson(ctxt.lastReadPoint);
-    ctxt.exprStack = [];
-    ctxt.parentPoints = [];
-    ctxt.parentPoint = _defReadPoint;
-    ctxt._fnRead = fnRead;
-    ctxt.readTable = ctxt.initReadTable;
-    ctxt.readTableStack = [];
-    ctxt.tokStream = [];
-    ctxt.curToken = undefined;
-    return (ctxt);
-}
 
 function readFile(r, path) {
     let fs = require('fs');
@@ -189,8 +131,8 @@ function readString(r, s) {
 }
 
 function _readStrings(r, a, srcName) {
-    let iArr = 0;
-    let ctxt = ReaderContext(r, srcName, () => iArr >= arr.length ? null : arr[iArr++]);
+    let ia = 0;
+    let ctxt = ReaderContext.create(r, srcName, () => ia >= a.length ? null : a[ia++]);
     return (read(ctxt));
 }
 
@@ -221,52 +163,238 @@ function read(ctxt, line, col) {
     ctxt.line = line !== undefined ? line : 1;
     ctxt.column = col !== undefined ? col : 0;
     try {
-        ctxt.startReader();
         while (moreTokens(ctxt));
     } catch (err) {
-        addError(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err);
+        if (!error(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err))
+            throw err
     }
-    popReaderContext(ctxt.reader);
-    return (ctxt.endReader()); // The endReader handler must answer the expression object that is to be returned.
+    return (popReaderContext(ctxt));
+}
+
+function pushReaderContext(r, ctxt) {
+    let ps = Reader.private(r);
+    if (ps.contextStack.length == 0)
+        startReader(ctxt);
+    startStream(ctxt);
+    ps.contextStack.push(ps.context);
+    ps.context = ctxt;
+}
+
+function popReaderContext(ctxt) {
+    let ps = Reader.private(ctxt.reader);
+    if (ps.contextStack.length === 0)
+        throw new Error('No Reader context to pop');
+    let expr = endStream(ctxt);
+    ps.context = ps.contextStack.pop();
+    if (ps.contextStack.length == 0)
+        endReader(ctxt);
+    return (expr);
 }
 
 function moreTokens(ctxt) {
     ctxt.lastToken = ctxt.curToken;
-    if (ctxt.tokStream.length > 0) {
-        ctxt.curToken = ctxt.tokStream.splice(0, 1)[0];
-        return (patternMatch(ctxt, ctxt.curToken));
-    }
-    return (patternMatch(ctxt, ctxt.curToken = nextToken(ctxt)));
+    ctxt.curToken = ctxt.tokStream.shift() || nextToken(ctxt);
+    return (performTokenAction(ctxt, ctxt.curToken));
 }
 
 function nextToken(ctxt) {
     // Skip any initial white space
-    let ch, ;
-    while (_isWhitespace(ch = _nextChar(ctxt)));
-    if (ch === '') {
-        if (ctxt.column !== 0) {
+    let ch;
+    do {
+        ch = readChar(ctxt);
+        if (Character.isEndOfLine(ch))
+            return (EOLToken(ctxt));
+        if (ch === chEOS) {
             // Don't want two end of lines if EOS occurs straight after a NL
-            ctxt.pushbackChar(ch);
-            return (_newEOLToken(ctxt));
+            if (ctxt.column !== 0) {
+                ctxt.tokStream.push(EOSToken(ctxt));
+                return (EOLToken(ctxt));
+            }
+            return (EOSToken(ctxt));
         }
-        return (_newEOSToken(ctxt));
-    }
-    if (ch === '\n') return (_newEOLToken(ctxt));
+    } while (Character.isWhitespace(ch));
 
     ctxt.tokBuf.clear();
     let readPoint = ctxt.currentPoint;
     do {
         ctxt.tokBuf.append(ch);
-    } while (!_isEndToken(ch = _nextChar(ctxt)));
-    ctxt.pushbackChar(ch);
-
-    return (_newToken(ctxt.tokBuf.toString(), readPoint));
+        ch = readChar(ctxt);
+    } while (!Character.isWhitespace(ch) && ch !== chEOS);
+    pushbackChar(ctxt, ch);
+    return (Token(ctxt, ctxt.tokBuf.toString(), readPoint));
 }
 
-function _nextChar(ctxt) {
-    return (ctxt.readChar(() => {
-        return ('');
-    }));
+function readChar(ctxt) {
+    let ch = readNextChar(ctxt);
+    switch (ch) {
+        case '\r':
+            if (peekNextChar(ctxt) !== '\n')
+                return (ch);
+            return (readNextChar(ctxt));
+        case '\t':
+            let tc = this.tabCount;
+            this.column = (this.column + tc) / tc * tc + 1;
+        default:
+            return (ch);
+    }
+}
+
+function readNextChar(ctxt) {
+    let ch = ctxt.pushbackChar;
+    if (ch) {
+        ctxt.pushbackChar = _;
+        return (ch);
+    } else if (ctxt.textPosition >= ctxt.textLength) {
+        if (ctxt.eos)
+            throw EndOfStream(ctxt.currentPoint);
+        if ((ctxt.text = ctxt.fnRead()) == null) {
+            ctxt.eos = true;
+            ch = chEOS;
+        } else {
+            if ((ctxt.textLength = ctxt.text.length) == 0)
+                return (readNextChar(ctxt));
+            ctxt.textPosition = 1;
+            ch = ctxt.text[0];
+        }
+    } else
+        ch = ctxt.text[ctxt.textPosition++]
+    ctxt.column++;
+    return (ch);
+}
+
+function peekNextChar(ctxt) {
+    if (ctxt.pushbackChar)
+        return (ctxt.pushbackChar);
+    if (ctxt.textPosition >= ctxt.textLength) {
+        if (ctxt.eos || (ctxt.text = ctxt.fnRead()) == null) {
+            ctxt.eos = true;
+            return (chEOS);
+        }
+        ctxt.textPosition = 0;
+        if ((ctxt.textLength = ctxt.text.length) == 0)
+            return (peekNextChar(ctxt));
+        return (ctxt.text[0]);
+    }
+    return (ctxt.text[ctxt.textPosition]);
+}
+
+function pushbackChar(ctxt, ch) {
+    if (ctxt.pushbackChar)
+        throw new Error('Attempting mulitple pushbacks');
+    ctxt.pushbackChar = ch;
+};
+
+function pushParentPoint(ctxt, point) {
+    ctxt.parentPoints.push(ctxt.parentPoint);
+    ctxt.parentPoint = point;
+}
+
+function popParentPoint(ctxt) {
+    ctxt.parentPoint = ctxt.parentPoints.pop();
+}
+
+function newParentPoint(ctxt) {
+    let point = ctxt.currentPoint;
+    pushParentPoint(ctxt, point);
+    return (point);
+}
+
+function performTokenAction(ctxt, tok) {
+    return (tok.action(ctxt));
+}
+
+function Token(chs, readPoint) {
+    return {
+        token: {
+            typeName: 'ReaderToken',
+            isaReaderToken: true,
+            readPoint: readPoint,
+            chars: chs,
+        },
+        action(ctxt) {
+            // Pattern matching goes here etc goes here
+            return (true);
+        }
+    }
+}
+
+function EOLToken(ctxt) {
+    let readPoint = ctxt.currentPoint;
+    ctxt.lineNo++;
+    ctxt.column = 0;
+    return {
+        token: {
+            typeName: 'ReaderToken:EOL',
+            isaReaderToken: true,
+            isEOL: true,
+            readPoint: readPoint,
+        },
+        action(ctxt) {
+            if (ctxt.readerTable.endLine)
+                ctxt.readerTable.endLine(endLineState(ctxt, this.token));
+            return (true);
+        }
+    }
+}
+
+function EOSToken(ctxt) {
+    let readPoint = ctxt.currentPoint;
+    return {
+        token: {
+            typeName: 'ReaderToken:EOS',
+            isaReaderToken: true,
+            isEOS: true,
+            readPoint: readPoint,
+        },
+        action(ctxt) {
+            if (ctxt.exprStack.length > 0)
+                throw ReaderError(ctxt.lastReadPoint, 'Missing end of expression');
+            return (false);
+        }
+    }
+}
+
+function Expression(readPoint = ReadPoint.default, startToken, endToken) {
+    return {
+        typeName: 'ReaderExpression',
+        isaReaderExpression: true,
+        readPoint: readPoint,
+        startToken: startToken,
+        endToken: endToken,
+        list: [],
+    }
+}
+
+function startReader(ctxt) {
+    if (ctxt.readerTable.startReader)
+        ctxt.readerTable.startReader(startReaderState(ctxt));
+}
+
+function endReader(ctxt) {
+    if (ctxt.readerTable.endReader)
+        ctxt.readerTable.endReader(endReaderState(ctxt));
+}
+
+function startStream(ctxt) {
+    // The startStream handler must answer the expression object that is the root expression.
+    let expr = Expression();
+    if (ctxt.readerTable.startStream)
+        expr = ctxt.readerTable.startStream(startStreamState(ctxt, expr));
+    ctxt.expression = expr;
+}
+
+function endStream(ctxt) {
+    // The endReader handler must answer the expression object that is to be returned.
+    let expr = ctxt.expression;
+    if (ctxt.readerTable.endStream)
+        expr = ctxt.readerTable.endStream(endStreamState(ctxt, expr));
+    return (expr);
+}
+
+function error(ctxt, msg, point, oSrc) {
+    if (!ctxt.readerTable.error)
+        return (false);
+    return (ctxt.readerTable.error(errorState(ctxt, msg, point, oSrc)));
 }
 
 
@@ -276,6 +404,7 @@ function __stateHandler(stateName, fn) {
         this.readTable[stateName](fn(this, ...args));
     }
 }
+
 
 function _endReader() {
     if (!this.readTable.endReader) {
@@ -304,90 +433,6 @@ function _patternMatch() {
     _emitBufferToken(ctxt);
 }
 
-function _readChar(fnEOS) {
-    let ch = this.readNextChar(fnEOS);
-    switch (ch) {
-        case '\r':
-            let peek = this.peekNextChar();
-            if (peek === '\n') this.readNextChar(fnEOS);
-        case '\n':
-            return ('\n');
-        case '\t':
-            let tc = this.tabCount;
-            this.column = (this.column + tc) / tc * tc + 1;
-            return (' '); // Give back a single whitespace character
-        default:
-            return (ch);
-    }
-}
-
-function _readNextChar(fnEOS) {
-    let ch;
-    if (this._pushbackChar) {
-        ch = this._pushbackChar;
-        this._pushbackChar = undefined;
-    } else if (this._iStr >= this._strLength) {
-        if (this._flEOS) {
-            if (fnEOS) return (fnEOS());
-            throw Yaga.errors.ParserException(this.lastParserPoint, "End of input detected", ENDOFINPUT);
-        }
-        if ((this._str = this._fnRead()) == null) {
-            this._flEOS = true;
-            ch = ' '; // Just return whitespace now and throw on next call
-        } else {
-            if ((this._strLength = this._str.length) == 0) return (this.readNextChar());
-            this._iStr = 1;
-            ch = this._str[0];
-        }
-    } else {
-        ch = this._str[this._iStr++]
-    }
-    this.column++;
-    return (ch);
-}
-
-function _peekNextChar() {
-    if (this._pushbackChar) return (this._pushbackChar);
-    if (this._iStr >= this._strLength) {
-        if (this._flEOS || (this._str = this._fnRead()) == null) {
-            this._flEOS = true;
-            return (' ');
-        }
-        this._iStr = 0;
-        if ((thsi._strLength = this._str.length) == 0) return (this.peekNextChar());
-        return (this._str[0]);
-    }
-    return (this._str[this._iStr]);
-}
-
-function _pushbackChar() {
-    if (this._pushbackChar) {
-        throw Yaga.errors.InternalException(undefined, "Attempting mulitple pushbacks");
-    }
-    /*    
-    Needs to be rewritten once we work out the readtable functions will use peek and pushback.
-        this.column--;
-        this._pushbackChar = this.curChar;
-        this.curChar = ' ';
-        */
-};
-
-function pushParentPoint(ctxt, point) {
-    ctxt.parentPoints.push(ctxt.parentPoint);
-    ctxt.parentPoint = point;
-}
-
-function popParentPoint(ctxt) {
-    ctxt.parentPoint = ctxt.parentPoints.pop();
-}
-
-function newParentPoint(ctxt) {
-    let point = ctxt.currentPoint;
-    pushParentPoint(ctxt, point);
-    return (point);
-}
-
-
 function _emitBufferToken(ctxt, nChars) {
     let len = ctxt.tokBuf.length();
     if (len === 0) return;
@@ -408,18 +453,6 @@ function _matchPatterns(ctxt) {
     if (maxlen < 0) return; // No patterns to match on
 }
 
-function _isEndtoken(ch) {
-    return (_isWhitespace(ch) || ch === '' || ch === '\n');
-}
-
-function _addError(ctxt, msg, e, attach) {
-    if (attach && attach.isaYagaException) {
-        if (!attach.element.isNil) e = attach.element;
-        else if (!attach.readPoint.isDefault) e = attach.readPoint;
-    }
-    ctxt.reader.yi.addError(e, msg, attach);
-}
-
 function _defineProtectedProperty(obj, name, val) {
     Object.defineProperty(obj, name, {
         value: val,
@@ -429,53 +462,86 @@ function _defineProtectedProperty(obj, name, val) {
     })
 }
 
-// Reader table callback functions
-function _getStateFunctions(ctxt) {
-    return {
-        fnThrow: msg => Yaga.errors.YagaException(ctxt.lastReadPoint, msg),
-        fnPushReaderTable: newTable => {
-            let table = _initReadTable(newTable);
-            ctxt.readTableStack.push(ctxt.readTable);
-            return (ctxt.readTable = table);
-        },
-        fnPopReaderTable: () => {
-            return (ctxt.readTable = ctxt.readTableStack.pop());
-        },
-    };
+// Reader state functions
+
+function fnThrow(r, msg) {
+    throw ReaderError(Reader.private(r).context.lastReadPoint, msg);
+}
+
+function fnPushReaderTable(r, rt) {
+    let ctxt = Reader.private(r).context;
+    ctxt.readTableStack.push(ctxt.readTable);
+    return (ctxt.readTable = tr);
+}
+
+function fnPopReaderTable(r) {
+    let ctxt = Reader.private(r).context;
+    return (ctxt.readTable = ctxt.readTableStack.pop());
 }
 
 // Reader table functions state object templates.
 
-function _startReaderState(ctxt) {
+function startReaderState(ctxt) {
     return {
         typeName: 'State:StartReader',
         reader: ctxt.reader,
-        throw: ctxt.stateFns.fnThrow,
-        pushReaderTable: ctxt.stateFns.fnPushReaderTable,
+        throw: fnThrow,
+        pushReaderTable: fnPushReaderTable,
     };
 }
 
-function _endReaderState(ctxt) {
+function endReaderState(ctxt) {
     return {
         typeName: 'State:EndReader',
         reader: ctxt.reader,
-        throw: ctxt.stateFns.fnThrow,
-        popReaderTable: ctxt.stateFns.fnPopReaderTable,
-        endExpression: ctxt.stateFns.fnEndExpression,
+        throw: fnThrow,
+        popReaderTable: fnPopReaderTable,
     }
 }
 
-function _eolState(ctxt) {
+function startStreamState(ctxt, expr) {
     return {
-        typeName: 'State:EndOfLine',
+        typeName: 'State:StartReader',
         reader: ctxt.reader,
-        throw: ctxt.stateFns.fnThrow,
-        pushReaderTable: ctxt.stateFns.fnPushReaderTable,
-        popReaderTable: ctxt.stateFns.fnPopReaderTable,
-        startExpression: ctxt.stateFns.fnStartExpression,
-        endExpression: ctxt.stateFns.fnEndExpression,
+        throw: fnThrow,
+        pushReaderTable: fnPushReaderTable,
+        rootExpression: expr
+    };
+}
+
+function endStreamState(ctxt, expr) {
+    return {
+        typeName: 'State:EndReader',
+        reader: ctxt.reader,
+        throw: fnThrow,
+        popReaderTable: fnPopReaderTable,
+        rootExpression: expr
     }
 }
+
+function endLineState(ctxt, tok) {
+    return {
+        typeName: 'State:EndLine',
+        reader: ctxt.reader,
+        throw: fnThrow,
+        pushReaderTable: fnPushReaderTable,
+        popReaderTable: fnPopReaderTable,
+        startExpression: _,
+        endExpression: _,
+        token: tok
+    }
+}
+
+function errorState(ctxt, msg, point, oAttach) {
+    return {
+        typeName: 'State:Error',
+        reader: ctxt.reader,
+        message: msg,
+        readPoint: point,
+        attachment: oAttach
+    }
+}
+
 
 function _tokenCreatedState(ctxt) {
     return {
@@ -521,44 +587,19 @@ function _newTokenCreated(ctxt, tok) {
 
 }
 
-function _newToken(chs, readPoint) {
-    return {
-        typeName: 'ReaderToken',
-        isaReaderToken: true,
-        readPoint: readPoint,
-        chars: chs,
+// Exceptions
+var EndOfStream = Yaga.Exception({
+    name: 'yaga.Reader.EndOfStream',
+    constructor(point) {
+        this.point = point;
+        return (point.format() + ' : End of stream detected');
     }
-}
+});
 
-function _newEOLToken(ctxt) {
-    let readPoint = ctxt.currentPoint;
-    ctxt.lineNo++;
-    ctxt.column = 0;
-    return {
-        typeName: 'ReaderToken:EOL',
-        isaReaderToken: true,
-        isEOL,
-        readPoint: readPoint,
+var ReaderError = Yaga.Exception({
+    name: 'yaga.ReaderError',
+    constructor(point, msg) {
+        this.point = point;
+        return (point.format() + ' : ' + msg);
     }
-}
-
-function _newEOSToken() {
-    let readPoint = ctxt.currentPoint;
-    return {
-        typeName: 'ReaderToken:EOS',
-        isaReaderToken: true,
-        isEOS,
-        readPoint: readPoint,
-    }
-}
-
-function _newExpresson(readPoint, startToken, endToken) {
-    return {
-        typeName: 'ReaderExpression',
-        isaReaderExpression: true,
-        readPoint: readPoint,
-        startToken: startToken,
-        endToken: endToken,
-        list: [],
-    }
-}
+})

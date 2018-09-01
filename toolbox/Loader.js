@@ -66,7 +66,8 @@ function Loader(oDesc, oInit) {
 	Object.keys(oDesc.modules).forEach(name => addRequire(depList, name, name, oDesc.modules[name]));
 	// Have an ordered dependency list so we can now load each package module.
 	// Note that entries at level 0 are the least significant
-	let exps = {};
+	let exps = {},
+		mods = {};
 	if (oDesc.initialiser)
 		Object.assign(exps, oDesc.initialiser);
 	if (oInit)
@@ -78,27 +79,27 @@ function Loader(oDesc, oInit) {
 	for (let i = 1; i < depList.length; i++) {
 		let list = depList[i];
 		if (!list) continue;
-		list.forEach(req => doRequire(exps, req[0], req[1], req[2], modPath));
+		list.forEach(req => doRequire(mods, exps, req[0], req[1], req[2], modPath));
 	}
 	if (depList[0])
-		depList[0].forEach(req => doRequire(exps, req[0], req[1], req[2], modPath));
+		depList[0].forEach(req => doRequire(mods, exps, req[0], req[1], req[2], modPath));
 	/**
 	 * Initialise each module if they have provided an Initialise method.
 	 */
-	runInitPhase(exps, 'Initialise', exps);
+	runInitPhase(mods, 'Initialise', exps, mods);
 	/**
 	 * Initialise each module if they have provided a PostInitialise method.
 	 * Allows modules to run initialisation processes that require
 	 * access to other module services not just the module reference.
 	 */
-	runInitPhase(exps, 'PostInitialise');
+	runInitPhase(mods, 'PostInitialise');
 
 	return (exps);
 }
 
-function runInitPhase(exps, sPhase, ...args) {
-	Object.keys(exps).forEach(sProp => {
-		let prop = exps[sProp];
+function runInitPhase(mods, sPhase, ...args) {
+	Object.keys(mods).forEach(sProp => {
+		let prop = mods[sProp];
 		if (typeof prop === 'object' && typeof prop[sPhase] === 'function') {
 			prop[sPhase](...args);
 		}
@@ -107,12 +108,13 @@ function runInitPhase(exps, sPhase, ...args) {
 
 let RootExpr = /^(?:[a-zA-Z]\:)?\//;
 
-function doRequire(exps, name, src, fExport, modPath) {
+function doRequire(mods, exps, name, src, fExport, modPath) {
 	// If the src path does not start at the file system root then we append to
 	// the callers provided source directory path.
 	if (!RootExpr.test(src))
 		src = modPath + '/' + src;
 	let mod = require(src);
+	mods[name] = mod;
 	exps[name] = fExport ? fExport(mod) : mod;
 }
 

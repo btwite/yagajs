@@ -17,24 +17,22 @@ function yaga() {
     console.log('Yaga machince instantiator');
 }
 
-function thisArg(f) {
-    return function (...args) {
-        return f(this, ...args);
-    };
-}
-
-yaga.thisArg = thisArg
+yaga.thisArg = thisArg;
+yaga.dispatchPropertyHandlers = dispatchPropertyHandlers;
 yaga.Loader = require('./toolbox/Loader').Loader;
-yaga.Character = require('./toolbox/Character');
-yaga.StringBuilder = require('./toolbox/StringBuilder').StringBuilder;
-yaga.Influence = require('./toolbox/Influence').Influence;
+
+let toolbox = yaga.Loader(require('./toolbox/loadScript'));
+yaga.Character = toolbox.Character;
+yaga.StringBuilder = toolbox.StringBuilder;
+yaga.Influence = toolbox.Influence;
+yaga.Exception = toolbox.Exception;
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
 Object.defineProperty(yaga, 'Reader', {
     get() {
         if (Reader) return (Reader);
-        let exps = yaga.Loader(require('./reader/loader'));
+        let exps = yaga.Loader(require('./reader/loadScript'));
         Reader = (...args) => exps.Reader(...args);
         Object.assign(Reader, exps.Reader);
         Reader.ReadPoint = exps.ReadPoint;
@@ -44,3 +42,20 @@ Object.defineProperty(yaga, 'Reader', {
 });
 
 Object.freeze(yaga);
+
+function thisArg(f) {
+    return function (...args) {
+        return f(this, ...args);
+    };
+}
+
+function dispatchPropertyHandlers(o, oHandlers) {
+    if (typeof o !== 'object')
+        throw new error(`Object expected found '${o}'`);
+    let fOther = oHandlers._other_ || (() => {});
+    Object.keys(o).forEach(prop => {
+        if (oHandlers.hasOwnProperty(prop))
+            return (oHandlers[prop](prop));
+        return (fOther(prop));
+    });
+}

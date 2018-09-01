@@ -7,12 +7,31 @@
 let yaga = require('./Yaga');
 
 test();
-//testReaderTable();
+//testProperties();
+//testExceptions();
+// testReaderTable();
 //testComposition();
 //testInfluence();
 //testGrammarExtensions();
 
 function test() {
+    //    let rt = yaga.Reader.ReaderTable({});
+    let r = yaga.Reader({
+        startReader: (...args) => console.log('startReader', ...args),
+        endReader: (...args) => console.log('endReader', ...args),
+        startStream: state => {
+            console.log('startStream', state);
+            return (state.rootExpression);
+        },
+        endStream: state => {
+            console.log('endStream', state);
+            return (state.rootExpression);
+        },
+    });
+    r.readString('Hello World');
+}
+
+function testProperties() {
     //    log(yaga);
     //    yaga();
     //    log(Object.is(yaga, yaga.Reader.ReadPoint.Yaga));
@@ -24,7 +43,37 @@ function test() {
     log(Object.getOwnPropertyDescriptors(o));
     Object.getOwnPropertyNames(d).forEach(prop => log('name', d[prop]));
     Object.getOwnPropertySymbols(d).forEach(sym => log('sym', d[sym]));
+    log("abcd".includes(""));
+}
 
+function testExceptions() {
+    let exc = yaga.Exception('TestException')
+    trycode(() => {
+        throw exc('My Exception');
+    });
+    exc = yaga.Exception({
+        name: 'my.TestException',
+        constructor(a, b, c) {
+            this.a = a;
+            this.b = b;
+            this.c = c;
+            return (`Msg: ${a} ${b} ${c}`);
+        }
+    });
+    trycode(() => {
+        throw exc(1, 2, 3);
+    });
+    let exc1 = yaga.Exception({
+        name: 'my.TestException1',
+        constructor(a, b, c, d) {
+            this.d = d;
+            return (yaga.Exception.super(exc1, this, a, b, c) + ' ' + d);
+        },
+        prototype: exc
+    });
+    trycode(() => {
+        throw exc1(10, 20, 30, 40);
+    });
 }
 
 function oldReader() {
@@ -137,8 +186,16 @@ function testInfluence() {
         },
         constructor: {
             myval: 100,
+            do_: {
+                xxxx: () => [1, 2, 3, 4],
+                yyyy: () => 'kljdslkjdlsak',
+            },
             private_: {
-                myprivateval: []
+                myprivateval: [],
+                do_: {
+                    wwww: () => [1, 2, 3, 4],
+                    zzzz: () => 'kljdslkjdlsak',
+                },
             },
             protected_: {
                 myval: 1000
@@ -149,10 +206,10 @@ function testInfluence() {
                 console.log('bar =', this.bar)
             },
             foobar() {
-                myInf.protectedStatic(this).foo()
+                myInf.static.protected(this).foo()
             },
             foobar1() {
-                myInf.privateStatic(this).foo()
+                myInf.static.private(this).foo()
             },
             bar: 1000,
             protected_: {
@@ -236,7 +293,7 @@ function trycode(fn) {
     try {
         fn()
     } catch (err) {
-        console.log(err.name, err.message);
+        log(err);
         if (err.errors) yaga.printErrors(err.errors);
     }
 }

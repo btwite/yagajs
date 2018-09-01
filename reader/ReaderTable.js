@@ -7,12 +7,13 @@
  *          startReader:	// Called before read begins.
  *          endReader:      // Called at the end of input.
  *          startStream:	// Called when about to read from a new stream. Reader supports mutiple levels of sub-streams
- *          endStream:	  // Called when reader has reached the end of a stream.
- *          startLine:	  // Called when reader starts a new line.
+ *          endStream:	  	// Called when reader has reached the end of a stream.
+ *          startLine:	  	// Called when reader starts a new line.
  *          endLine:        // Called when reader has reached the end of a line.
  *          commitExpression: // Called when the reader is about to add a sub-expression to the current expression
  *          commitToken:    // Called when the reader is about to add a token to the current expression
  *          commitChar: 	// Called when the reader is about to add a character to the current token
+ * 			error:			// Called when an error or exception has occurred.
  *          patterns: {
  *              '<...>':    // Character pattern. Longest sequence matched first.
  *              '/<regexpr>/': { // Javascript regular expression. Processed after fixed pattern
@@ -156,6 +157,7 @@ var ReadTableUpdaters = {
 	commitExpression: updateHandler,
 	commitToken: updateHandler,
 	commitChar: updateHandler,
+	error: updateHandler,
 	patterns: updatePatterns,
 };
 
