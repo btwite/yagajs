@@ -167,7 +167,7 @@ function read(ctxt, line, col) {
     ctxt.column = col !== undefined ? col : 0;
     startLine(ctxt);
     try {
-        while (moreTokens(ctxt));
+        while (moreText(ctxt));
     } catch (err) {
         if (!error(ctxt, `${err.name}: ${err.message}`, ctxt.lastReadPoint, err))
             throw err
@@ -195,10 +195,8 @@ function popReaderContext(ctxt) {
     return (expr);
 }
 
-function moreTokens(ctxt) {
-    ctxt.lastToken = ctxt.curToken;
-    ctxt.curToken = ctxt.tokStream.shift() || nextToken(ctxt);
-    return (ctxt.curToken.action());
+function moreText(ctxt) {
+    return ((ctxt.tokStream.shift() || nextToken(ctxt)).action());
 }
 
 function nextToken(ctxt) {
@@ -207,25 +205,25 @@ function nextToken(ctxt) {
     do {
         ch = readChar(ctxt);
         if (Character.isEndOfLine(ch))
-            return (EOLToken(ctxt));
+            return (EOLInput(ctxt));
         if (ch === chEOS) {
             // Don't want two end of lines if EOS occurs straight after a NL
             if (ctxt.column !== 0) {
-                ctxt.tokStream.push(EOSToken(ctxt));
-                return (EOLToken(ctxt));
+                ctxt.tokStream.push(EOSInput(ctxt));
+                return (EOLInput(ctxt));
             }
-            return (EOSToken(ctxt));
+            return (EOSInput(ctxt));
         }
     } while (Character.isWhitespace(ch));
 
-    ctxt.tokBuf.clear();
+    let tok = ctxt.tokBuf.clear();
     let readPoint = ctxt.currentPoint;
     do {
-        ctxt.tokBuf.append(ch);
+        tok.append(ch);
         ch = readChar(ctxt);
     } while (!Character.isWhitespace(ch) && ch !== chEOS);
     pushbackChar(ctxt, ch);
-    return (Token(ctxt, ctxt.tokBuf.toString(), readPoint));
+    return (TokenInput(ctxt, tok.toString(), readPoint));
 }
 
 function readChar(ctxt) {
@@ -303,15 +301,15 @@ function newParentPoint(ctxt) {
     return (point);
 }
 
-function Token(ctxt, chs, readPoint) {
+function TokenInput(ctxt, chs, readPoint) {
     return {
-        token: {
-            typeName: 'ReaderToken',
-            isaReaderToken: true,
-            readPoint: readPoint,
-            chars: chs,
-        },
+        typeName: 'TokenInput',
+        readPoint: readPoint,
+        chars: chs,
         action() {
+            // Need to build the token from the token buffer allowing each char to be committed.
+            ctxt.curToken = Token(this.readPoint);
+
             // Pattern matching goes here etc goes here
             commitToken(ctxt, this.token);
             return (true);
@@ -319,19 +317,15 @@ function Token(ctxt, chs, readPoint) {
     }
 }
 
-function EOLToken(ctxt) {
+function EOLInput(ctxt) {
     let readPoint = ctxt.currentPoint;
     ctxt.line++;
     ctxt.column = 0;
     return {
-        token: {
-            typeName: 'ReaderToken:EOL',
-            isaReaderToken: true,
-            isEOL: true,
-            readPoint: readPoint,
-        },
+        typeName: 'EOLInput',
+        readPoint: readPoint,
         action() {
-            endLine(ctxt, this.token);
+            endLine(ctxt, this.readPoint);
             if (peekNextChar(ctxt) !== chEOS)
                 startLine(ctxt);
             return (true);
@@ -339,15 +333,11 @@ function EOLToken(ctxt) {
     }
 }
 
-function EOSToken(ctxt) {
+function EOSInput(ctxt) {
     let readPoint = ctxt.currentPoint;
     return {
-        token: {
-            typeName: 'ReaderToken:EOS',
-            isaReaderToken: true,
-            isEOS: true,
-            readPoint: readPoint,
-        },
+        typeName: 'EOSInput',
+        readPoint: readPoint,
         action() {
             if (ctxt.exprStack.length > 0)
                 throw ReaderError(ctxt.lastReadPoint, 'Missing end of expression');
@@ -356,11 +346,24 @@ function EOSToken(ctxt) {
     }
 }
 
+function Token(readPoint, chs = '') {
+    return {
+        typeName: 'ReaderToken',
+        isaReaderToken: true,
+        add(ch) {
+            this.chars += ch;
+        },
+        readPoint: readPoint,
+        chars: chs
+    }
+}
+
 function Expression(readPoint = ReadPoint.default, startToken, endToken) {
     return {
         typeName: 'ReaderExpression',
+        isaReaderToken: true,
         isaReaderExpression: true,
-        push(tok) {
+        add(tok) {
             this.tokens.push(tok);
         },
         readPoint: readPoint,
@@ -401,9 +404,9 @@ function startLine(ctxt) {
         ctxt.readerTable.startLine(startLineState(ctxt, ctxt.currentPoint));
 }
 
-function endLine(ctxt, tok) {
+function endLine(ctxt, readPoint) {
     if (ctxt.readerTable.endLine)
-        ctxt.readerTable.endLine(endLineState(ctxt, tok));
+        ctxt.readerTable.endLine(endLineState(ctxt, readPoint));
 }
 
 function commitToken(ctxt, tok) {
@@ -584,9 +587,9 @@ function startLineState(ctxt, point) {
     return (state);
 }
 
-function endLineState(ctxt, tok) {
+function endLineState(ctxt, point) {
     let state = Object.create(ctxt.state.endLineState);
-    state.token = tok;
+    state.readPoint = point;
     return (state);
 }
 
