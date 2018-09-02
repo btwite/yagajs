@@ -22,8 +22,7 @@
  * 				protected_: {		// Protected properties of the prototype. Can also contain 'thisArg_'.
  * 				}
  * 			},
- * 			constructor: { <property inialisation object> } | fInitialiser | // fn gets access to instance via 'this'.
- * 							[ fInit, <init object> ],
+ * 			constructor: <fInitialiser> | <oInitialiser>,
  * 			static: {				// Static properties for the Infleunce
  * 				...
  * 				thisArg_: {			// Bounded prototype functions require 'this' argument not 'this' property.
@@ -103,24 +102,25 @@
  * 		6. Influence(oDesc) will answer the influence object to the caller. This will provide full access to the influence
  * 		   including the scope functions. Only the influence 'create' function is registered and should only be provided as the 
  * 		   public interface of the influence. The influence 'create' function object contains the public static properties.
- *		7. The Influence 'create' function will invoke the constructor bound to the new instance. The constructor can return an alternate
- *		   object. The instance object will be assumed if the constructor returns undefined.
+ *		7. The Influence 'create' function will invoke the constructor bound to the new instance. The 'create' function will always answer
+ *		   an instance of the influence. Static functions are required for alternate objects to be returned.
  * 	    8. A constructor initialisation object can have a 'private_' sub-object to init the private scope.
  * 	    9. A constructor initialisation object can have a 'protected_' sub-object to init the protected scope.
  * 	   10. A constructor initialisation object will be applied via a deep copy (clone) to the new instance.
- * 	   11. Static functions are bound to an Influence static object. The static object includes an 'influence' property back link
+ * 	   11. A constructor initialisation function can directly update the instance object via 'this' and/or return a constructor descriptor
+ * 		   object that is applied to the instance. In this case any function value is assumed to be an initialiser for the property and will
+ * 		   be invoked passing the instance object as an argument. Constructor arguments can be bound from the constructor definition.
+ * 		   The descriptor object can also contain 'private_' and 'protected_' sections.
+ * 		   Note: Function values will need to be wrapped in a arrow function to avoid construction time execution.
+ * 	   12. Static functions are bound to an Influence static object. The static object includes an 'influence' property back link
  *		   to the Influence object.
- *	   12. Protected static properties are located in the static object, but cannot be directly referenced from the 'create' function object.
- *	   13. Standard properties :
+ *	   13. Protected static properties are located in the static object, but cannot be directly referenced from the 'create' function object.
+ *	   14. Standard properties :
  *				1. 'copy' and 'clone' will create a shallow or deep descriptor level copy of an influence instance. Located in public prototype.
  *				2. 'bindThis' will answer a bound function for an influence instance. Ex. foo.bindThis('fbar')
  *				   The same bound function will be answered for a given instance/function combination. Located in the public, private and
  *				   protected prototypes. Not supported in the static scope.
  *				3. 'assign' will create a shallow value level copy of an influence instance. Located in public prototype.
- *	   14. A constructor initalisation object can contain a 'do_' public, private or protected sub-object that defineds initialisation functions
- *		   that are invoked during instance creation to set individual property values. The arguments are passed and 'this' is not set.
- *		   The returned value is assigned to the property. This facility can remove the need for a constructor function where the setting of
- *		   initial property values requires runtime processing.
  *
  * 	Future Enhancements:
  * 		1. Influence.inheritsFrom(<inf instance>, <inf object> | <inf function> | <registry name>) - Checks whether the object is an
@@ -485,53 +485,39 @@ function makeCreator(oInf, fConstructor) {
 			Scopes.set(o, {
 				[SymRoot]: oInf
 			});
-		let res = fConstructor.call(o, ...args);
-		return (res !== undefined ? res : o);
+		fConstructor.call(o, ...args);
+		return (o);
 	};
 }
 
 function makeConstructor(oInf, oDesc) {
 	if (!oDesc.hasOwnProperty('constructor'))
 		return (oInf.constructor = () => undefined);
-
-	let conForm = oDesc.constructor,
-		ty = typeof conForm;
+	let ty = typeof oDesc.constructor;
 	if (ty === 'object') {
-		makePrivateProtectedInitialiser(oInf, conForm);
-		return function () {
+		makePrivateProtectedInitialiser(oInf, oDesc.constructor);
+		return (oInf.constructor = function () {
 			copyInitialisers(oInf, this);
-		};
-	} else if (ty === 'function') {
-		return (oInf.constructor = conForm);
-	} else if (Array.isArray(conForm)) {
-		if (conForm.length !== 2 || typeof conForm[0] !== 'function' || typeof conForm[1] !== 'object')
-			throw new error(`Invalid influence constructor array form '${conForm}'`);
-		makePrivateProtectedInitialiser(oInf, conForm[1]);
-		return (oInf.constructor = function (...args) {
-			copyInitialisers(oInf, this);
-			return (conForm[0].call(this, ...args));
 		});
-	}
-	throw new error(`Invalid influence constructor form '${conForm}'`);
+	} else if (ty === 'function')
+		return (oInf.constructor = function (...args) {
+			let o = oDesc.constructor.call(this, ...args);
+			if (typeof o === 'object' && !Array.isArray(o))
+				applyInitialisers(oInf, this, o);
+		});
+	throw new error(`Invalid influence constructor form '${oDesc.constructor}'`);
 }
 
 function makePrivateProtectedInitialiser(oInf, oInit) {
-	if (!oInit.private_ && !oInit.protected_) return (oInf.oInitialiser = oInit);
+	if (!oInit.private_ && !oInit.protected_)
+		return (oInf.publicInitialiser = oInit);
 	oInf.publicInitialiser = _clone(oInit, {});
-	if (oInit.do_) {
-		oInf.publicDo = oInit.do_;
-		delete oInf.publicInitialiser.do_;
-	}
 	if (oInit.private_) {
 		if (typeof oInit.private_ !== 'object')
 			throw new Error("Constructor private initialiser must be an object");
 		allocatePrivateScope(oInf);
 		oInf.privateInitialiser = oInf.publicInitialiser.private_;
 		delete oInf.publicInitialiser.private_;
-		if (oInf.privateInitialiser.do_) {
-			oInf.privateDo = oInf.privateInitialiser.do_;
-			delete oInf.privateInitialiser.do_;
-		}
 	}
 	if (oInit.protected_) {
 		if (typeof oInit.protected_ !== 'object')
@@ -539,10 +525,6 @@ function makePrivateProtectedInitialiser(oInf, oInit) {
 		allocateProtectedScope(oInf);
 		oInf.protectedInitialiser = oInf.publicInitialiser.protected_;
 		delete oInf.publicInitialiser.protected_;
-		if (oInf.protectedInitialiser.do_) {
-			oInf.protectedDo = oInf.protectedInitialiser.do_;
-			delete oInf.protectedInitialiser.do_;
-		}
 	}
 }
 
@@ -661,29 +643,31 @@ function defineProperty(oTgt, prop, desc, flEnum = true) {
 	return (oTgt);
 }
 
+function applyInitialisers(oInf, oTgt, oInit) {
+	if (typeof oInit !== 'object')
+		throw new Error(`Invalid constructor initialiser '${oInit}'`);
+	Yaga.dispatchPropertyHandlers(oInit, {
+		private_: () => applyInitialisers(oInf, oInf.private(oTgt), oInit.private_),
+		protected_: () => applyInitialisers(oInf, oInf.protected(oTgt), oInit.protected_),
+		_other_: prop => {
+			let f = oInit[prop];
+			let v = typeof f === 'function' ? f(oTgt) : f;
+			if (v !== undefined)
+				oTgt[prop] = v;
+		}
+	});
+}
+
 function copyInitialisers(oInf, oTgt) {
 	if (oInf.privateInitialiser) {
 		let o = oInf.private(oTgt);
 		_clone(oInf.privateInitialiser, o);
-		if (oInf.privateDo)
-			runDoInitialisers(oInf.privateDo, o)
 	}
 	if (oInf.protectedInitialiser) {
 		let o = oInf.protected(oTgt);
 		_clone(oInf.protectedInitialiser, o);
-		if (oInf.protectedDo)
-			runDoInitialisers(oInf.protectedDo, o)
 	}
 	_clone(oInf.publicInitialiser, oTgt);
-	if (oInf.publicDo)
-		runDoInitialisers(oInf.publicDo, oTgt)
-}
-
-function runDoInitialisers(odo, oTgt) {
-	Object.keys(odo).forEach(prop => {
-		let f = odo[prop];
-		oTgt[prop] = typeof f === 'function' ? f() : f;
-	});
 }
 
 function lookupRegistry(name) {

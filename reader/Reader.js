@@ -80,22 +80,24 @@ var ReaderContext = Yaga.Influence({
         eos: false,
         pushbackChar: _,
     },
-    constructor(r, srcName, fnRead) {
-        this.reader = r;
-        this.sourceName = srcName;
-        this.fnRead = fnRead;
-        this.parentPoint = ReadPoint.default;
-        this.exprStack = [];
-        this.parentPoints = [];
-        this.readerTableStack = [];
-        this.tokStream = [];
-        this.tokBuf = Yaga.StringBuilder();
+    constructor(r, s, f) {
         let ps = Reader.private(r);
-        this.readerTable = ps.readerTable;
-        this.state = statePrototypes(this);
-        if (ps.options) {
-            if (ps.options.tabCount)
-                this.tabcount = ps.options.tabCount;
+        return {
+            reader: r,
+            sourceName: s,
+            fnRead: () => f, // Need a function to return a function
+            parentPoint: () => ReadPoint.default,
+            tokBuf: () => Yaga.StringBuilder(),
+            readerTable: () => ps.readerTable,
+            state: () => statePrototypes(this),
+            tabCount: () => {
+                if (ps.options && ps.options.tabCount)
+                    return (ps.options.tabCount);
+            },
+            exprStack: [],
+            parentPoints: [],
+            readerTableStack: [],
+            tokStream: [],
         }
     },
 });
@@ -105,7 +107,7 @@ function readFile(r, path) {
     let fd = fs.openSync(path, 'r');
     let encoding, oPos = 0,
         buf = Buffer.alloc(8192);
-    let ctxt = ReaderContext(r, fs.realpathSync(path), () => {
+    let ctxt = ReaderContext.create(r, fs.realpathSync(path), () => {
         let nBytes = fs.readSync(fd, buf, 0, buf.length, oPos);
         if (!encoding) {
             // Require a way of checking the encoding. For example package 'detect-character-encoding'
@@ -163,6 +165,7 @@ function read(ctxt, line, col) {
     pushReaderContext(ctxt.reader, ctxt);
     ctxt.line = line !== undefined ? line : 1;
     ctxt.column = col !== undefined ? col : 0;
+    startLine(ctxt);
     try {
         while (moreTokens(ctxt));
     } catch (err) {
@@ -195,7 +198,7 @@ function popReaderContext(ctxt) {
 function moreTokens(ctxt) {
     ctxt.lastToken = ctxt.curToken;
     ctxt.curToken = ctxt.tokStream.shift() || nextToken(ctxt);
-    return (performTokenAction(ctxt, ctxt.curToken));
+    return (ctxt.curToken.action());
 }
 
 function nextToken(ctxt) {
@@ -300,11 +303,7 @@ function newParentPoint(ctxt) {
     return (point);
 }
 
-function performTokenAction(ctxt, tok) {
-    return (tok.action(ctxt));
-}
-
-function Token(chs, readPoint) {
+function Token(ctxt, chs, readPoint) {
     return {
         token: {
             typeName: 'ReaderToken',
@@ -312,8 +311,9 @@ function Token(chs, readPoint) {
             readPoint: readPoint,
             chars: chs,
         },
-        action(ctxt) {
+        action() {
             // Pattern matching goes here etc goes here
+            commitToken(ctxt, this.token);
             return (true);
         }
     }
@@ -321,7 +321,7 @@ function Token(chs, readPoint) {
 
 function EOLToken(ctxt) {
     let readPoint = ctxt.currentPoint;
-    ctxt.lineNo++;
+    ctxt.line++;
     ctxt.column = 0;
     return {
         token: {
@@ -330,9 +330,10 @@ function EOLToken(ctxt) {
             isEOL: true,
             readPoint: readPoint,
         },
-        action(ctxt) {
-            if (ctxt.readerTable.endLine)
-                ctxt.readerTable.endLine(endLineState(ctxt, this.token));
+        action() {
+            endLine(ctxt, this.token);
+            if (peekNextChar(ctxt) !== chEOS)
+                startLine(ctxt);
             return (true);
         }
     }
@@ -347,7 +348,7 @@ function EOSToken(ctxt) {
             isEOS: true,
             readPoint: readPoint,
         },
-        action(ctxt) {
+        action() {
             if (ctxt.exprStack.length > 0)
                 throw ReaderError(ctxt.lastReadPoint, 'Missing end of expression');
             return (false);
@@ -359,10 +360,13 @@ function Expression(readPoint = ReadPoint.default, startToken, endToken) {
     return {
         typeName: 'ReaderExpression',
         isaReaderExpression: true,
+        push(tok) {
+            this.tokens.push(tok);
+        },
         readPoint: readPoint,
         startToken: startToken,
         endToken: endToken,
-        list: [],
+        tokens: [],
     }
 }
 
@@ -392,37 +396,36 @@ function endStream(ctxt) {
     return (expr);
 }
 
+function startLine(ctxt) {
+    if (ctxt.readerTable.startLine)
+        ctxt.readerTable.startLine(startLineState(ctxt, ctxt.currentPoint));
+}
+
+function endLine(ctxt, tok) {
+    if (ctxt.readerTable.endLine)
+        ctxt.readerTable.endLine(endLineState(ctxt, tok));
+}
+
+function commitToken(ctxt, tok) {
+    if (ctxt.readerTable.commitToken) {
+        // The ReaderTable function must complete the commit
+        ctxt.readerTable.commitToken(commitTokenState(ctxt, tok));
+        return;
+    }
+    // Default is to just add the token
+    addToken(ctxt, tok);
+}
+
 function error(ctxt, msg, point, oSrc) {
     if (!ctxt.readerTable.error)
         return (false);
     return (ctxt.readerTable.error(errorState(ctxt, msg, point, oSrc)));
 }
 
+// Internal expression related functions.
 
-function __stateHandler(stateName, fn) {
-    return function (...args) {
-        if (!this.readTable[stateName]) return;
-        this.readTable[stateName](fn(this, ...args));
-    }
-}
-
-
-function _endReader() {
-    if (!this.readTable.endReader) {
-        if (ctxt.exprStack.length > 0)
-            throw Yaga.errors.ReaderException(ctxt.lastReadPoint, "Missing end of expression");
-        return (ctxt.expression);
-    }
-    return (this.readTable.endReader(_newEndReader(this, ctxt.expression, ctxt.exprStack)));
-}
-
-function _tokenCreated(tok) {
-    if (!this.readTable.tokenCreated) {
-        ctxt.expression.list.push(tok);
-        ctxt.lastToken = tok;
-        return;
-    }
-    this.readTable.tokenCreated(_newTokenCreated(this, tok));
+function addToken(ctxt, tok) {
+    ctxt.expression.push(tok);
 }
 
 // Pattern match against the current token.
@@ -466,17 +469,25 @@ function _defineProtectedProperty(obj, name, val) {
 // Reader state functions and prototypes
 
 function statePrototypes(ctxt) {
-    function fnThrow(r, msg) {
+    function fnThrow(msg) {
         throw ReaderError(ctxt.lastReadPoint, msg);
     }
 
-    function fnPushReaderTable(r, rt) {
+    function fnPushReaderTable(rt) {
         ctxt.readTableStack.push(ctxt.readTable);
         return (ctxt.readTable = tr);
     }
 
-    function fnPopReaderTable(r) {
+    function fnPopReaderTable() {
         return (ctxt.readTable = ctxt.readTableStack.pop());
+    }
+
+    function fnAddToken(tok) {
+        addToken(ctxt, tok)
+    }
+
+    function fnAddChar(ch) {
+        addChar(ctxt, ch);
     }
 
     return {
@@ -504,6 +515,15 @@ function statePrototypes(ctxt) {
             throw: fnThrow,
             popReaderTable: fnPopReaderTable,
         },
+        startLineState: {
+            typeName: 'State:StartLine',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+            popReaderTable: fnPopReaderTable,
+            startExpression: _,
+            endExpression: _,
+        },
         endLineState: {
             typeName: 'State:EndLine',
             reader: ctxt.reader,
@@ -513,10 +533,27 @@ function statePrototypes(ctxt) {
             startExpression: _,
             endExpression: _,
         },
+        commitTokenState: {
+            typeName: 'State:CommitToken',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+            popReaderTable: fnPopReaderTable,
+            addToken: fnAddToken,
+        },
+        commitCharState: {
+            typeName: 'State:CommitChar',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+            popReaderTable: fnPopReaderTable,
+            addToken: fnAddToken,
+            addChar: fnAddChar,
+        },
         errorState: {
             typeName: 'State:Error',
             reader: ctxt.reader,
-        }
+        },
     }
 }
 // Reader table functions state object templates.
@@ -541,9 +578,27 @@ function endStreamState(ctxt, expr) {
     return (state);
 }
 
+function startLineState(ctxt, point) {
+    let state = Object.create(ctxt.state.endLineState);
+    state.readPoint = point;
+    return (state);
+}
+
 function endLineState(ctxt, tok) {
     let state = Object.create(ctxt.state.endLineState);
     state.token = tok;
+    return (state);
+}
+
+function commitTokenState(ctxt, tok) {
+    let state = Object.create(ctxt.state.commitTokenState);
+    state.token = tok;
+    return (state);
+}
+
+function commitChar(ctxt, ch) {
+    let state = Object.create(ctxt.state.commitTokenState);
+    state.char = ch;
     return (state);
 }
 
@@ -553,51 +608,6 @@ function errorState(ctxt, msg, point, oAttach) {
     state.readPoint = point;
     state.attachment = oAttach;
     return (state);
-}
-
-
-function _tokenCreatedState(ctxt) {
-    return {
-        typeName: 'State:TokenCreated',
-        reader: ctxt.reader,
-        throw: ctxt.stateFns.fnThrow,
-        pushReaderTable: ctxt.stateFns.fnPushReaderTable,
-        popReaderTable: ctxt.stateFns.fnPopReaderTable,
-        startExpression: ctxt.stateFns.fnStartExpression,
-        endExpression: ctxt.stateFns.fnEndExpression,
-    }
-}
-
-function _patternState(ctxt) {
-    return {
-        typeName: 'State:Pattern',
-        reader: ctxt.reader,
-        throw: ctxt.stateFns.fnThrow,
-        pushReaderTable: ctxt.stateFns.fnPushReaderTable,
-        popReaderTable: ctxt.stateFns.fnPopReaderTable,
-        startExpression: ctxt.stateFns.fnStartExpression,
-        endExpression: ctxt.stateFns.fnEndExpression,
-    }
-}
-
-// State creation functions.
-function _newStartReader(ctxt) {
-    return (Object.create(ctxt.startReaderState));
-}
-
-function _newEndReader(ctxt, expr, exprStack) {
-    let st = Object.create(ctxt.endReaderState)
-    st.expression = expr;
-    st.expressionStack = exprStack; // Will be empty if all sub-expressions have been ended.
-    return (st)
-}
-
-function _newEOL(ctxt) {
-
-}
-
-function _newTokenCreated(ctxt, tok) {
-
 }
 
 // Exceptions

@@ -27,8 +27,14 @@ function test() {
             console.log('endStream', state);
             return (state.rootExpression);
         },
+        startLine: (...args) => console.log('startLine', ...args),
+        endLine: (...args) => console.log('endLine', ...args),
+        commitToken: state => {
+            console.log('commitToken', state);
+            state.addToken(state.token);
+        },
     });
-    r.readString('Hello World');
+    r.readString('Hello World').tokens.forEach(tok => log(tok));
 }
 
 function testProperties() {
@@ -182,25 +188,18 @@ function testInfluence() {
                 log() {
                     console.log('XXX', this.myval, myInf.public(this).myval)
                 },
-            }
-        },
-        constructor: {
-            myval: 100,
-            do_: {
-                xxxx: () => [1, 2, 3, 4],
-                yyyy: () => 'kljdslkjdlsak',
             },
+            private_: {}
+        },
+        constructor: () => ({
+            myval: 100,
             private_: {
                 myprivateval: [],
-                do_: {
-                    wwww: () => [1, 2, 3, 4],
-                    zzzz: () => 'kljdslkjdlsak',
-                },
             },
             protected_: {
                 myval: 1000
             }
-        },
+        }),
         static: {
             foo() {
                 console.log('bar =', this.bar)
