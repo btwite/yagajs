@@ -9,7 +9,7 @@ let yaga = require('./Yaga');
 test();
 //testProperties();
 //testExceptions();
-// testReaderTable();
+//testReaderTable();
 //testComposition();
 //testInfluence();
 //testGrammarExtensions();
@@ -32,6 +32,10 @@ function test() {
         commitToken: state => {
             console.log('commitToken', state);
             state.addToken(state.token);
+        },
+        commitChar: state => {
+            console.log('commitChar', state);
+            state.addChar(state.char);
         },
     });
     r.readString('Hello World').tokens.forEach(tok => log(tok));

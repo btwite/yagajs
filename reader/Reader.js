@@ -61,10 +61,10 @@ var ReaderContext = Yaga.Influence({
         column: 0,
         expression: _,
         exprStack: _,
-        lastToken: _,
         curToken: _,
-        tokStream: _,
-        tokBuf: _,
+        curInput: _,
+        inputStream: _,
+        charBuf: _,
 
         lastReadPoint: _,
         parentPoints: _,
@@ -87,7 +87,7 @@ var ReaderContext = Yaga.Influence({
             sourceName: s,
             fnRead: () => f, // Need a function to return a function
             parentPoint: () => ReadPoint.default,
-            tokBuf: () => Yaga.StringBuilder(),
+            charBuf: () => Yaga.StringBuilder(),
             readerTable: () => ps.readerTable,
             state: () => statePrototypes(this),
             tabCount: () => {
@@ -97,7 +97,7 @@ var ReaderContext = Yaga.Influence({
             exprStack: [],
             parentPoints: [],
             readerTableStack: [],
-            tokStream: [],
+            inputStream: [],
         }
     },
 });
@@ -196,10 +196,10 @@ function popReaderContext(ctxt) {
 }
 
 function moreText(ctxt) {
-    return ((ctxt.tokStream.shift() || nextToken(ctxt)).action());
+    return ((ctxt.curInput = ctxt.inputStream.shift() || nextInput(ctxt)).action());
 }
 
-function nextToken(ctxt) {
+function nextInput(ctxt) {
     // Skip any initial white space
     let ch;
     do {
@@ -209,21 +209,21 @@ function nextToken(ctxt) {
         if (ch === chEOS) {
             // Don't want two end of lines if EOS occurs straight after a NL
             if (ctxt.column !== 0) {
-                ctxt.tokStream.push(EOSInput(ctxt));
+                ctxt.inputStream.push(EOSInput(ctxt));
                 return (EOLInput(ctxt));
             }
             return (EOSInput(ctxt));
         }
     } while (Character.isWhitespace(ch));
 
-    let tok = ctxt.tokBuf.clear();
+    let chs = ctxt.charBuf.clear();
     let readPoint = ctxt.currentPoint;
     do {
-        tok.append(ch);
+        chs.append(ch);
         ch = readChar(ctxt);
     } while (!Character.isWhitespace(ch) && ch !== chEOS);
     pushbackChar(ctxt, ch);
-    return (TokenInput(ctxt, tok.toString(), readPoint));
+    return (TokenInput(ctxt, chs.toString(), readPoint));
 }
 
 function readChar(ctxt) {
@@ -301,18 +301,55 @@ function newParentPoint(ctxt) {
     return (point);
 }
 
-function TokenInput(ctxt, chs, readPoint) {
+function TokenInput(ctxt, chs, readPoint, isMatched = false) {
     return {
         typeName: 'TokenInput',
         readPoint: readPoint,
+        fHandler: _,
         chars: chs,
         action() {
-            // Need to build the token from the token buffer allowing each char to be committed.
-            ctxt.curToken = Token(this.readPoint);
-
-            // Pattern matching goes here etc goes here
-            commitToken(ctxt, this.token);
+            // Try the ReaderTable patterns to split the token input.
+            let match;
+            if (!isMatched && (match = ctxt.readerTable.match(chs))) {
+                let split = this.split(match.position, match.what.length);
+                ctxt.inputStream = split.concat(ctxt.inputStream); // Add the split tokens to the head of the stream
+                split[1].fHandler = match.fHandler;
+                // Go back now and process the new token inputs from the stream, noting that pattern matching will be ignored
+                // the next time through for inputs that have already been scanned.
+                return (true);
+            }
+            if (this.fHandler) {
+                // Up to the a ReaderTable pattern handler to process the token for this input.
+                patternHandler(ctxt, this.fHandler, ctxt.curToken = Token(this.readPoint, this.chars));
+                return (true);
+            }
+            // Default processing required, so will need to commit each char, followed by the resultant token
+            // if it has any content.
+            if (ctxt.readerTable.commitChar) {
+                ctxt.curToken = Token(this.readPoint);
+                this.iInput = 0;
+                commitChar(ctxt, this.chars[0], this.readPoint);
+                for (let i = 1, len = this.chars.length; i < len; i++) {
+                    this.iInput = i;
+                    commitChar(ctxt, this.chars[i], this.readPoint.increment(i));
+                }
+                if (ctxt.curToken.chars.length === 0)
+                    return;
+            } else
+                ctxt.curToken = Token(this.readPoint, this.chars);
+            let tok = ctxt.curToken;
+            ctxt.curToken = null;
+            commitToken(ctxt, tok);
             return (true);
+        },
+        split(pos, len = this.chars.length - pos, match = [true, true, false]) {
+            let a = [NullInput, null, NullInput];
+            if (pos > 0)
+                a[0] = TokenInput(ctxt, this.chs.substr(0, pos), this.readPoint, match[0]);
+            a[1] = TokenInput(ctxt, this.chs.substr(pos, len), pos === 0 ? this.readPoint : this.readPoint.increment(pos), match[1]);
+            if (pos + len >= this.chars.length)
+                a[2] = TokenInput(ctxt, this.chs.substr(pos + len), this.readPoint.increment(pos + len), match[2]);
+            return (a);
         }
     }
 }
@@ -346,12 +383,20 @@ function EOSInput(ctxt) {
     }
 }
 
+var NullInput = {
+    typeName: 'NullInput',
+    action: () => true
+}
+
 function Token(readPoint, chs = '') {
     return {
         typeName: 'ReaderToken',
         isaReaderToken: true,
         add(ch) {
             this.chars += ch;
+        },
+        nextReadPoint() {
+            return (readPoint.increment(this.chars.length));
         },
         readPoint: readPoint,
         chars: chs
@@ -419,6 +464,20 @@ function commitToken(ctxt, tok) {
     addToken(ctxt, tok);
 }
 
+function commitChar(ctxt, ch, readPoint) {
+    if (ctxt.readerTable.commitChar) {
+        // The ReaderTable function must complete the commit
+        ctxt.readerTable.commitChar(commitCharState(ctxt, ch, readPoint));
+        return;
+    }
+    // Default is to just add the token
+    addChar(ctxt, ch);
+}
+
+function patternHandler(ctxt, f, tok) {
+    f(patternState(ctxt, tok));
+}
+
 function error(ctxt, msg, point, oSrc) {
     if (!ctxt.readerTable.error)
         return (false);
@@ -428,45 +487,21 @@ function error(ctxt, msg, point, oSrc) {
 // Internal expression related functions.
 
 function addToken(ctxt, tok) {
-    ctxt.expression.push(tok);
+    // Before adding the token, we must check if we have a partially built current token.
+    // If so then we need to flush this token first as the ReaderTable has already
+    // committed these characters. Will still give the ReaderTable a chance to throw the
+    // operation away by calling commitToken.
+    if (ctxt.curToken && ctxt.curToken.chars.length > 0) {
+        commitToken(ctxt, ctxt.curToken);
+        ctxt.curToken = Token(tok.readPoint.nextReadPoint()); // Leave a fresh token for additional commitChars
+    }
+    ctxt.expression.add(tok);
 }
 
-// Pattern match against the current token.
-function _patternMatch() {
-    // Must handle EOS and EOL tokens. Returns true if not EOS and false otherwise.
-    if (this.readTable.patterns)
-        _matchPatterns(this);
-    // Handle any left over token string
-    _emitBufferToken(ctxt);
-}
-
-function _emitBufferToken(ctxt, nChars) {
-    let len = ctxt.tokBuf.length();
-    if (len === 0) return;
-    if (nChars !== undefined && len < nChars)
-        throw Yaga.errors.InternalException(`Invalid request`);
-    let str;
-    if (nChars === undefined) str = ctxt.tokBuf.toString();
-    else str = ctxt.tokBuf.substr(0, nChars);
-    ctxt.tokBuf.splice(0, str.length);
-    let tok = Yaga.Token.newReaderToken(str, ctxt.lastReadPoint);
-    ctxt.lastReadPoint = ctxt.lastReadPoint.increment(str.length);
-    ctxt.tokenCreated(tok); // This function has respossibility for ensuring that the token is added to the expression
-}
-
-function _matchPatterns(ctxt) {
-    let patterns = ctxt.readTable.patterns;
-    let maxlen = patterns.maxPatternLength;
-    if (maxlen < 0) return; // No patterns to match on
-}
-
-function _defineProtectedProperty(obj, name, val) {
-    Object.defineProperty(obj, name, {
-        value: val,
-        enumerable: true,
-        writable: false,
-        configurable: false
-    })
+function addChar(ctxt, ch) {
+    if (!ctxt.curToken)
+        throw ReaderError(ctxt.currentPoint, 'Invalid request to add a char to a token');
+    ctxt.curToken.add(ch);
 }
 
 // Reader state functions and prototypes
@@ -486,10 +521,14 @@ function statePrototypes(ctxt) {
     }
 
     function fnAddToken(tok) {
+        if (typeof tok != 'object' || !tok.isaReaderToken)
+            throw ReaderError(ctxt.currentPoint, 'Reader Token expected');
         addToken(ctxt, tok)
     }
 
     function fnAddChar(ch) {
+        if (typeof ch !== 'string' || ch.length !== 1)
+            throw ReaderError(ctxt.currentPoint, 'Single character string expected');
         addChar(ctxt, ch);
     }
 
@@ -553,6 +592,14 @@ function statePrototypes(ctxt) {
             addToken: fnAddToken,
             addChar: fnAddChar,
         },
+        patternState: {
+            typeName: 'State:Pattern',
+            reader: ctxt.reader,
+            throw: fnThrow,
+            pushReaderTable: fnPushReaderTable,
+            popReaderTable: fnPopReaderTable,
+            addToken: fnAddToken,
+        },
         errorState: {
             typeName: 'State:Error',
             reader: ctxt.reader,
@@ -599,9 +646,16 @@ function commitTokenState(ctxt, tok) {
     return (state);
 }
 
-function commitChar(ctxt, ch) {
-    let state = Object.create(ctxt.state.commitTokenState);
+function commitCharState(ctxt, ch, point) {
+    let state = Object.create(ctxt.state.commitCharState);
     state.char = ch;
+    state.readPoint = point;
+    return (state);
+}
+
+function patternState(ctxt, tok) {
+    let state = Object.create(ctxt.state.patternState);
+    state.token = tok;
     return (state);
 }
 

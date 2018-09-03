@@ -37,6 +37,12 @@
  *         11. Char patterns take precedence over regexpr patterns.
  *		   12. Patterns with no handler function will be processed as per Reader defaults.
  *		   13. Regexpr can be just assigned an optFunction. Lowest precedence assumed.
+ *		   14. Pattern match answers 'null' if there is no match and the following object on success:
+ *					{
+ *						position: <Index into source string>,
+ *						what: <Matching segment of source string>,
+ *						fHandler: <ReaderTable handler to call>
+ *					}
  */
 "use strict";
 
@@ -206,11 +212,15 @@ function updateRegexprPattern(rt, pat, val) {
 
 function match(pm, s, fConfirmMatch) {
 	var result;
-	console.log(pm.mainExpr);
 	if (pm.mainExpr) {
+		console.log(pm.mainExpr);
 		result = pm.mainExpr.exec(s);
 		if (result && (fConfirmMatch || (() => true))(result[0]))
-			return [result.index, result[0], pm.patterns[result[0]]];
+			return {
+				position: result.index,
+				what: result[0],
+				fHandler: pm.patterns[result[0]]
+			}
 	}
 	// Failed the main expression, so now try the explicit regexprs
 	if (!pm.regexprs) return (null);
@@ -221,7 +231,11 @@ function match(pm, s, fConfirmMatch) {
 			console.log(list[j][0]);
 			result = list[j][0].exec(s);
 			if (result)
-				return [result.index, result[0], list[j][1]];
+				return {
+					position: result.index,
+					what: result[0],
+					fHandler: list[j][1]
+				}
 		}
 	}
 	// Nothing matches.
