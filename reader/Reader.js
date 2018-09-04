@@ -162,9 +162,9 @@ function _splitToken(tok, readTable) {
 
 
 function read(ctxt, line, col) {
-    pushReaderContext(ctxt.reader, ctxt);
     ctxt.line = line !== undefined ? line : 1;
     ctxt.column = col !== undefined ? col : 0;
+    pushReaderContext(ctxt.reader, ctxt);
     startLine(ctxt);
     try {
         while (moreText(ctxt));
@@ -179,9 +179,9 @@ function pushReaderContext(r, ctxt) {
     let ps = Reader.private(r);
     if (ps.contextStack.length == 0)
         startReader(ctxt);
-    startStream(ctxt);
     ps.contextStack.push(ps.context);
     ps.context = ctxt;
+    startStream(ctxt);
 }
 
 function popReaderContext(ctxt) {
@@ -196,23 +196,23 @@ function popReaderContext(ctxt) {
 }
 
 function moreText(ctxt) {
-    return ((ctxt.curInput = ctxt.inputStream.shift() || nextInput(ctxt)).action());
+    if (ctxt.inputStream.length === 0) nextInput(ctxt);
+    return (ctxt.inputStream.shift().action());
 }
 
 function nextInput(ctxt) {
     // Skip any initial white space
-    let ch;
+    let ch, stream = ctxt.inputStream;
     do {
         ch = readChar(ctxt);
         if (Character.isEndOfLine(ch))
-            return (EOLInput(ctxt));
-        if (ch === chEOS) {
+            stream.push(EOLInput(ctxt));
+        else if (ch === chEOS) {
             // Don't want two end of lines if EOS occurs straight after a NL
-            if (ctxt.column !== 0) {
-                ctxt.inputStream.push(EOSInput(ctxt));
-                return (EOLInput(ctxt));
-            }
-            return (EOSInput(ctxt));
+            if (ctxt.column !== 0)
+                stream.push(EOLInput(ctxt));
+            stream.push(EOSInput(ctxt));
+            return; // Can't go any further
         }
     } while (Character.isWhitespace(ch));
 
@@ -222,8 +222,13 @@ function nextInput(ctxt) {
         chs.append(ch);
         ch = readChar(ctxt);
     } while (!Character.isWhitespace(ch) && ch !== chEOS);
-    pushbackChar(ctxt, ch);
-    return (TokenInput(ctxt, chs.toString(), readPoint));
+    stream.push(TokenInput(ctxt, chs.toString(), readPoint));
+    if (Character.isEndOfLine(ch))
+        stream.push(EOLInput(ctxt));
+    else if (ch === chEOS) {
+        stream.push(EOLInput(ctxt));
+        stream.push(EOSInput(ctxt));
+    }
 }
 
 function readChar(ctxt) {
@@ -286,27 +291,22 @@ function pushbackChar(ctxt, ch) {
     ctxt.pushbackChar = ch;
 };
 
-function pushParentPoint(ctxt, point) {
-    ctxt.parentPoints.push(ctxt.parentPoint);
-    ctxt.parentPoint = point;
-}
-
-function popParentPoint(ctxt) {
-    ctxt.parentPoint = ctxt.parentPoints.pop();
-}
-
-function newParentPoint(ctxt) {
-    let point = ctxt.currentPoint;
-    pushParentPoint(ctxt, point);
-    return (point);
-}
-
 function TokenInput(ctxt, chs, readPoint, isMatched = false) {
+    let iPeek, iInput = -1;
     return {
         typeName: 'TokenInput',
         readPoint: readPoint,
         fHandler: _,
         chars: chs,
+        startPeek: () => iPeek = iInput,
+        peekNext() {
+            if (++iPeek >= this.chars.length)
+                return (null);
+            return (this.chars[iPeek]);
+        },
+        peekReadPoint() {
+            return (iPeek === 0 ? this.readPoint : this.readPoint.increment(iPeek));
+        },
         action() {
             // Try the ReaderTable patterns to split the token input.
             let match;
@@ -320,23 +320,25 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
             }
             if (this.fHandler) {
                 // Up to the a ReaderTable pattern handler to process the token for this input.
-                patternHandler(ctxt, this.fHandler, ctxt.curToken = Token(this.readPoint, this.chars));
+                patternHandler(ctxt, this.fHandler, ctxt.curToken = Token(ctxt, this.readPoint, this.chars));
                 return (true);
             }
             // Default processing required, so will need to commit each char, followed by the resultant token
             // if it has any content.
             if (ctxt.readerTable.commitChar) {
-                ctxt.curToken = Token(this.readPoint);
-                this.iInput = 0;
+                ctxt.curInput = this;
+                ctxt.curToken = Token(ctxt, this.readPoint);
+                iInput = 0;
                 commitChar(ctxt, this.chars[0], this.readPoint);
                 for (let i = 1, len = this.chars.length; i < len; i++) {
-                    this.iInput = i;
+                    iInput = i;
                     commitChar(ctxt, this.chars[i], this.readPoint.increment(i));
                 }
+                ctxt.curInput = _;
                 if (ctxt.curToken.chars.length === 0)
                     return;
             } else
-                ctxt.curToken = Token(this.readPoint, this.chars);
+                ctxt.curToken = Token(ctxt, this.readPoint, this.chars);
             let tok = ctxt.curToken;
             ctxt.curToken = null;
             commitToken(ctxt, tok);
@@ -355,12 +357,15 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
 }
 
 function EOLInput(ctxt) {
-    let readPoint = ctxt.currentPoint;
+    let iPeek, readPoint = ctxt.currentPoint;
     ctxt.line++;
     ctxt.column = 0;
     return {
         typeName: 'EOLInput',
         readPoint: readPoint,
+        startPeek: () => iPeek = 0,
+        peekNext: () => iPeek++ === 0 ? '\n' : null,
+        peekReadPoint: () => readPoint,
         action() {
             endLine(ctxt, this.readPoint);
             if (peekNextChar(ctxt) !== chEOS)
@@ -375,6 +380,9 @@ function EOSInput(ctxt) {
     return {
         typeName: 'EOSInput',
         readPoint: readPoint,
+        startPeek: () => _,
+        peekNext: () => chEOS,
+        peekReadPoint: () => readPoint,
         action() {
             if (ctxt.exprStack.length > 0)
                 throw ReaderError(ctxt.lastReadPoint, 'Missing end of expression');
@@ -385,10 +393,13 @@ function EOSInput(ctxt) {
 
 var NullInput = {
     typeName: 'NullInput',
+    startPeek: () => _,
+    peekNext: () => null,
+    peekReadPoint: () => ReadPoint.default,
     action: () => true
 }
 
-function Token(readPoint, chs = '') {
+function Token(ctxt, readPoint = ctxt.currentPoint, chs = '') {
     return {
         typeName: 'ReaderToken',
         isaReaderToken: true,
@@ -403,7 +414,8 @@ function Token(readPoint, chs = '') {
     }
 }
 
-function Expression(readPoint = ReadPoint.default, startToken, endToken) {
+function Expression(ctxt, startToken, endToken) {
+    let readPoint = (startToken && startToken.readPoint) || ctxt.currentPoint;
     return {
         typeName: 'ReaderExpression',
         isaReaderToken: true,
@@ -412,7 +424,13 @@ function Expression(readPoint = ReadPoint.default, startToken, endToken) {
             this.tokens.push(tok);
         },
         readPoint: readPoint,
-        startToken: startToken,
+        get startToken() {
+            return (startToken);
+        },
+        set startToken(tok) {
+            startToken = tok;
+            this.readPoint = tok.readPoint;
+        },
         endToken: endToken,
         tokens: [],
     }
@@ -430,7 +448,7 @@ function endReader(ctxt) {
 
 function startStream(ctxt) {
     // The startStream handler must answer the expression object that is the root expression.
-    let expr = Expression();
+    let expr = Expression(ctxt);
     if (ctxt.readerTable.startStream)
         expr = ctxt.readerTable.startStream(startStreamState(ctxt, expr));
     ctxt.expression = expr;
@@ -452,6 +470,16 @@ function startLine(ctxt) {
 function endLine(ctxt, readPoint) {
     if (ctxt.readerTable.endLine)
         ctxt.readerTable.endLine(endLineState(ctxt, readPoint));
+}
+
+function commitExpression(ctxt, exprTok) {
+    if (ctxt.readerTable.commitExpression) {
+        // The ReaderTable function must complete the commit
+        ctxt.readerTable.commitExpression(commitExpressionState(ctxt, exprTok));
+        return;
+    }
+    // Default is to just add the expression token
+    addToken(ctxt, exprTok);
 }
 
 function commitToken(ctxt, tok) {
@@ -493,7 +521,7 @@ function addToken(ctxt, tok) {
     // operation away by calling commitToken.
     if (ctxt.curToken && ctxt.curToken.chars.length > 0) {
         commitToken(ctxt, ctxt.curToken);
-        ctxt.curToken = Token(tok.readPoint.nextReadPoint()); // Leave a fresh token for additional commitChars
+        ctxt.curToken = Token(ctxt, tok.readPoint.nextReadPoint()); // Leave a fresh token for additional commitChars
     }
     ctxt.expression.add(tok);
 }
@@ -507,98 +535,179 @@ function addChar(ctxt, ch) {
 // Reader state functions and prototypes
 
 function statePrototypes(ctxt) {
-    function fnThrow(msg) {
+    function fThrow(msg) {
         throw ReaderError(ctxt.lastReadPoint, msg);
     }
 
-    function fnPushReaderTable(rt) {
+    function fPushReaderTable(rt) {
         ctxt.readTableStack.push(ctxt.readTable);
         return (ctxt.readTable = tr);
     }
 
-    function fnPopReaderTable() {
+    function fPopReaderTable() {
         return (ctxt.readTable = ctxt.readTableStack.pop());
     }
 
-    function fnAddToken(tok) {
+    function fAddToken(tok) {
         if (typeof tok != 'object' || !tok.isaReaderToken)
             throw ReaderError(ctxt.currentPoint, 'Reader Token expected');
         addToken(ctxt, tok)
     }
 
-    function fnAddChar(ch) {
+    function fAddChar(ch) {
         if (typeof ch !== 'string' || ch.length !== 1)
             throw ReaderError(ctxt.currentPoint, 'Single character string expected');
         addChar(ctxt, ch);
+    }
+
+    function fExpression(startToken, endToken) {
+        return (Expression(startToken, endToken));
+    }
+
+    function fStartExpression(exprTok, startToken, endToken) {
+        ctxt.exprStack.push(ctxt.expression);
+        ctxt.expression = exprTok;
+        if (startToken) exprTok.startToken = startToken;
+        if (endToken) exprTok.endToken = endToken;
+        ctxt.parentPoints.push(ctxt.parentPoint);
+        ctxt.parentPoint = exprTok.readPoint;
+    }
+
+    function fEndExpression(endToken) {
+        if (ctxt.exprStack.length === 0)
+            throw ReaderError(ctxt.currentPoint, 'No open expression');
+        let exprTok = ctxt.expression;
+        if (endToken) exprTok.endToken = endToken;
+        commitExpression(ctxt, exprTok);
+        ctxt.parentPoint = ctxt.parentPoints.pop();
+    }
+
+    function fPeeker() {
+        function PeekerChar(ch, point) {
+            return {
+                typeName: 'Peeker:Char',
+                char: ch,
+                readPoint: point
+            }
+        }
+        let ch, lastReadPoint, curInput = ctxt.curInput,
+            iInputStream = -1;
+        if (curInput)
+            curInput.startPeek();
+        return {
+            typeName: 'Reader:Peeker',
+            next() {
+                if (curInput) {
+                    if (ch = curInput.peekNext())
+                        return (PeekerChar(ch, lastReadPoint = curInput.peekReadPoint()));
+                    curInput = null;
+                    return (PeekerChar(' ', lastReadPoint.increment(1)));
+                }
+                if (++iInputStream >= ctxt.inputStream.length)
+                    nextInput(ctxt);
+                (curInput = ctxt.inputStream[iInputStream]).startPeek();
+                return (this.next());
+            }
+        };
     }
 
     return {
         startReaderState: {
             typeName: 'State:StartReader',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
         },
         endReaderState: {
             typeName: 'State:EndReader',
             reader: ctxt.reader,
-            throw: fnThrow,
-            popReaderTable: fnPopReaderTable,
+            throw: fThrow,
+            popReaderTable: fPopReaderTable,
         },
         startStreamState: {
             typeName: 'State:StartReader',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
         },
         endStreamState: {
             typeName: 'State:EndReader',
             reader: ctxt.reader,
-            throw: fnThrow,
-            popReaderTable: fnPopReaderTable,
+            throw: fThrow,
+            popReaderTable: fPopReaderTable,
         },
         startLineState: {
             typeName: 'State:StartLine',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
-            popReaderTable: fnPopReaderTable,
-            startExpression: _,
-            endExpression: _,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            peeker: fPeeker,
         },
         endLineState: {
             typeName: 'State:EndLine',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
-            popReaderTable: fnPopReaderTable,
-            startExpression: _,
-            endExpression: _,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            peeker: fPeeker,
+        },
+        commitExpressionState: {
+            typeName: 'State:CommitExpression',
+            reader: ctxt.reader,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            peeker: fPeeker,
         },
         commitTokenState: {
             typeName: 'State:CommitToken',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
-            popReaderTable: fnPopReaderTable,
-            addToken: fnAddToken,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            peeker: fPeeker,
         },
         commitCharState: {
             typeName: 'State:CommitChar',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
-            popReaderTable: fnPopReaderTable,
-            addToken: fnAddToken,
-            addChar: fnAddChar,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            addChar: fAddChar,
+            peeker: fPeeker,
         },
         patternState: {
             typeName: 'State:Pattern',
             reader: ctxt.reader,
-            throw: fnThrow,
-            pushReaderTable: fnPushReaderTable,
-            popReaderTable: fnPopReaderTable,
-            addToken: fnAddToken,
+            throw: fThrow,
+            pushReaderTable: fPushReaderTable,
+            popReaderTable: fPopReaderTable,
+            expression: fExpression,
+            startExpression: fStartExpression,
+            endExpression: fEndExpression,
+            addToken: fAddToken,
+            peeker: fPeeker,
         },
         errorState: {
             typeName: 'State:Error',
@@ -637,6 +746,12 @@ function startLineState(ctxt, point) {
 function endLineState(ctxt, point) {
     let state = Object.create(ctxt.state.endLineState);
     state.readPoint = point;
+    return (state);
+}
+
+function commitExpressionState(ctxt, exprTok) {
+    let state = Object.create(ctxt.state.commitExpressionState);
+    state.expression = exprTok;
     return (state);
 }
 
