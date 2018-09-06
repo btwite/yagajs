@@ -6,12 +6,12 @@
 
 let yaga = require('./Yaga');
 
-test();
+//test();
 //testProperties();
 //testExceptions();
 //testReaderTable();
 //testComposition();
-//testInfluence();
+testInfluence();
 //testGrammarExtensions();
 
 function test() {

@@ -12,10 +12,6 @@ module.exports = Object.freeze({
     ReadPoint: Yaga.Influence({
         name: 'ReadPoint',
         prototype: {
-            sourceName: '<unknown>',
-            line: 0,
-            column: 0,
-            parent: undefined,
             increment(nCols) {
                 let o = this.copy();
                 o.column += nCols;
@@ -25,11 +21,13 @@ module.exports = Object.freeze({
                 return (`${this.sourceName}[${this.line},${this.column}]`);
             }
         },
-        constructor(srcName, line, col, parent) {
-            if (parent) this.parent = parent;
-            this.sourceName = srcName;
-            if (line) this.line = line;
-            if (col) this.column = col;
+        constructor(sourceName, line = 0, column = 0, parent) {
+            return {
+                sourceName,
+                parent,
+                line,
+                column
+            }
         },
         static: {
             get default() {

@@ -104,18 +104,26 @@
  * 		   public interface of the influence. The influence 'create' function object contains the public static properties.
  *		7. The Influence 'create' function will invoke the constructor bound to the new instance. The 'create' function will always answer
  *		   an instance of the influence. Static functions are required for alternate objects to be returned.
- * 	    8. A constructor initialisation object can have a 'private_' sub-object to init the private scope.
- * 	    9. A constructor initialisation object can have a 'protected_' sub-object to init the protected scope.
- * 	   10. A constructor initialisation object will be applied via a deep copy (clone) to the new instance.
- * 	   11. A constructor initialisation function can directly update the instance object via 'this' and/or return a constructor descriptor
- * 		   object that is applied to the instance. In this case any function value is assumed to be an initialiser for the property and will
- * 		   be invoked passing the instance object as an argument. Constructor arguments can be bound from the constructor definition.
- * 		   The descriptor object can also contain 'private_' and 'protected_' sections.
- * 		   Note: Function values will need to be wrapped in a arrow function to avoid construction time execution.
- * 	   12. Static functions are bound to an Influence static object. The static object includes an 'influence' property back link
+ * 	    8. A constructor initialisation object can have the following structural properties:
+ * 				'private_': object to init the private scope.
+ * 				'protected_': object to init the protected scope.
+ * 				'thisArg_': object containing function properties that take a this argument. Can also appear in 'private_', 'protected_' & 'freeze_'.
+ * 				'freeze_': object containing initialisations to be frozen. Can also appear in 'private_' & 'protected_'.
+ * 	    9. A constructor initialisation object will be applied via a deep copy (clone) to the new instance.
+ * 	   10. A constructor initialisation function can directly update the instance object via 'this' and/or return a constructor descriptor
+ * 		   object. The constructor descriptor values will be shallow copied to the properties. The descriptor can also contain the
+ * 		   following structural properties:
+ * 				'private_': Updates the private space properties.
+ * 				'protected_': Updates the protected space properties.
+ * 				'thisArg_': Sets function properties that take a this argument. Can also appear in 'private_', 'protected_' & 'freeze_'.
+ * 				'freeze_': Freezes properties. Can also appear in 'private_' & 'protected_'.
+ * 				'do_': Any function value is assumed to be an initialiser for the property and will be invoked passing the instance object 
+ * 					   as an argument. Can also appear in 'private_', 'protected_', 'freeze_'.
+ * 		   Constructor arguments and other local variables can be bound from the constructor closure.
+ * 	   11. Static functions are bound to an Influence static object. The static object includes an 'influence' property back link
  *		   to the Influence object.
- *	   13. Protected static properties are located in the static object, but cannot be directly referenced from the 'create' function object.
- *	   14. Standard properties :
+ *	   12. Protected static properties are located in the static object, but cannot be directly referenced from the 'create' function object.
+ *	   12. Standard properties :
  *				1. 'copy' and 'clone' will create a shallow or deep descriptor level copy of an influence instance. Located in public prototype.
  *				2. 'bindThis' will answer a bound function for an influence instance. Ex. foo.bindThis('fbar')
  *				   The same bound function will be answered for a given instance/function combination. Located in the public, private and
@@ -151,6 +159,7 @@ const Most = '.most.';
 const Least = '.least.';
 const None = '.none.';
 const Anonymous = '<anonymous>';
+const FreezeProp = true;
 
 const HarmonizerDefaults = {
 	prototype: Most,
@@ -161,7 +170,7 @@ const HarmonizerDefaults = {
 var ScopeID = 0; // Scope ID allocate to each private scope
 
 function Influence(oDesc) {
-	if (typeof oDesc !== 'object' || (!oDesc.hasOwnProperty('prototype') && !oDesc.hasOwnProperty('composition')))
+	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence descriptor '${oDesc}'`);
 	let oInf = {
 		typeName: 'Influence',
@@ -175,11 +184,13 @@ function Influence(oDesc) {
 		prototypeInfluence(oInf, oDesc);
 	else if (oDesc.hasOwnProperty('composition'))
 		compositionInfluence(oInf, oDesc);
+	else if (oDesc.hasOwnProperty('constructor'))
+		prototypeInfluence(oInf, oDesc);
 	else
-		throw new Error("Influence descriptor missing 'prototype' or 'composition' property");
-	Object.seal(oInf.prototype);
+		throw new Error("Influence descriptor missing 'prototype', 'composition' or 'constructor' property");
+	Object.freeze(oInf.prototype);
 	Object.freeze(oInf.create);
-	Object.freeze(oInf);
+	freezeProperties(oInf);
 	InfCreators.set(oInf.create, oInf);
 	if (oInf.static && oInf.static.isScoped)
 		Scopes.set(oInf.static.object, {
@@ -300,8 +311,8 @@ function harmonizeConstructor(oInf, oDesc) {
 }
 
 function _harmonizeConstructor(oInf, vHarm) {
-	_harmonizeProperty(oInf, vHarm, 'constructor',
-		getInternalHarmonizers(oInf, (inf, prop) => Object.getOwnPropertyDescriptor(inf, prop)));
+	return (_harmonizeProperty(oInf, vHarm, 'constructor',
+		getInternalHarmonizers(oInf, (inf, prop) => Object.getOwnPropertyDescriptor(inf, prop))));
 }
 
 function harmonizeProperty(oInf, sSeg, tProp, oDesc, prop, harmonizers) {
@@ -320,7 +331,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			}[vHarm] || harmonizers.namedProperty)(...args);
+			} [vHarm] || harmonizers.namedProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
@@ -329,12 +340,12 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
 					[Most]: harmonizers.mostAllFunctions,
-				}[vHarm[0]] || err)(...args);
+				} [vHarm[0]] || err)(...args);
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
 		function: harmonizers.func
-	}[typeof vHarm] || err)(prop, vHarm);
+	} [typeof vHarm] || err)(prop, vHarm);
 }
 
 function processComposition(oInf, oDesc) {
@@ -402,17 +413,19 @@ function resolveInfluenceReference(rInf, fDescriptor) {
 
 
 function prototypeInfluence(oInf, oDesc) {
-	if (typeof oDesc.prototype !== 'object')
-		throw new Error(`Invalid influence prototype descriptor '${oDesc.prototype}'`);
 	oInf.isaPrototype = true;
 	oInf.isaComposition = false;
 	processName(oInf, oDesc);
-	Yaga.dispatchPropertyHandlers(oDesc.prototype, {
-		thisArg_: () => copyThisArgProps(oInf.prototype, oDesc.prototype.thisArg_),
-		private_: () => copyPrivatePrototypeProps(oInf, oDesc.prototype.private_),
-		protected_: () => copyProtectedPrototypeProps(oInf, oDesc.prototype.protected_),
-		_other_: prop => copyProperty(oInf.prototype, prop, oDesc.prototype)
-	});
+	if (oDesc.prototype) {
+		if (typeof oDesc.prototype !== 'object')
+			throw new Error(`Invalid influence prototype descriptor '${oDesc.prototype}'`);
+		Yaga.dispatchPropertyHandlers(oDesc.prototype, {
+			thisArg_: () => copyThisArgProps(oInf.prototype, oDesc.prototype.thisArg_),
+			private_: () => copyPrivatePrototypeProps(oInf, oDesc.prototype.private_),
+			protected_: () => copyProtectedPrototypeProps(oInf, oDesc.prototype.protected_),
+			_other_: prop => copyProperty(oInf.prototype, prop, oDesc.prototype)
+		});
+	}
 	makeCreator(oInf, makeConstructor(oInf, oDesc));
 	makeStatics(oInf, oDesc);
 }
@@ -478,13 +491,16 @@ function copyProtectedStaticProps(oInf, oSrc) {
 	Object.seal(oInf.static.protectedPrototype);
 }
 
+function newScopesObject(oInf, o) {
+	Scopes.set(o, {
+		[SymRoot]: oInf
+	});
+}
+
 function makeCreator(oInf, fConstructor) {
 	oInf.create = (...args) => {
 		let o = Object.create(oInf.prototype);
-		if (oInf.isScoped)
-			Scopes.set(o, {
-				[SymRoot]: oInf
-			});
+		if (oInf.isScoped) newScopesObject(oInf, o);
 		fConstructor.call(o, ...args);
 		return (o);
 	};
@@ -495,7 +511,7 @@ function makeConstructor(oInf, oDesc) {
 		return (oInf.constructor = () => undefined);
 	let ty = typeof oDesc.constructor;
 	if (ty === 'object') {
-		makePrivateProtectedInitialiser(oInf, oDesc.constructor);
+		makeInitialiserObject(oInf, oDesc.constructor);
 		return (oInf.constructor = function () {
 			copyInitialisers(oInf, this);
 		});
@@ -508,24 +524,33 @@ function makeConstructor(oInf, oDesc) {
 	throw new error(`Invalid influence constructor form '${oDesc.constructor}'`);
 }
 
-function makePrivateProtectedInitialiser(oInf, oInit) {
-	if (!oInit.private_ && !oInit.protected_)
-		return (oInf.publicInitialiser = oInit);
-	oInf.publicInitialiser = _clone(oInit, {});
-	if (oInit.private_) {
-		if (typeof oInit.private_ !== 'object')
-			throw new Error("Constructor private initialiser must be an object");
-		allocatePrivateScope(oInf);
-		oInf.privateInitialiser = oInf.publicInitialiser.private_;
-		delete oInf.publicInitialiser.private_;
+function makeInitialiserObject(oInf, oInit) {
+	function makeInitObject(o, oInit, fAllocScope) {
+		if (typeof oInit !== 'object')
+			throw new Error("Constructor private/protected initialiser must be an object");
+		fAllocScope(oInf);
+		Yaga.dispatchPropertyHandlers(oInit, {
+			thisArg_: () => copyThisArgProps(o, oInit.thisArg_),
+			freeze_: () => freezeInitObjectProps(o, oInit.freeze_),
+			_other_: prop => copyProperty(o, prop, oInit)
+		});
 	}
-	if (oInit.protected_) {
-		if (typeof oInit.protected_ !== 'object')
-			throw new Error("Constructor protected initialiser must be an object");
-		allocateProtectedScope(oInf);
-		oInf.protectedInitialiser = oInf.publicInitialiser.protected_;
-		delete oInf.publicInitialiser.protected_;
+
+	function freezeInitObjectProps(o, oInit) {
+		Yaga.dispatchPropertyHandlers(oInit, {
+			thisArg_: () => copyThisArgProps(o, oInit.thisArg_, FreezeProp),
+			_other_: prop => copyProperty(o, prop, oInit, FreezeProp)
+		});
 	}
+
+	oInf.publicInitialiser = {};
+	Yaga.dispatchPropertyHandlers(oInit, {
+		private_: () => makeInitObject(oInf.privateInitialiser = {}, oInit.private_, allocatePrivateScope),
+		protected_: () => makeInitObject(oInf.protectedInitialiser = {}, oInit.protected_, allocateProtectedScope),
+		thisArg_: () => copyThisArgProps(oInf.publicInitialiser, oInit.thisArg_),
+		freeze_: () => freezeInitObjectProps(oInf.publicInitialiser, oInit.freeze_),
+		_other_: prop => copyProperty(oInf.publicInitialiser, prop, oInit)
+	});
 }
 
 function processName(oInf, oDesc) {
@@ -579,7 +604,7 @@ function allocateProtectedStaticScope(oInf) {
 function _allocatePrivateScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
 	if (oTgt.private) return;
-	oTgt.isScoped = true;
+	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
 	if (!oInf.scopeID) oInf.scopeID = ++ScopeID;
 	let id = (sTgt || 'inf') + '.private:sid:' + oInf.scopeID;
 	oTgt.private = scopeFunction(oTgt, id, () => oTgt.privatePrototype);
@@ -589,7 +614,7 @@ function _allocatePrivateScope(oInf, sTgt, oInit) {
 function _allocateProtectedScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
 	if (oTgt.protected) return;
-	oTgt.isScoped = true;
+	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
 	let id = (sTgt || 'inf') + '.protected';
 	oTgt.protected = scopeFunction(oTgt, id, oScopes => oScopes[SymRoot].protectedPrototype);
 	oTgt.protectedPrototype = oInit;
@@ -608,20 +633,20 @@ function scopeFunction(oTgt, id, fProt) {
 	};
 }
 
-function copyThisArgProps(oTgt, oSrc) {
+function copyThisArgProps(oTgt, oSrc, flFreeze = false) {
 	if (typeof oSrc !== 'object')
 		throw new error(`Influence 'thisarg_' property must be an object`);
 	Object.keys(oSrc).forEach(prop => {
 		let sDesc = Object.getOwnPropertyDescriptor(oSrc, prop);
 		if (typeof sDesc.value === 'function')
 			sDesc.value = Yaga.thisArg(sDesc.value);
-		defineProperty(oTgt, prop, sDesc);
+		defineProperty(oTgt, prop, sDesc, flFreeze);
 	});
 	return (oTgt);
 }
 
-function copyProperty(oTgt, tProp, oSrc, sProp = tProp) {
-	defineProperty(oTgt, tProp, Object.getOwnPropertyDescriptor(oSrc, sProp));
+function copyProperty(oTgt, tProp, oSrc, flFreeze = false, sProp = tProp) {
+	defineProperty(oTgt, tProp, Object.getOwnPropertyDescriptor(oSrc, sProp), flFreeze);
 }
 
 function defineConstant(oTgt, prop, val, flEnum = true) {
@@ -634,28 +659,75 @@ function defineConstant(oTgt, prop, val, flEnum = true) {
 	return (oTgt);
 }
 
-function defineProperty(oTgt, prop, desc, flEnum = true) {
-	if (typeof desc.value === 'function')
-		desc.writable = false;
-	desc.configurable = false;
+function defineProperty(oTgt, prop, desc, flFreeze = false, flEnum = true) {
+	if (flFreeze) {
+		if (!desc.get && !desc.set)
+			desc.writable = false;
+		desc.configurable = false;
+	}
 	desc.enumerable = flEnum;
 	Object.defineProperty(oTgt, prop, desc);
 	return (oTgt);
 }
 
 function applyInitialisers(oInf, oTgt, oInit) {
-	if (typeof oInit !== 'object')
-		throw new Error(`Invalid constructor initialiser '${oInit}'`);
-	Yaga.dispatchPropertyHandlers(oInit, {
-		private_: () => applyInitialisers(oInf, oInf.private(oTgt), oInit.private_),
-		protected_: () => applyInitialisers(oInf, oInf.protected(oTgt), oInit.protected_),
-		_other_: prop => {
+	_applyInitialisers(oInf, oTgt, oInit);
+	if (oTgt.private_)
+		_applyPrivateInitialisers(oInf, oTgt);
+	if (oTgt.protected_)
+		_applyProtectedInitialisers(oInf, oTgt);
+}
+
+function _applyPrivateInitialisers(oInf, oTgt) {
+	if (!oInf.private) {
+		if (!oInf.isScoped) newScopesObject(oInf, oTgt); // Need a scopes object as constructor hasn't allocate one yet
+		allocatePrivateScope(oInf);
+		freezeProperties(oInf); // Freeze the properties that have been allocated
+	}
+	_applyInitialisers(oInf, oInf.private(oTgt), oTgt.private_);
+	delete oTgt.private_;
+}
+
+function _applyProtectedInitialisers(oInf, oTgt) {
+	if (!oInf.protected) {
+		if (!oInf.isScoped) newScopesObject(oInf, oTgt); // Need a scopes object as constructor hasn't allocate one yet
+		allocateProtectedScope(oInf);
+		freezeProperties(oInf); // Freeze the properties that have been allocated
+	}
+	_applyInitialisers(oInf, oInf.protected(oTgt), oTgt.protected_);
+	delete oTgt.protected_;
+}
+
+function _applyInitialisers(oInf, oTgt, oInit) {
+	function applyFreeze(oInit) {
+		Yaga.dispatchPropertyHandlers(oInit, {
+			thisArg_: () => copyThisArgProps(oTgt, oInit.thisArg_, FreezeProp),
+			do_: () => applyDo(oInit.do_, FreezeProp),
+			_other_: prop => copyProperty(oTgt, prop, oInit, FreezeProp)
+		});
+	}
+
+	function applyDo(oInit, FreezeProp = false) {
+		Object.keys(oInit).forEach(prop => {
 			let f = oInit[prop];
 			let v = typeof f === 'function' ? f(oTgt) : f;
-			if (v !== undefined)
+			if (v === undefined)
+				return;
+			if (FreezeProp) {
+				let desc = Object.getOwnPropertyDescriptor(oInit, prop);
+				desc.value = v;
+				defineProperty(oTgt, prop, desc, FreezeProp);
+			} else
 				oTgt[prop] = v;
-		}
-	});
+		});
+	}
+
+	if (typeof oInit !== 'object')
+		throw new Error(`Invalid constructor initialiser '${oInit}'`);
+	Object.assign(oTgt, oInit);
+	if (oTgt.freeze_) applyFreeze(oTgt.freeze_), delete oTgt.freeze_;
+	if (oTgt.thisArg_) copyThisArgProps(oTgt, oTgt.thisArg_), delete oTgt.thisArg_;
+	if (oTgt.do_) applyDo(oTgt.do_), delete oTgt.do_;
 }
 
 function copyInitialisers(oInf, oTgt) {
@@ -686,14 +758,14 @@ function bindThis(oInst, sProp) {
 	// to anwser the same bound function in the future.
 	if (typeof oInst[sProp] !== 'function')
 		throw new Error(`Property '${sProp}' is not a function`);
-	let f = oInst[sProp];
+	let bf, f = oInst[sProp];
 	let map = f[SymBindMap];
 	if (!map) {
 		f[SymBindMap] = map = new WeakMap();
 		map.set(oInst, (bf = f.bind(oInst)));
 		return (bf);
 	}
-	let bf = map.get(oInst);
+	bf = map.get(oInst);
 	if (!bf) map.set(oInst, (bf = f.bind(oInst)));
 	return (bf);
 }
@@ -768,6 +840,17 @@ function _cloneArray(ai) {
 	return (ao);
 }
 
+function freezeProperties(o) {
+	Object.getOwnPropertySymbols(o).forEach(prop => {
+		let desc = Object.getOwnPropertyDescriptor(o, prop);
+		if (!o.desc.configurable)
+			return;
+		desc.configurable = false;
+		if (!o.get && !o.set)
+			desc.writable = false;
+		Object.defineProperty(o, prop, desc);
+	})
+}
 
 // Harmonizer support
 
@@ -846,11 +929,13 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 			if (fns.length === 0)
 				return () => undefined;
 			if (fns.length === 1)
-				return (fns[0]);
+				return ({
+					value: fns[0]
+				});
 			return {
 				value(...args) {
 					let result;
-					fns.forEach(f => result = f(...args));
+					fns.forEach(f => result = f.call(this, ...args));
 					return (result);
 				}
 			}
