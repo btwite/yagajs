@@ -135,6 +135,11 @@
  * 		   instance of the influence identified by Influence, create factory function or registery name.
  * 		2. Influence.isInfluencedBy(<as above>) - Checks whether the object is an instance of an influence and that the identified influence
  * 		   is inherited from or is a composable of a composition. Note will recursively examine composables that are also compositions.
+ * 		3. There is a potential !BUG! assoicated with compositions. If a prototype influence only defines the existance of a 'protected' space in
+ * 		   the constructor function descriptor and the constructor has never been run will fail if the influence is in a composition. The reason
+ * 		   is that composition influence instance passed to the prototype influence constructor will cause the creation of a scopes object that
+ * 		   has a SymRoot of the prototype influence; not the composition influence due to the late creation of the protected space. Any on going
+ * 		   access to the protected space will attempt to reference the incorrect protected prototype.
  */
 "use strict";
 
@@ -193,9 +198,7 @@ function Influence(oDesc) {
 	freezeProperties(oInf);
 	InfCreators.set(oInf.create, oInf);
 	if (oInf.static && oInf.static.isScoped)
-		Scopes.set(oInf.static.object, {
-			[SymRoot]: oInf.static
-		});
+		newScopesObject(oInf.static.object, oInf.static);
 	return (oInf);
 }
 
@@ -224,6 +227,7 @@ function compositionInfluence(oInf, oDesc) {
 			if (inf.static && inf.static.isScoped)
 				oInf.static.isScoped = true;
 		});
+		newScopesObject(oInf.static.object, oInf.static);
 		Object.seal(oInf.static.object);
 		copyStaticPropsToCreator(oInf);
 	}
@@ -491,16 +495,16 @@ function copyProtectedStaticProps(oInf, oSrc) {
 	Object.seal(oInf.static.protectedPrototype);
 }
 
-function newScopesObject(oInf, o) {
-	Scopes.set(o, {
-		[SymRoot]: oInf
+function newScopesObject(oTgt, oRoot) {
+	Scopes.set(oTgt, {
+		[SymRoot]: oRoot
 	});
 }
 
 function makeCreator(oInf, fConstructor) {
 	oInf.create = (...args) => {
 		let o = Object.create(oInf.prototype);
-		if (oInf.isScoped) newScopesObject(oInf, o);
+		if (oInf.isScoped) newScopesObject(o, oInf);
 		fConstructor.call(o, ...args);
 		return (o);
 	};
@@ -680,7 +684,7 @@ function applyInitialisers(oInf, oTgt, oInit) {
 
 function _applyPrivateInitialisers(oInf, oTgt) {
 	if (!oInf.private) {
-		if (!oInf.isScoped) newScopesObject(oInf, oTgt); // Need a scopes object as constructor hasn't allocate one yet
+		if (!oInf.isScoped) newScopesObject(oTgt, oInf); // Need a scopes object as constructor hasn't allocate one yet
 		allocatePrivateScope(oInf);
 		freezeProperties(oInf); // Freeze the properties that have been allocated
 	}
@@ -690,7 +694,7 @@ function _applyPrivateInitialisers(oInf, oTgt) {
 
 function _applyProtectedInitialisers(oInf, oTgt) {
 	if (!oInf.protected) {
-		if (!oInf.isScoped) newScopesObject(oInf, oTgt); // Need a scopes object as constructor hasn't allocate one yet
+		if (!oInf.isScoped) newScopesObject(oTgt, oInf); // Need a scopes object as constructor hasn't allocate one yet
 		allocateProtectedScope(oInf);
 		freezeProperties(oInf); // Freeze the properties that have been allocated
 	}
@@ -930,14 +934,16 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 				return () => undefined;
 			if (fns.length === 1)
 				return ({
-					value: fns[0]
+					value: fns[0],
+					enumerable: true
 				});
 			return {
 				value(...args) {
 					let result;
 					fns.forEach(f => result = f.call(this, ...args));
 					return (result);
-				}
+				},
+				enumerable: true
 			}
 		}
 	}
@@ -1003,7 +1009,8 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 		let desc = f.call(this, sProp);
 		if (typeof desc !== 'object' || (!desc.value && !(desc.get || desc.set)))
 			desc = {
-				value: desc
+				value: desc,
+				enumerable: true
 			};
 		return (desc);
 	}

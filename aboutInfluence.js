@@ -326,14 +326,114 @@ let StringStack = Yaga.Influence({
     }
 });
 myStack = StringStack.create();
-myStack.push('StringStack');
+myStack.push('StringStack:1');
 myStack.print();
 trycode(() => myStack.push(1));
 
-// is no observable difference. However when influences are composed into a single influence
-// the protected scope comes into its own. In essence we can consider 'protected' properties 
-// as a shadow of the public space. Protected and public properties can be 
+// The StringStack composition includes our Stack influence and an anonymous prototype
+// influence with a single 'push' method that checks the type. The 'harmonizers' section
+// defines how the two influences are to be merged. The 'defaults' section defines how to
+// harmonize properties that do not have a specific harmonizer. For 'prototype' properties
+// the "['.least.']" default can only apply to function properties and means that the same 
+// named function property for each composable influence will be called in least significant
+// order (composition is ordered '.most.' to '.least.' significance). The result of the last
+// function called is retured. The 'constructor' default is somewhat simpler specfying that
+// the composite constructor should be taken from the constructor for the Influence named 'Stack'
+//
+// The coded harmonizations such as "['.least.']" are implemented using Influence harmonization
+// services. These same services can also be used to define your own harmonization function.
+StringStack = Yaga.Influence({
+    name: 'StringStack',
+    composition: [Stack],
+    harmonizers: {
+        defaults: {
+            prototype: 'Stack',
+            constructor: 'Stack'
+        },
+        prototype: {
+            push() {
+                let fPush = this.getProperty('Stack', 'push').value;
+                return function (element) {
+                    if (typeof element !== 'string')
+                        throw new Error("Expecting a 'string'");
+                    return (fPush.call(this, element));
+                }
+            }
+        }
+    }
+});
+myStack = StringStack.create();
+myStack.push('StringStack:2');
+myStack.print();
+trycode(() => myStack.push(1));
 
+// In the example above we are extending a single influnce (Stack) by harmonizing the
+// 'push' property function. The default harmonizers are saying that the constructor and any
+// property other than 'push' are to be taken from the Stack implementation. Note that private
+// properties are never harmonized. They are linked to the composite instance via a private
+// space that is derived from the owning influence and referenced by functions that are taken
+// from the owning influence. This means that a composite instance may have many private spaces. 
+// Protected properties on the other hand can be harmonized and will be associated with the 
+// single protected space of the composite instance object.
+//
+// Finally we look at an example that shows the harmonization of two distinct prototype influences.
+
+let Dog = Yaga.Influence({
+    name: 'Dog',
+    prototype: {
+        walk() {
+            log('Walks like a dog');
+        },
+        run() {
+            log('Runs like a dog');
+        },
+        speak() {
+            log('woof woof woof');
+        }
+    }
+});
+let dog = Dog.create();
+log('\nDog can:');
+dog.walk();
+dog.run();
+dog.speak();
+
+let Cat = Yaga.Influence({
+    name: 'Cat',
+    prototype: {
+        walk() {
+            log('Walks like a cat');
+        },
+        run() {
+            log('Runs like a cat');
+        },
+        speak() {
+            log('miow miow miow');
+        }
+    }
+});
+let cat = Cat.create();
+log('\nCat can:');
+cat.walk();
+cat.run();
+cat.speak();
+
+let DogCat = Yaga.Influence({
+    name: 'DogCat',
+    composition: [Dog, Cat],
+    harmonizers: {
+        prototype: {
+            walk: 'Dog',
+            run: 'Cat',
+            speak: ['.most.']
+        }
+    }
+});
+let dogcat = DogCat.create();
+log('\nDogCat can:');
+dogcat.walk();
+dogcat.run();
+dogcat.speak();
 
 function log(...args) {
     console.log(...args);
