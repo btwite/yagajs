@@ -10,8 +10,8 @@ let yaga = require('./Yaga');
 //testProperties();
 //testExceptions();
 //testReaderTable();
-//testComposition();
-testInfluence();
+testComposition();
+// testInfluence();
 //testGrammarExtensions();
 
 function test() {
@@ -130,36 +130,76 @@ function testComposition() {
         prototype: {
             helloWorld() {
                 console.log('Hello World from inf1');
+            },
+        },
+        constructor() {
+            return {
+                protected_: {
+                    var0: 20000,
+                    inf1_var1: 200,
+                    inf1_var2: 300
+                }
             }
         },
         static: {
             helloWorld() {
                 console.log('Static Hello World from inf1');
+            },
+            protected_: {
+                protVar: 10000
             }
         }
     });
+
     let inf2 = yaga.Influence({
         name: 'inf2',
         prototype: {
             helloWorld() {
                 console.log('Hello World from inf2');
+            },
+            showVar0() {
+                log('var0', inf2.protected(this).var0);
+            },
+            private_: {
+                myVar: 'This actually the prototype version'
+            }
+        },
+        constructor() {
+            return {
+                protected_: {
+                    var0: 40000,
+                    inf2_var1: 400,
+                    inf2_var2: 600
+                }
             }
         },
         static: {
             helloWorld() {
-                console.log('Static Hello World from inf2');
+                console.log('Static Hello World from inf2. ' + inf2.static.private(this).myVar);
+            },
+            showProtVar() {
+                log('protVar', inf1.static.protected(this).protVar);
+            },
+            private_: {
+                myVar: 'High there'
             }
         }
     });
-    inf1.create().helloWorld();
-    inf2.create().helloWorld();
+
+    let o1 = inf1.create();
+    o1.helloWorld();
+    let o2 = inf2.create();
+    o2.helloWorld();
+    log(inf1.protected(o1), inf2.protected(o2));
 
     let inf3 = yaga.Influence({
         name: 'inf3',
         composition: [inf1, inf2.create],
         harmonizers: {
             defaults: {
-                prototype: '.most.'
+                prototype: '.most.',
+                static: '.most.',
+                constructor: [inf2, inf1]
             },
             prototype: {
                 helloWorld: ['.least.'],
@@ -174,10 +214,15 @@ function testComposition() {
     });
     log(inf3);
     let o = inf3.create();
+    log(inf3);
     o.helloWorld();
     o.helloWorld1();
+    log('\n\n');
     inf3.create.helloWorld();
     log(o.isainf3, o.isainf1);
+    log(inf3.protected(o), inf3.protected(inf3.create()));
+    o.showVar0();
+    inf3.create.showProtVar();
 }
 
 function testInfluence() {

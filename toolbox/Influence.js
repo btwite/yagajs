@@ -47,8 +47,8 @@
  * 					constructor: <See below>,		// Default is '.none.'
  * 				},
  * 				prototype: {		// Harmonizers for prototype properties. Can also contain 'thisArg_'.
- * 					<property>: <idx> | <name> | '.none.' | '.least.' | '.most.' | ['.least.'] | 
- * 								['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
+ * 					<property>: <idx> | <name> | <Inf Object> | <Inf Creator> | '.none.' | '.least.' | '.most.' | 
+ * 								['.least.'] | ['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
  * 					...
  * 					protected_: {	// Harmonizers for protected properties. Can also contain 'thisArg_'.
  * 					},
@@ -78,24 +78,27 @@
  * 		4. Harmonizers can be one of the following forms:
  * 				1. <idx> - Take property from the composable at the given index position.
  * 				2. <name> - Take property from the composable of the given name.
- * 				3. '.none.' - Don't harmonize, will override a harmonizing default.
+ * 				3. <Inf Object> - An influence object.
+ * 				4. <Inf Creator> - An exported influence create function if the influence object is not
+ * 								   available.
+ * 				5. '.none.' - Don't harmonize, will override a harmonizing default.
  * 							  WARNING: The influence will not have this property.
- * 				4. '.least.' - Take property from least significant composable.
- * 				5. '.most.' - Take property from most significant composable.
- * 				6. ['.least.'] - Call matching property function for each composable in least significant order
- * 				7. ['.most.'] - Call matching property function for each composable in most significant order
- * 			    8. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
- * 			    9. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
+ * 				6. '.least.' - Take property from least significant composable.
+ * 				7. '.most.' - Take property from most significant composable.
+ * 				8. ['.least.'] - Call matching property function for each composable in least significant order
+ * 				9. ['.most.'] - Call matching property function for each composable in most significant order
+ * 			   10. [ ... ] - List of 2 or more ordered <idx>|<name> of composables to call matching property function
+ * 			   11. fHarmonizer - User function that returns a property descriptor that represents the harmonization of the 
  * 				   named property. Can also return a value for anything other than an object with a 'value', 'get' or 'set'.
  * 				   'fHarmonizer' is called during the construction of the composition influence and is 
  * 				   bound to an object that contains helper functions for assisting the construction of the harmonized property.
- * 						hasProperty(<idx>|<name>, sProp) : Will answer a property descriptor for a given composable or undefined.
- * 						getProperty(<idx>|<name>, sProp) : Answer a property descriptor for a given composable
+ * 						hasProperty(<idx>|<name>|<inf>|<create>, sProp) : Will answer a property descriptor for a given composable or undefined.
+ * 						getProperty(<idx>|<name>|<inf>|<create>, sProp) : Answer a property descriptor for a given composable
  * 						getProperties(sProp, '.least.'|'.most.', ty) : Answer all matching properties in '.least.' or '.most.'
  * 															   	       significant order. Optional, defaults to '.least.'. Can
  * 																	   also nominate expected type such as 'function'.
- * 						selectProperties(sProp, [<idx>|<name>], ty) :  Answer an array with the matching properties from the selected
- * 																	   composables.
+ * 						selectProperties(sProp, [<idx>|<name>|<inf>|<create>], ty) :  Answer an array with the matching properties from the selected
+ * 																	   				  composables.
  * 						makeCallable([composable fns ...]) : Answer a function descriptor that calls list of fns or descriptors in order with the same
  * 															 argument list and returns result of last function called.
  * 		5. A harmonizer function value will need to use .call, .apply or .bind to forward requests to composable prototype functions
@@ -135,11 +138,6 @@
  * 		   instance of the influence identified by Influence, create factory function or registery name.
  * 		2. Influence.isInfluencedBy(<as above>) - Checks whether the object is an instance of an influence and that the identified influence
  * 		   is inherited from or is a composable of a composition. Note will recursively examine composables that are also compositions.
- * 		3. There is a potential !BUG! assoicated with compositions. If a prototype influence only defines the existance of a 'protected' space in
- * 		   the constructor function descriptor and the constructor has never been run will fail if the influence is in a composition. The reason
- * 		   is that composition influence instance passed to the prototype influence constructor will cause the creation of a scopes object that
- * 		   has a SymRoot of the prototype influence; not the composition influence due to the late creation of the protected space. Any on going
- * 		   access to the protected space will attempt to reference the incorrect protected prototype.
  */
 "use strict";
 
@@ -158,6 +156,7 @@ const Scopes = new WeakMap(); // Map of scope objects to public influence instan
 const SymPublic = Symbol.for('PUBLIC');
 const SymProtected = Symbol.for('PROTECTED');
 const SymPrivate = Symbol.for('PRIVATE');
+const SymValidIDs = Symbol.for('VALID:SCOPEIDS')
 const SymRoot = Symbol.for('ROOT');
 const SymBindMap = Symbol.for('BindMap');
 const Most = '.most.';
@@ -180,6 +179,7 @@ function Influence(oDesc) {
 	let oInf = {
 		typeName: 'Influence',
 		isanInfluence: true,
+		compositeMembership: [],
 	};
 	oInf.prototype = defineConstant({}, 'copy', Yaga.thisArg(copy), false);
 	defineConstant(oInf.prototype, 'clone', Yaga.thisArg(clone), false);
@@ -220,7 +220,9 @@ function compositionInfluence(oInf, oDesc) {
 	let harmDefaults = Object.assign({}, HarmonizerDefaults); // Fill the gaps
 	harmDefaults = Object.assign(harmDefaults, oDesc.harmonizers.defaults || {});
 	applyDefaultHarmonizer(oInf, 'prototype', harmDefaults.prototype);
+	applyDefaultHarmonizer(oInf, 'protectedPrototype', harmDefaults.prototype);
 	applyDefaultStaticHarmonizer(oInf, 'object', harmDefaults.static);
+	applyDefaultStaticHarmonizer(oInf, 'protectedPrototype', harmDefaults.static);
 	makeCreator(oInf, applyDefaultConstructorHarmonizer(oInf, harmDefaults.constructor));
 	if (oInf.static) {
 		oInf.temp.influences.forEach(inf => {
@@ -231,10 +233,44 @@ function compositionInfluence(oInf, oDesc) {
 		Object.seal(oInf.static.object);
 		copyStaticPropsToCreator(oInf);
 	}
-	oInf.temp.influences.forEach(inf => {
-		if (inf.isScoped) oInf.isScoped = true;
+	getCompositeInvolvedComposables(oInf).forEach(inf => {
+		propagateScope(oInf, inf);
+		propagateScope(oInf.static, inf.static);
+		inf.compositeMembership.push(oInf.create); // Just save the creator in composite membership list.
 	});
 	delete oInf.temp; // Only need 'temp' while we are constructing the composition
+}
+
+function propagateScope(toTgt, frTgt) {
+	if (!frTgt || !toTgt)
+		return;
+	if (frTgt.isScoped) {
+		if (!toTgt.isScoped) {
+			toTgt.isScoped = true;
+			getScopeID(toTgt);
+		}
+		// Add scope id of composable as a valid accessor
+		toTgt.validScopeIDs[frTgt.scopeID] = true;
+	}
+}
+
+function getCompositeInvolvedComposables(oInf) {
+	let list = [].concat(oInf.temp.influences);
+	list.forEach(inf => getInvolvedComposables(inf, list));
+	return (list);
+}
+
+function getInvolvedComposables(oInf, list) {
+	if (!oInf.isaComposition)
+		return (list);
+	oInf.composables.forEach(comp => {
+		let inf = resolveInfluenceReference(comp);
+		if (list.includes(inf))
+			return;
+		list.push(inf);
+		getInvolvedComposables(inf, list);
+	});
+	return (list);
 }
 
 function allocStaticSegment(oInf) {
@@ -335,11 +371,11 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			} [vHarm] || harmonizers.namedProperty)(...args);
+			} [vHarm] || harmonizers.influenceProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
-				throw new Error(`Invalid harmonizer '${vHarm}'`);
+				return (harmonizers.influenceProperty(...args));
 			if (vHarm.length === 1) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
@@ -348,7 +384,11 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
-		function: harmonizers.func
+		function: (...args) => {
+			if (InfCreators.get(vHarm))
+				return (harmonizers.influenceProperty(...args));
+			return (harmonizers.func(...args));
+		},
 	} [typeof vHarm] || err)(prop, vHarm);
 }
 
@@ -380,10 +420,14 @@ function processComposition(oInf, oDesc) {
 			oInf.temp.static = {};
 		oInf.temp.static[sScope] = o
 	}
-	mergeChildPropertyNames(oInf, inf => getStatic(inf, 'prototype'), o => assignStatic('prototype', o));
+	mergeChildPropertyNames(oInf, inf => getStatic(inf, 'object'), o => assignStatic('object', o));
 	mergeChildPropertyNames(oInf, inf => getStatic(inf, 'protectedPrototype'), o => assignStatic('protectedPrototype', o));
-	if (oInf.temp.static)
-		(oInf.static = {}).object = defineConstant({}, 'influence', oInf, false);
+	if (oInf.temp.static) {
+		if (oInf.temp.static.object)
+			(oInf.static = {}).object = defineConstant({}, 'influence', oInf, false);
+		if (oInf.temp.static.protectedPrototype)
+			allocateProtectedStaticScope(oInf);
+	}
 	Object.freeze(oInf.composables);
 }
 
@@ -451,6 +495,7 @@ function makeStatics(oInf, oDesc) {
 }
 
 function copyStaticPropsToCreator(oInf) {
+	oInf.create.influenceName = oInf.name; // Allow exported interface to expose the name of the influence
 	let oStatic = oInf.static.object;
 	Object.keys(oStatic).forEach(prop => {
 		let desc = Object.getOwnPropertyDescriptor(oStatic, prop);
@@ -496,9 +541,12 @@ function copyProtectedStaticProps(oInf, oSrc) {
 }
 
 function newScopesObject(oTgt, oRoot) {
-	Scopes.set(oTgt, {
-		[SymRoot]: oRoot
+	let oScopes;
+	Scopes.set(oTgt, oScopes = {
+		[SymRoot]: oRoot,
+		[SymValidIDs]: oRoot.validScopeIDs,
 	});
+	return (oScopes);
 }
 
 function makeCreator(oInf, fConstructor) {
@@ -609,9 +657,10 @@ function _allocatePrivateScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
 	if (oTgt.private) return;
 	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
-	if (!oInf.scopeID) oInf.scopeID = ++ScopeID;
-	let id = (sTgt || 'inf') + '.private:sid:' + oInf.scopeID;
-	oTgt.private = scopeFunction(oTgt, id, () => oTgt.privatePrototype);
+	let scopeID = getScopeID(oTgt);
+	let id = (sTgt || 'inf') + '.private:' + scopeID;
+	if (!oTgt.public) oTgt.public = o => o[SymPublic] || o;
+	oTgt.private = _allocateScope(scopeID, id, 'private', () => oTgt.privatePrototype);
 	oTgt.privatePrototype = oInit;
 }
 
@@ -619,15 +668,18 @@ function _allocateProtectedScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
 	if (oTgt.protected) return;
 	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
+	let scopeID = getScopeID(oTgt);
 	let id = (sTgt || 'inf') + '.protected';
-	oTgt.protected = scopeFunction(oTgt, id, oScopes => oScopes[SymRoot].protectedPrototype);
+	if (!oTgt.public) oTgt.public = o => o[SymPublic] || o;
+	oTgt.protected = _allocateScope(scopeID, id, 'protected', oScopes => oScopes[SymRoot].protectedPrototype);
 	oTgt.protectedPrototype = oInit;
 }
 
-function scopeFunction(oTgt, id, fProt) {
-	oTgt.public = o => o[SymPublic] || o;
+function _allocateScope(scopeID, id, ty, fProt) {
 	return oPublic => {
 		let oScopes = Scopes.get(oPublic = oPublic[SymPublic] || oPublic);
+		if (!oScopes[SymValidIDs][scopeID])
+			throw new Error(`Invalid access to a '${ty}' scope`);
 		let oScope = oScopes[id];
 		if (oScope)
 			return (oScope);
@@ -635,6 +687,16 @@ function scopeFunction(oTgt, id, fProt) {
 		oScope[SymPublic] = oPublic;
 		return (oScope);
 	};
+}
+
+function getScopeID(oTgt) {
+	if (!oTgt.scopeID) {
+		oTgt.scopeID = 'sid:' + ++ScopeID;
+		oTgt.validScopeIDs = {
+			[oTgt.scopeID]: true,
+		};
+	}
+	return (oTgt.scopeID);
 }
 
 function copyThisArgProps(oTgt, oSrc, flFreeze = false) {
@@ -674,6 +736,26 @@ function defineProperty(oTgt, prop, desc, flFreeze = false, flEnum = true) {
 	return (oTgt);
 }
 
+function getRootInfluence(oInf, oTgt) {
+	// Applying initialisers to composite influences needs to handle the case
+	// where the composable scope space is yet to be defined. Late binding of the
+	// scope space must apply to the prototype influence for the private scope and
+	// to the composite for the protected scope. In either case the root associated
+	// with the target instance must match the owning influence.
+	// Note this code is never called for the static space.
+	let tProt = Object.getPrototypeOf(oTgt);
+	if (Object.is(tProt, oInf.prototype))
+		return (oInf); // Is local to a prototye influence so nothing to do
+
+	// Must be a composite so need to locate the composite influence
+	for (let i = 0; i < oInf.compositeMembership.length; i++) {
+		let inf = InfCreators.get(oInf.compositeMembership[i]);
+		if (tProt === inf.prototype)
+			return (inf);
+	}
+	throw new Error('INTERNAL: Cannot find a root influence');
+}
+
 function applyInitialisers(oInf, oTgt, oInit) {
 	_applyInitialisers(oInf, oTgt, oInit);
 	if (oTgt.private_)
@@ -683,22 +765,38 @@ function applyInitialisers(oInf, oTgt, oInit) {
 }
 
 function _applyPrivateInitialisers(oInf, oTgt) {
+	let oRoot = getRootInfluence(oInf, oTgt);
 	if (!oInf.private) {
-		if (!oInf.isScoped) newScopesObject(oTgt, oInf); // Need a scopes object as constructor hasn't allocate one yet
 		allocatePrivateScope(oInf);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocated one yet
 		freezeProperties(oInf); // Freeze the properties that have been allocated
 	}
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.validScopeIDs[oInf.scopeID])
+		oRoot.validScopeIDs[oInf.scopeID] = true;
 	_applyInitialisers(oInf, oInf.private(oTgt), oTgt.private_);
 	delete oTgt.private_;
 }
 
 function _applyProtectedInitialisers(oInf, oTgt) {
-	if (!oInf.protected) {
-		if (!oInf.isScoped) newScopesObject(oTgt, oInf); // Need a scopes object as constructor hasn't allocate one yet
+	let oRoot = getRootInfluence(oInf, oTgt); // Must apply protected initialisation to composite not defining prototype influence
+	if (!oRoot.protected) {
+		allocateProtectedScope(oRoot);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocate one yet
+		freezeProperties(oRoot); // Freeze the properties that have been allocated
+	}
+	if (oRoot !== oInf && !oInf.protected) {
+		// If this is definitely a composite situation so will need to ensure that the composable also has
+		// a protected space for the methods to work with our composite
 		allocateProtectedScope(oInf);
 		freezeProperties(oInf); // Freeze the properties that have been allocated
 	}
-	_applyInitialisers(oInf, oInf.protected(oTgt), oTgt.protected_);
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.validScopeIDs[oInf.scopeID])
+		oRoot.validScopeIDs[oInf.scopeID] = true;
+	_applyInitialisers(oRoot, oRoot.protected(oTgt), oTgt.protected_);
 	delete oTgt.protected_;
 }
 
@@ -740,6 +838,8 @@ function copyInitialisers(oInf, oTgt) {
 		_clone(oInf.privateInitialiser, o);
 	}
 	if (oInf.protectedInitialiser) {
+		// Don't have a problem here with composite protected space. This scopes environment 
+		// has already been setup correctly by the composite influence code.
 		let o = oInf.protected(oTgt);
 		_clone(oInf.protectedInitialiser, o);
 	}
@@ -793,6 +893,7 @@ function _copyClone(oInst, fCopy) {
 	if (scopes) {
 		let newScopes = {};
 		Object.keys(scopes).forEach(sScope => (newScopes[sScope] = fCopy(scopes[sScope]))[SymPublic] = oPublic);
+		Object.getOwnPropertySymbols(scopes).forEach(sym => newScopes[sym] = scopes[sym]);
 		Scopes.set(oPublic, newScopes)
 	}
 	return (oPublic);
@@ -876,8 +977,14 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 						throw new Error(`Composable name '${idInf}' is missing`);
 					desc = fPropDesc(keyInfs[idInf], sProp);
 					break;
+				case 'function':
+					let inf = InfCreators.get(idInf);
+					if (!inf)
+						throw new Error(`'${idInf}' is not an influence create function`);
+					desc = fPropDesc(inf, sProp);
+					break;
 				case 'object':
-					if (idInf.isanInfluence) { // Internal harmonizers only
+					if (idInf.isanInfluence) {
 						desc = fPropDesc(idInf, sProp);
 						break;
 					}
@@ -885,7 +992,7 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 					throw new Error(`Invalid composable identifier '${idInf}'`);
 			}
 			// Only enumerable properties can be returned.
-			return (desc.enumerable ? desc : undefined);
+			return (desc && desc.enumerable ? desc : undefined);
 		},
 		getProperty(idInf, sProp) {
 			let desc = this.hasProperty(idInf, sProp);
@@ -989,8 +1096,8 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 		}
 	}
 
-	function namedProperty(sProp, name) {
-		return (this.getProperty(name, sProp));
+	function influenceProperty(sProp, idInf) {
+		return (this.getProperty(idInf, sProp));
 	}
 
 	function leastAllFunctions(sProp) {
@@ -1020,7 +1127,7 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 		leastProperty: leastProperty.bind(helpers),
 		mostProperty: mostProperty.bind(helpers),
 		noneProperty: noneProperty.bind(helpers),
-		namedProperty: namedProperty.bind(helpers),
+		influenceProperty: influenceProperty.bind(helpers),
 		leastAllFunctions: leastAllFunctions.bind(helpers),
 		mostAllFunctions: mostAllFunctions.bind(helpers),
 		selectedFunctions: selectedFunctions.bind(helpers),

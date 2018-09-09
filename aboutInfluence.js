@@ -114,7 +114,7 @@ myStack.print();
 // 'this' to be mapped to the corresponding private space. Note that the 'private' function need only
 // be visible to the module that owns the influence implementation as long as the module exports the
 // creator function 'Stack.create'. One thing to note is that we did not need to 'freeze_' the properties
-// in the prototype. 'freeze_' is not supported at this level as an influence is prototype is frozen
+// in the prototype. 'freeze_' is not supported at this level as an influence prototype is frozen
 // as a whole once the influence has been constructed.
 
 // The confusion around 'this' largely stems from the mistaken assumption that a function is a method,
@@ -124,7 +124,7 @@ myStack.print();
 // with and without a 'this' binding especially where object 'methods' are mapped to functions outside 
 // the object body.
 //
-// The best way around 'this' is to not use this at all or ar least sparingly. The policy I have adopted is that
+// The best way around 'this' is to not use 'this' at all or ar least sparingly. The policy I have adopted is that
 // 'this' is only used where the body of the function is within the body of an object literal. Every other form
 // of function is just that a function and all bindings must be arguments. Adopting this policy provides a
 // number of benefits:
@@ -423,8 +423,8 @@ let DogCat = Yaga.Influence({
     composition: [Dog, Cat],
     harmonizers: {
         prototype: {
-            walk: 'Dog',
-            run: 'Cat',
+            walk: Dog,
+            run: Cat.create,
             speak: ['.most.']
         }
     }
@@ -434,6 +434,12 @@ log('\nDogCat can:');
 dogcat.walk();
 dogcat.run();
 dogcat.speak();
+
+// Note above that the reference to 'Dog' for harmonizing the 'walk' method is the actual
+// reference to the influence object, whilst the reference to 'Cat' is by the 'create' function
+// for Cat. In general a harmonizer can identify a target composable influence by index position
+// the name of the influence, the influence object if available or the create function which as
+// mentioned earlier is the preferred interface for exporting.
 
 function log(...args) {
     console.log(...args);
