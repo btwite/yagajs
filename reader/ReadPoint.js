@@ -23,9 +23,11 @@ module.exports = Object.freeze({
         },
         constructor(sourceName, line = 0, column = 0, parent) {
             return {
-                sourceName,
-                parent,
-                line,
+                freeze_: {
+                    sourceName,
+                    parent,
+                    line
+                },
                 column
             }
         },

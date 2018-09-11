@@ -6,12 +6,13 @@
 
 let yaga = require('./Yaga');
 
-//test();
+test();
 //testProperties();
 //testExceptions();
 //testReaderTable();
-testComposition();
-// testInfluence();
+//testComposition();
+//testReadPoint();
+//testInfluence();
 //testGrammarExtensions();
 
 function test() {
@@ -283,13 +284,16 @@ function testInfluence() {
     myInf.private(o1).myprivateval.push(300);
     log(myInf.private(o), myInf.private(o1));
 
-    log(yaga.Reader.ReadPoint.default.isaReadPoint);
-    let r = yaga.Reader.ReadPoint('mySource', 2, 3);
-    log(r.format(), r.increment(10).format(), yaga.Reader.ReadPoint.default.format());
-
     myInf.create.foo();
     myInf.create.foobar();
     myInf.create.foobar1();
+}
+
+function testReadPoint() {
+    log(yaga.Reader.ReadPoint.default.isaReadPoint);
+    let r = yaga.Reader.ReadPoint('mySource', 2, 3);
+    log(r.format(), r.increment(10).format(), yaga.Reader.ReadPoint.default.format());
+    trycode(() => r.sourceName = 'mysource', err => log(err.message));
 }
 
 function testGrammarExtensions() {
@@ -337,11 +341,12 @@ function log(...args) {
     console.log.apply(undefined, args);
 }
 
-function trycode(fn) {
+function trycode(fn, fErr) {
     try {
         fn()
     } catch (err) {
-        log(err);
+        if (fErr) fErr(err);
+        else log(err);
         if (err.errors) yaga.printErrors(err.errors);
     }
 }

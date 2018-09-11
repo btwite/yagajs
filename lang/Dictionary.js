@@ -1,18 +1,47 @@
 /*
  *  Dictionary: @file
- *
- *  Yaga dictionaries contain the yaga immutable definitions. Dictionaries are arranged
- *  in hierachies with the root dictionary always set to the yaga core dictionary.
- *  Yaga instance initialisation allows the instance to be assigned a startup dictionary
- *  that will be typically loaded from an initialisation script of yaga expressions.
- *  Any dependencies are also loaded at that time, although the dependency is defined in
- *  the script by the expression (dictionaryDependsOn "source path"). The script can also
- *  specify a name with the expression (dictionaryName "myDictionary").
- * 
- *  The yaga instance is assigned a child dictionary for further definitions and overrides,
- *  as the preloaded hierachy are immutable and reusable across yaga instances.
  * 
  *  This module contains the behaviour for creating dictionaries and a dictionary hierachy.
+ *
+ *  Yaga dictionaries contain the yaga immutable definitions. Dictionaries are arranged
+ *  into a loosely coupled dependency hierachy with the root dictionary set to the yaga 
+ *  core dictionary (which can also be extended and overwritten).
+ *  Yaga instance initialisation allows the instance to be assigned a list of startup 
+ *  dictionaries that will be typically loaded from an initialisation script of yaga 
+ *  expressions. The list is assumed to be ordered with most significant dictionary
+ *  first in the list. 
+ * 
+ *  Each dictionary can contain a dependency list
+ * 		(dictionaryDependsOn "source path" | ("source path" ...))
+ *  that must be the first expression in the dictionary. If specified the dependencies
+ *  will be processed recursively.
+ * 
+ *  Each yaga instance contains two dictionary spaces. The first is known as the Yaga
+ *  Dictionary Space (YDS) and contains all loaded dictionaries folded into the space from
+ *  least significant to most signicant, including allowance for dependencies. The second
+ *  is the Local Dictionary Space (LDS) which inherits from the Yaga Dictionary Space and
+ *  holds all new or updated dictionary definitions created for the yaga instance.
+ * 
+ *  Dictionary loading makes use of the YDS & LDS as follows:
+ *  	1. Dictionary "foo" has dependencies of "bar" and "foobar"
+ * 		2. If "bar" dictionary has not been loaded then recursively apply process to "bar"
+ * 		3. If "foobar" has not been loaded then recursively apply process to "foobar"
+ * 		4. Fold root dictionary(s) into the YDS. Note that root
+ * 		   dictionaries may have dependencies.
+ *      5. Recursively fold "foobar" dependent dictionaries into the YDS. Note that a
+ *         dictionary may be referenced multiple times as a dependent however only the
+ * 		   least significant reference is folded.
+ * 		6. Fold "foobar" into YDS.
+ * 		7. Repeat for "bar"
+ * 		8. Read, bind and evaluate the "foo". Definitions will be loaded into the 
+ * 		   LDS.
+ * 		9. Save the LDS as the binary dictionary representation for "foo".
+ *  
+ *  The above process is applied until all dictionaries have been resolved down to their
+ *  binary form. Once this is complete a final fold is performed on the list of dictionaries
+ *  assigned to the instance.
+ * 
+ *  The script can also specify a name with the expression (dictionaryName "myDictionary").
  */
 "use strict";
 

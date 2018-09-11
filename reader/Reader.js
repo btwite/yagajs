@@ -23,20 +23,18 @@ var Reader = Yaga.Influence({
             readStrings,
             readString,
             currentSource
-        },
-        private_: {
-            readerTable: _,
-            options: _,
-            context: _,
-            contextStack: _
         }
     },
     constructor(rt, options) {
         rt = ReaderTable(rt);
-        let ps = Reader.private(this);
-        ps.readerTable = rt;
-        ps.options = options;
-        ps.contextStack = [];
+        return {
+            private_: {
+                readerTable: rt,
+                options: options,
+                context: _,
+                contextStack: []
+            }
+        }
     }
 });
 
@@ -51,53 +49,41 @@ module.exports = Object.freeze({
 var ReaderContext = Yaga.Influence({
     name: 'ReaderContext',
     prototype: {
-        reader: _,
-        fnRead: _,
-        readerTable: _,
-        readerTableStack: _,
-
-        sourceName: _,
-        line: 0,
-        column: 0,
-        expression: _,
-        exprStack: _,
-        curToken: _,
-        curInput: _,
-        inputStream: _,
-        charBuf: _,
-
-        lastReadPoint: _,
-        parentPoints: _,
-        parentPoint: _,
         get currentPoint() {
             return (this.lastReadPoint = ReadPoint(this.sourceName, this.line, this.column, this.parentPoint));
         },
-
-        text: _,
-        textPosition: 0,
-        textLength: 0,
-        tabCount: 4,
-        eos: false,
-        pushbackChar: _,
     },
     constructor(r, s, f) {
         let ps = Reader.private(r);
         return {
             reader: r,
-            sourceName: s,
-            fnRead: () => f, // Need a function to return a function
-            parentPoint: () => ReadPoint.default,
-            charBuf: () => Yaga.StringBuilder(),
-            readerTable: () => ps.readerTable,
-            state: () => statePrototypes(this),
-            tabCount: () => {
-                if (ps.options && ps.options.tabCount)
-                    return (ps.options.tabCount);
-            },
-            exprStack: [],
-            parentPoints: [],
+            fnRead: f,
             readerTableStack: [],
+
+            sourceName: s,
+            line: 0,
+            column: 0,
+            expression: _,
+            exprStack: [],
+            curToken: _,
+            curInput: _,
             inputStream: [],
+
+            lastReadPoint: _,
+            parentPoints: [],
+
+            text: _,
+            textPosition: 0,
+            textLength: 0,
+            eos: false,
+
+            do_: {
+                parentPoint: () => ReadPoint.default,
+                charBuf: () => Yaga.StringBuilder(),
+                readerTable: () => ps.readerTable,
+                state: () => statePrototypes(this),
+                tabCount: () => ps.options && ps.options.tabCount ? ps.options.tabCount : 4,
+            },
         }
     },
 });
@@ -247,11 +233,7 @@ function readChar(ctxt) {
 }
 
 function readNextChar(ctxt) {
-    let ch = ctxt.pushbackChar;
-    if (ch) {
-        ctxt.pushbackChar = _;
-        return (ch);
-    } else if (ctxt.textPosition >= ctxt.textLength) {
+    if (ctxt.textPosition >= ctxt.textLength) {
         if (ctxt.eos)
             throw EndOfStream(ctxt.currentPoint);
         if ((ctxt.text = ctxt.fnRead()) == null) {
@@ -270,8 +252,6 @@ function readNextChar(ctxt) {
 }
 
 function peekNextChar(ctxt) {
-    if (ctxt.pushbackChar)
-        return (ctxt.pushbackChar);
     if (ctxt.textPosition >= ctxt.textLength) {
         if (ctxt.eos || (ctxt.text = ctxt.fnRead()) == null) {
             ctxt.eos = true;
@@ -284,12 +264,6 @@ function peekNextChar(ctxt) {
     }
     return (ctxt.text[ctxt.textPosition]);
 }
-
-function pushbackChar(ctxt, ch) {
-    if (ctxt.pushbackChar)
-        throw new Error('Attempting mulitple pushbacks');
-    ctxt.pushbackChar = ch;
-};
 
 function TokenInput(ctxt, chs, readPoint, isMatched = false) {
     let iPeek, iInput = -1;
