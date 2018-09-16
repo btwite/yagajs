@@ -1,60 +1,126 @@
 /*
  *  Dictionary: @file
  * 
- *  This module contains the behaviour for creating dictionaries and a dictionary hierachy.
+ *  This module contains the behaviour for creating a LoadedDictionary from one or more
+ *  Dictionary segments.
  *
- *  Yaga dictionaries contain the yaga immutable definitions. Dictionaries are arranged
- *  into a loosely coupled dependency hierachy with the root dictionary set to the yaga 
- *  core dictionary (which can also be extended and overwritten).
+ *  A LoadedDictionary is a loosely coupled dependency hierachy of Dictionaries with 
+ *  the root Dictionary segment set to the Yaga core dictionary definitions (which can 
+ *  also be extended and overwritten).
  *  Yaga instance initialisation allows the instance to be assigned a list of startup 
- *  dictionaries that will be typically loaded from an initialisation script of yaga 
- *  expressions. The list is assumed to be ordered with most significant dictionary
- *  first in the list. 
+ *  Dictionaries that will be typically loaded from an initialisation script of 
+ *  Yaga expressions. The list is assumed to be ordered with most significant dictionary
+ *  segment first in the list. 
  * 
- *  Each dictionary can contain a dependency list
+ *  Each Dictionary can contain a dependency list
  * 		(dictionaryDependsOn "source path" | ("source path" ...))
- *  that must be the first expression in the dictionary. If specified the dependencies
- *  will be processed recursively.
+ *  that must be the first expression in the Dictionary. If specified the 
+ *  dependencies will be processed recursively.
  * 
- *  Each yaga instance contains two dictionary spaces. The first is known as the Yaga
- *  Dictionary Space (YDS) and contains all loaded dictionaries folded into the space from
+ *  Each Yaga instance contains two dictionary spaces. The first is known as the Immutable
+ *  Dictionary Space (IDS) and contains all loaded segments folded into the space from
  *  least significant to most signicant, including allowance for dependencies. The second
- *  is the Local Dictionary Space (LDS) which inherits from the Yaga Dictionary Space and
- *  holds all new or updated dictionary definitions created for the yaga instance.
+ *  is the Mutable Dictionary Space (MDS) which inherits from the IDS and holds all new or 
+ *  updated dictionary definitions created during the life of the Yaga instance.
  * 
- *  Dictionary loading makes use of the YDS & LDS as follows:
+ *  The process of reading a Dictionary makes use of the IDS & MDS as follows:
  *  	1. Dictionary "foo" has dependencies of "bar" and "foobar"
- * 		2. If "bar" dictionary has not been loaded then recursively apply process to "bar"
- * 		3. If "foobar" has not been loaded then recursively apply process to "foobar"
- * 		4. Fold root dictionary(s) into the YDS. Note that root
- * 		   dictionaries may have dependencies.
- *      5. Recursively fold "foobar" dependent dictionaries into the YDS. Note that a
- *         dictionary may be referenced multiple times as a dependent however only the
+ * 		2. If "bar" has not been read then recursively apply process to "bar"
+ * 		3. If "foobar" dictionary has not been read then recursively apply process to "foobar"
+ * 		4. Fold root segment(s) into the IDS. Note that root dictionary may have dependencies.
+ *      5. Recursively fold "foobar" dependent segments into the IDS. Note that a
+ *         Dictionary segment may be referenced multiple times as a dependent however only the
  * 		   least significant reference is folded.
- * 		6. Fold "foobar" into YDS.
+ * 		6. Fold "foobar" into IDS.
  * 		7. Repeat for "bar"
- * 		8. Read, bind and evaluate the "foo". Definitions will be loaded into the 
- * 		   LDS.
- * 		9. Save the LDS as the binary dictionary representation for "foo".
+ * 		8. Read, bind and evaluate the "foo". Definitions will be loaded into the MDS.
+ * 		9. Save the MDS as the binary Dictionary representation for "foo".
  *  
- *  The above process is applied until all dictionaries have been resolved down to their
- *  binary form. Once this is complete a final fold is performed on the list of dictionaries
- *  assigned to the instance.
+ *  The above process is applied until all Dictionaries have been resolved down to their
+ *  binary form. Once this is complete a final fold is performed on the list of 
+ *  Dictionaries assigned to the Yaga instance.
  * 
- *  The script can also specify a name with the expression (dictionaryName "myDictionary").
+ *  The script can also specify a Dictionary name with the expression 
+ *  (dictionaryName "myDictionary"). The name is used to reference a specific Dictionary
+ *  entry. For example the symbol 'foo:bar' will attempt to bind to the entry 'bar' in
+ *  the Dictionary named 'foo'. If this fails then a lookup will attempt to bind to
+ *  the 'foo:bar' symbol in the overall LoadedDictionary space.
+ *  Note that a symbol contains multiple ':' characters then the lookup will process
+ *  these left to right.
+ * 
+ *  The LoadedDictionary constructor accepts a descriptor object of the following format:
+ * 		{
+ * 			coreDictionary: <fully qualified path>,
+ * 			dictionary: <fully qualified path>,
+ * 			dictionaries: [ <fully qualified path>, ... ],
+ * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>)
+ * 		}
  */
 "use strict";
 
-var yaga, _dictionary, _core;
-var _dictionaries = {};
+let _ = undefined;
 
-module.exports = {
-	load: _loadDictionary,
-	core: () => _core,
-	Initialise: (y) => {
-		yaga = yaga ? yaga : y;
+var Yaga = require('../Yaga');
+
+_dictionary = {
+	typeName: 'Dictionary',
+	name: undefined,
+	parent: undefined,
+	_space: undefined,
+	isaDictionary: true,
+	setDependsOn: _setDependsOn,
+	setName: _setName,
+	define: _define,
+	redefine: _redefine,
+	find: _find,
+	findString: _findString,
+	print: _print,
+	printAll: _printAll,
+}
+
+var LoadedDictionary = Yaga.Influence({
+	name: 'LoadedDictionary',
+	prototype: {
+		thisArg_: {
+			dictionaryDependsOn,
+			dictionaryName,
+		}
 	},
-};
+	constructor(oDesc) {
+		validateDescriptor(oDesc);
+	}
+});
+
+module.exports = Object.freeze({
+	LoadedDictionary: LoadedDictionary.create,
+});
+
+function validateDescriptor(oDesc) {
+	Yaga.dispatchPropertyHandlers(oDesc, {
+		coreDictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
+		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
+		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
+		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
+		_other_: prop =>
+			throw new Error(`Invalid descriptor property '${prop}'`);
+	});
+	if (oDesc.dictionary && oDesc.dictionaries)
+		throw new Error(`Can only have one of either 'dictionary' or 'dictionaries'`);
+}
+
+function validateTypedProperty(oDesc, prop, type) {
+	if (typeof oDesc[prop] !== type)
+		throw new Error(`Descriptor property '${prop}' must be a '${type}'`);
+}
+
+function validateTypedArrayProperty(oDesc, prop, type) {
+	if (!Array.isArray(oDesc[prop]))
+		throw new Error(`Descriptor property '${prop}' must be an Array of '${type}'`);
+	oDesc[prop].forEach(val => {
+		if (typeof val !== type)
+			throw new Error(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
+	});
+}
 
 function _loadDictionary(yi, optPath) {
 	_getCoreDictionary(yi);
@@ -104,22 +170,6 @@ function _createDictionaryInstance(parentDict) {
 	return (dict);
 }
 
-
-_dictionary = {
-	typeName: 'Dictionary',
-	name: undefined,
-	parent: undefined,
-	_space: undefined,
-	isaDictionary: true,
-	setDependsOn: _setDependsOn,
-	setName: _setName,
-	define: _define,
-	redefine: _redefine,
-	find: _find,
-	findString: _findString,
-	print: _print,
-	printAll: _printAll,
-}
 
 function _define(sym, e) {
 	if (e.value() === undefined) {

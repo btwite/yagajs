@@ -165,6 +165,11 @@ const None = '.none.';
 const Anonymous = '<anonymous>';
 const FreezeProp = true;
 
+const FreezeExclusions = {
+	private: true,
+	protected: true
+}
+
 const HarmonizerDefaults = {
 	prototype: Most,
 	static: None,
@@ -197,9 +202,46 @@ function Influence(oDesc) {
 	Object.freeze(oInf.create);
 	freezeProperties(oInf);
 	InfCreators.set(oInf.create, oInf);
-	if (oInf.static && oInf.static.isScoped)
-		newScopesObject(oInf.static.object, oInf.static);
+	if (!oInf.private) oInf.private = getDefaultPrivateFn(oInf);
+	if (!oInf.protected) oInf.protected = getDefaultProtectedFn(oInf);
+	oInf.public = o => o[SymPublic] || o;
+	if (oInf.static) {
+		oInf.static.public = oInf.public;
+		if (!oInf.static.private) oInf.static.private = getDefaultStaticPrivateFn(oInf);
+		if (!oInf.static.protected) oInf.static.protected = getDefaultStaticProtectedFn(oInf);
+		if (oInf.static.isScoped)
+			newScopesObject(oInf.static.object, oInf.static);
+		freezeProperties(oInf.static);
+	}
 	return (oInf);
+}
+
+function getDefaultPrivateFn(oInf) {
+	return oPublic => {
+		lateAllocatePrivateScope(oInf, oPublic); // Will replace oInf.private
+		return (oInf.private(oPublic));
+	}
+}
+
+function getDefaultProtectedFn(oInf) {
+	return oPublic => {
+		let inf = lateAllocateProtectedScope(oInf, oPublic); // Will replace oInf.protected
+		return (inf.protected(oPublic));
+	}
+}
+
+function getDefaultStaticPrivateFn(oInf) {
+	return oPublic => {
+		lateAllocateStaticPrivateScope(oInf, oPublic); // Will replace oInf.static.private
+		return (oInf.static.private(oPublic));
+	}
+}
+
+function getDefaultStaticProtectedFn(oInf) {
+	return oPublic => {
+		let inf = lateAllocateStaticProtectedScope(oInf, oPublic); // Will replace oInf.static.protected
+		return (inf.static.protected(oPublic));
+	}
 }
 
 function compositionInfluence(oInf, oDesc) {
@@ -225,11 +267,14 @@ function compositionInfluence(oInf, oDesc) {
 	applyDefaultStaticHarmonizer(oInf, 'protectedPrototype', harmDefaults.static);
 	makeCreator(oInf, applyDefaultConstructorHarmonizer(oInf, harmDefaults.constructor));
 	if (oInf.static) {
-		oInf.temp.influences.forEach(inf => {
-			if (inf.static && inf.static.isScoped)
+		for (let i = 0; i < oInf.temp.influences.length; i++) {
+			let inf = oInf.temp.influences[i];
+			if (inf.static && inf.static.isScoped) {
 				oInf.static.isScoped = true;
-		});
-		newScopesObject(oInf.static.object, oInf.static);
+				getScopeID(oInf.static);
+				break;
+			}
+		}
 		Object.seal(oInf.static.object);
 		copyStaticPropsToCreator(oInf);
 	}
@@ -347,7 +392,7 @@ function harmonizeProtected(oInf, sSeg, oDesc) {
 }
 
 function harmonizeConstructor(oInf, oDesc) {
-	defineProperty(oInf, 'constructor', _harmonizeConstructor(oInf, oDesc.constructor));
+	defineProperty(oInf, 'constructor', _harmonizeConstructor(oInf, oDesc));
 }
 
 function _harmonizeConstructor(oInf, vHarm) {
@@ -371,7 +416,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			} [vHarm] || harmonizers.influenceProperty)(...args);
+			}[vHarm] || harmonizers.influenceProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
@@ -380,7 +425,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
 					[Most]: harmonizers.mostAllFunctions,
-				} [vHarm[0]] || err)(...args);
+				}[vHarm[0]] || err)(...args);
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
@@ -389,7 +434,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return (harmonizers.influenceProperty(...args));
 			return (harmonizers.func(...args));
 		},
-	} [typeof vHarm] || err)(prop, vHarm);
+	}[typeof vHarm] || err)(prop, vHarm);
 }
 
 function processComposition(oInf, oDesc) {
@@ -637,6 +682,76 @@ function copyProtectedPrototypeProps(oInf, oSrc) {
 	Object.seal(oInf.protectedPrototype);
 }
 
+function lateAllocatePrivateScope(oInf, oTgt) {
+	let oRoot = getRootInfluence(oInf, oTgt);
+	getScopeID(oRoot);
+	if (!oInf.privatePrototype) {
+		allocatePrivateScope(oInf);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocated one yet
+		freezeProperties(oInf); // Freeze the properties that have been allocated
+	}
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.validScopeIDs[oInf.scopeID])
+		oRoot.validScopeIDs[oInf.scopeID] = true;
+	return (oRoot);
+}
+
+function lateAllocateProtectedScope(oInf, oTgt) {
+	let oRoot = getRootInfluence(oInf, oTgt); // Must apply protected initialisation to composite not defining prototype influence
+	if (!oRoot.protectedPrototype) {
+		allocateProtectedScope(oRoot);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocate one yet
+		freezeProperties(oRoot); // Freeze the properties that have been allocated
+	}
+	if (oRoot !== oInf && !oInf.protectedPrototype) {
+		// This is definitely a composite situation so will need to ensure that the composable also has
+		// a protected space for the methods to work with our composite
+		allocateProtectedScope(oInf);
+		freezeProperties(oInf); // Freeze the properties that have been allocated
+	}
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.validScopeIDs[oInf.scopeID])
+		oRoot.validScopeIDs[oInf.scopeID] = true;
+	return (oRoot);
+}
+
+function lateAllocateStaticPrivateScope(oInf, oTgt) {
+	let oRoot = getStaticRootInfluence(oInf, oTgt); // Note that 'oRoot' is the influence
+	getScopeID(oRoot.static);
+	if (!oInf.static.privatePrototype) {
+		allocatePrivateStaticScope(oInf);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot.static); // Need a scopes object as constructor hasn't allocated one yet
+		freezeProperties(oInf.static); // Freeze the properties that have been allocated
+	}
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.static.validScopeIDs[oInf.static.scopeID])
+		oRoot.static.validScopeIDs[oInf.static.scopeID] = true;
+	return (oRoot);
+}
+
+function lateAllocateStaticProtectedScope(oInf, oTgt) {
+	let oRoot = getStaticRootInfluence(oInf, oTgt); // Must apply protected initialisation to composite not defining prototype influence
+	if (!oRoot.static.protectedPrototype) {
+		allocateProtectedStaticScope(oRoot);
+		if (!Scopes.get(oTgt))
+			newScopesObject(oTgt, oRoot.static); // Need a scopes object as constructor hasn't allocate one yet
+		freezeProperties(oRoot.static); // Freeze the properties that have been allocated
+	}
+	if (oRoot !== oInf && !oInf.static.protectedPrototype) {
+		// This is definitely a composite situation so will need to ensure that the composable also has
+		// a protected space for the methods to work with our composite
+		allocateProtectedStaticScope(oInf);
+		freezeProperties(oInf); // Freeze the properties that have been allocated
+	}
+	// May have to add a scopeID to our validated IDs list for a composable.
+	if (!oRoot.static.validScopeIDs[oInf.static.scopeID])
+		oRoot.static.validScopeIDs[oInf.static.scopeID] = true;
+	return (oRoot);
+}
+
 function allocatePrivateScope(oInf) {
 	_allocatePrivateScope(oInf, _, defineConstant({}, 'bindThis', Yaga.thisArg(bindThis), false));
 }
@@ -655,24 +770,35 @@ function allocateProtectedStaticScope(oInf) {
 
 function _allocatePrivateScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
-	if (oTgt.private) return;
+	if (oTgt.privatePrototype) return;
 	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
 	let scopeID = getScopeID(oTgt);
 	let id = (sTgt || 'inf') + '.private:' + scopeID;
-	if (!oTgt.public) oTgt.public = o => o[SymPublic] || o;
-	oTgt.private = _allocateScope(scopeID, id, 'private', () => oTgt.privatePrototype);
+	defineConstant(oTgt, 'private',
+		_allocateScope(scopeID, id, 'private', () => oTgt.privatePrototype));
 	oTgt.privatePrototype = oInit;
 }
 
 function _allocateProtectedScope(oInf, sTgt, oInit) {
 	let oTgt = (sTgt && oInf[sTgt]) || oInf;
-	if (oTgt.protected) return;
+	if (oTgt.protectedPrototype) return;
 	if (!oTgt.isScoped) oTgt.isScoped = true; // Must test as could be frozen
 	let scopeID = getScopeID(oTgt);
 	let id = (sTgt || 'inf') + '.protected';
-	if (!oTgt.public) oTgt.public = o => o[SymPublic] || o;
-	oTgt.protected = _allocateScope(scopeID, id, 'protected', oScopes => oScopes[SymRoot].protectedPrototype);
+	defineConstant(oTgt, 'protected',
+		_allocateScope(scopeID, id, 'protected',
+			(oScopes, oPublic) => _getProtectedPrototype(oScopes, oInf, oPublic, sTgt)));
 	oTgt.protectedPrototype = oInit;
+}
+
+function _getProtectedPrototype(oScopes, oInf, oPublic, sTgt) {
+	let oProt = oScopes[SymRoot].protectedPrototype;
+	if (oProt) return (oProt);
+	if (sTgt)
+		lateAllocateStaticProtectedScope(oInf, oPublic);
+	else
+		lateAllocateProtectedScope(oInf, oPublic);
+	return (oScopes[SymRoot].protectedPrototype);
 }
 
 function _allocateScope(scopeID, id, ty, fProt) {
@@ -683,7 +809,7 @@ function _allocateScope(scopeID, id, ty, fProt) {
 		let oScope = oScopes[id];
 		if (oScope)
 			return (oScope);
-		oScope = oScopes[id] = Object.create(fProt(oScopes));
+		oScope = oScopes[id] = Object.create(fProt(oScopes, oPublic));
 		oScope[SymPublic] = oPublic;
 		return (oScope);
 	};
@@ -742,7 +868,6 @@ function getRootInfluence(oInf, oTgt) {
 	// scope space must apply to the prototype influence for the private scope and
 	// to the composite for the protected scope. In either case the root associated
 	// with the target instance must match the owning influence.
-	// Note this code is never called for the static space.
 	let tProt = Object.getPrototypeOf(oTgt);
 	if (Object.is(tProt, oInf.prototype))
 		return (oInf); // Is local to a prototye influence so nothing to do
@@ -751,6 +876,20 @@ function getRootInfluence(oInf, oTgt) {
 	for (let i = 0; i < oInf.compositeMembership.length; i++) {
 		let inf = InfCreators.get(oInf.compositeMembership[i]);
 		if (tProt === inf.prototype)
+			return (inf);
+	}
+	throw new Error('INTERNAL: Cannot find a root influence');
+}
+
+function getStaticRootInfluence(oInf, object) {
+	// Static version where the target is the static.object.
+	if (oInf.static && oInf.static.object === object)
+		return (oInf); // Is local to a prototye influence so nothing to do
+
+	// Must be a composite so need to locate the composite influence
+	for (let i = 0; i < oInf.compositeMembership.length; i++) {
+		let inf = InfCreators.get(oInf.compositeMembership[i]);
+		if (inf.static && inf.static.object === object)
 			return (inf);
 	}
 	throw new Error('INTERNAL: Cannot find a root influence');
@@ -765,37 +904,13 @@ function applyInitialisers(oInf, oTgt, oInit) {
 }
 
 function _applyPrivateInitialisers(oInf, oTgt) {
-	let oRoot = getRootInfluence(oInf, oTgt);
-	if (!oInf.private) {
-		allocatePrivateScope(oInf);
-		if (!Scopes.get(oTgt))
-			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocated one yet
-		freezeProperties(oInf); // Freeze the properties that have been allocated
-	}
-	// May have to add a scopeID to our validated IDs list for a composable.
-	if (!oRoot.validScopeIDs[oInf.scopeID])
-		oRoot.validScopeIDs[oInf.scopeID] = true;
+	lateAllocatePrivateScope(oInf, oTgt);
 	_applyInitialisers(oInf, oInf.private(oTgt), oTgt.private_);
 	delete oTgt.private_;
 }
 
 function _applyProtectedInitialisers(oInf, oTgt) {
-	let oRoot = getRootInfluence(oInf, oTgt); // Must apply protected initialisation to composite not defining prototype influence
-	if (!oRoot.protected) {
-		allocateProtectedScope(oRoot);
-		if (!Scopes.get(oTgt))
-			newScopesObject(oTgt, oRoot); // Need a scopes object as constructor hasn't allocate one yet
-		freezeProperties(oRoot); // Freeze the properties that have been allocated
-	}
-	if (oRoot !== oInf && !oInf.protected) {
-		// If this is definitely a composite situation so will need to ensure that the composable also has
-		// a protected space for the methods to work with our composite
-		allocateProtectedScope(oInf);
-		freezeProperties(oInf); // Freeze the properties that have been allocated
-	}
-	// May have to add a scopeID to our validated IDs list for a composable.
-	if (!oRoot.validScopeIDs[oInf.scopeID])
-		oRoot.validScopeIDs[oInf.scopeID] = true;
+	let oRoot = lateAllocateProtectedScope(oInf, oTgt);
 	_applyInitialisers(oRoot, oRoot.protected(oTgt), oTgt.protected_);
 	delete oTgt.protected_;
 }
@@ -946,9 +1061,10 @@ function _cloneArray(ai) {
 }
 
 function freezeProperties(o) {
+
 	Object.getOwnPropertySymbols(o).forEach(prop => {
 		let desc = Object.getOwnPropertyDescriptor(o, prop);
-		if (!o.desc.configurable)
+		if (!o.desc.configurable || FreezeExclusions[prop])
 			return;
 		desc.configurable = false;
 		if (!o.get && !o.set)
@@ -1114,7 +1230,7 @@ function getInternalHarmonizers(oInf, fPropDesc) {
 
 	function func(sProp, f) {
 		let desc = f.call(this, sProp);
-		if (typeof desc !== 'object' || (!desc.value && !(desc.get || desc.set)))
+		if (typeof desc !== 'object' || (!desc.value && !desc.get && !desc.set))
 			desc = {
 				value: desc,
 				enumerable: true

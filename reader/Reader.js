@@ -26,10 +26,9 @@ var Reader = Yaga.Influence({
         }
     },
     constructor(rt, options) {
-        rt = ReaderTable(rt);
         return {
             private_: {
-                readerTable: rt,
+                readerTable: ReaderTable(rt),
                 options: options,
                 context: _,
                 contextStack: []
@@ -58,32 +57,29 @@ var ReaderContext = Yaga.Influence({
         return {
             reader: r,
             fnRead: f,
+            readerTable: ps.readerTable,
             readerTableStack: [],
+            state: statePrototypes(this),
 
             sourceName: s,
             line: 0,
             column: 0,
+            tabCount: ps.options && ps.options.tabCount ? ps.options.tabCount : 4,
             expression: _,
             exprStack: [],
             curToken: _,
             curInput: _,
             inputStream: [],
+            charBuf: Yaga.StringBuilder(),
 
             lastReadPoint: _,
+            parentPoint: ReadPoint.default,
             parentPoints: [],
 
             text: _,
             textPosition: 0,
             textLength: 0,
             eos: false,
-
-            do_: {
-                parentPoint: () => ReadPoint.default,
-                charBuf: () => Yaga.StringBuilder(),
-                readerTable: () => ps.readerTable,
-                state: () => statePrototypes(this),
-                tabCount: () => ps.options && ps.options.tabCount ? ps.options.tabCount : 4,
-            },
         }
     },
 });

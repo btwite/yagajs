@@ -6,10 +6,11 @@
 
 let yaga = require('./Yaga');
 
-test();
+//test();
 //testProperties();
 //testExceptions();
 //testReaderTable();
+testLatePrivateProtectedAccess();
 //testComposition();
 //testReadPoint();
 //testInfluence();
@@ -123,6 +124,98 @@ function testReaderTable() {
     log(rt.match('++'));
     log(rt.match('+-'));
     log(rt.match('-aa-xyz'));
+}
+
+function testLatePrivateProtectedAccess() {
+    let inf1 = yaga.Influence({
+        name: 'inf1',
+        prototype: {
+            get x() {
+                return (inf1.private(this).x);
+            },
+            get y() {
+                return (inf1.protected(this).y);
+            },
+        },
+        constructor() {
+            inf1.private(this).x = 1;
+            inf1.protected(this).y = 2;
+        },
+        static: {
+            set z(v) {
+                inf1.static.private(this).z = v;
+                inf1.static.protected(this).w = v * 2;
+            },
+            get z() {
+                return (inf1.static.private(this).z);
+            },
+            get w() {
+                return (inf1.static.protected(this).w);
+            }
+        }
+    });
+
+    let o1 = inf1.create();
+    inf1.create.z = 3000;
+    log(o1.x, o1.y, inf1.create.z, inf1.create.w);
+
+    let inf2 = yaga.Influence({
+        name: 'inf2',
+        prototype: {
+            get x() {
+                return (inf2.private(this).x);
+            },
+            get y() {
+                return (inf2.protected(this).y);
+            },
+        },
+        constructor() {
+            inf2.private(this).x = 1000000;
+            inf2.protected(this).y = 2000000;
+        },
+        static: {
+            set z(v) {
+                inf2.static.private(this).z = v;
+                inf2.static.protected(this).w = v * 10;
+            },
+            get z() {
+                return (inf2.static.private(this).z);
+            },
+            get w() {
+                return (inf2.static.protected(this).w);
+            }
+        }
+    });
+
+    let inf3 = yaga.Influence({
+        name: 'inf3',
+        composition: [inf1, inf2],
+        harmonizers: {
+            prototype: {
+                x: inf1,
+                x1() {
+                    return (this.getProperty(inf2, 'x'))
+                },
+                y: inf2
+            },
+            constructor: ['.least.'],
+            static: {
+                z: inf1,
+                z1() {
+                    return (this.getProperty(inf2, 'z'))
+                },
+                w: inf1
+            }
+        }
+    });
+    let o3 = inf3.create();
+    log(o3.x, o3.x1, o3.y, inf3.protected(o3));
+    inf3.create.z = 100;
+    inf3.create.z1 = 200;
+    inf1.static.protected(inf3.static.object).w = 10000;
+    log(inf3.create.z, inf3.create.z1, inf3.create.w);
+    log(inf3.static.private(inf3.static.object), inf3.static.protected(inf3.static.object));
+    log(inf1.static.private(inf3.static.object), inf2.static.private(inf3.static.object));
 }
 
 function testComposition() {
