@@ -9,6 +9,10 @@ let _ = undefined;
 module.exports = {
     modules: {
         Character: _,
+        Utilities: _,
+        Replicate: _,
+        File: _,
+        Scopes: _,
         Influence: mod => mod.Influence,
         StringBuilder: mod => mod.StringBuilder,
         Exception: mod => mod.Exception,

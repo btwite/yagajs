@@ -50,11 +50,22 @@
  * 
  *  The LoadedDictionary constructor accepts a descriptor object of the following format:
  * 		{
- * 			coreDictionary: <fully qualified path>,
- * 			dictionary: <fully qualified path>,
- * 			dictionaries: [ <fully qualified path>, ... ],
- * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>)
+ * 			coreDictionary: <path>,
+ * 			dictionary: <path>,
+ * 			dictionaries: [ <path>, ... ],
+ * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>),
+ * 			modules: {
+ * 				<modTag>: module object | module Name | undefined,
+ * 				...
+ * 			}
  * 		}
+ * 
+ *  The dictionary path can take the following forms:
+ * 		1. Fully qualified path name.
+ * 		2. Module relative path of the form: module://<modTag>/...
+ * 		   If the module specification is a string then this will be assumed to be
+ * 		   a module that can be loaded using 'require'. The <modTag> entry is
+ * 		   optional if the tag is the actual name to be required.
  */
 "use strict";
 
@@ -101,8 +112,10 @@ function validateDescriptor(oDesc) {
 		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
 		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
-		_other_: prop =>
+		modules: () => validateModules(oDesc.modules),
+		_other_: prop => {
 			throw new Error(`Invalid descriptor property '${prop}'`);
+		}
 	});
 	if (oDesc.dictionary && oDesc.dictionaries)
 		throw new Error(`Can only have one of either 'dictionary' or 'dictionaries'`);
@@ -120,6 +133,10 @@ function validateTypedArrayProperty(oDesc, prop, type) {
 		if (typeof val !== type)
 			throw new Error(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
 	});
+}
+
+function validateModules(oMods) {
+	Object.keys(oMods).forEach()
 }
 
 function _loadDictionary(yi, optPath) {

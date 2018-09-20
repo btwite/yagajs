@@ -153,11 +153,9 @@ Object.freeze(Influence);
 const Registry = new Map(); // Registry of well known Influences
 const InfCreators = new WeakMap(); // Map of Influence creators to Influence objects
 const Scopes = new WeakMap(); // Map of scope objects to public influence instances
-const SymPublic = Symbol.for('PUBLIC');
-const SymProtected = Symbol.for('PROTECTED');
-const SymPrivate = Symbol.for('PRIVATE');
-const SymValidIDs = Symbol.for('VALID:SCOPEIDS')
-const SymRoot = Symbol.for('ROOT');
+const SymPublic = Symbol.for('Public');
+const SymValidIDs = Symbol.for('ValidScopeIDS')
+const SymRoot = Symbol.for('Root');
 const SymBindMap = Symbol.for('BindMap');
 const Most = '.most.';
 const Least = '.least.';
@@ -176,7 +174,7 @@ const HarmonizerDefaults = {
 	constructor: None
 };
 
-var ScopeID = 0; // Scope ID allocate to each private scope
+var ScopeID = 0; // Scope ID allocated to each prototype and static definition
 
 function Influence(oDesc) {
 	if (typeof oDesc !== 'object')
@@ -190,6 +188,7 @@ function Influence(oDesc) {
 	defineConstant(oInf.prototype, 'clone', Yaga.thisArg(clone), false);
 	defineConstant(oInf.prototype, 'assign', Yaga.thisArg(assign), false);
 	defineConstant(oInf.prototype, 'bindThis', Yaga.thisArg(bindThis), false);
+	defineConstant(oInf.prototype, 'isanInfluenceInstance', true, true);
 	if (oDesc.hasOwnProperty('prototype'))
 		prototypeInfluence(oInf, oDesc);
 	else if (oDesc.hasOwnProperty('composition'))
@@ -416,7 +415,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			}[vHarm] || harmonizers.influenceProperty)(...args);
+			} [vHarm] || harmonizers.influenceProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
@@ -425,7 +424,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
 					[Most]: harmonizers.mostAllFunctions,
-				}[vHarm[0]] || err)(...args);
+				} [vHarm[0]] || err)(...args);
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
@@ -434,7 +433,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return (harmonizers.influenceProperty(...args));
 			return (harmonizers.func(...args));
 		},
-	}[typeof vHarm] || err)(prop, vHarm);
+	} [typeof vHarm] || err)(prop, vHarm);
 }
 
 function processComposition(oInf, oDesc) {
@@ -993,8 +992,8 @@ function copy(oInst) {
 	return (_copyClone(oInst, o => _copy(o)))
 }
 
-function clone(oInst) {
-	return (_copyClone(oInst, o => _clone(o)))
+function clone(oInst, cloneMap) {
+	return (_copyClone(oInst, o => _clone(o, undefined, cloneMap)))
 }
 
 function assign(oInst) {
@@ -1021,12 +1020,16 @@ function _copy(oSrc, oTgt) {
 	return (oTgt);
 }
 
-function _clone(oSrc, oTgt) {
+function _clone(oSrc, oTgt, cloneMap) {
+	if (!cloneMap) cloneMap = new Map();
+	else if (cloneMap.has(oSrc))
+		return (cloneMap.get(oSrc));
 	if (!oTgt)
 		oTgt = Object.create(Object.getPrototypeOf(oSrc));
+	cloneMap.set(oSrc, oTgt);
 	let descs = Object.getOwnPropertyDescriptors(oSrc);
-	Object.getOwnPropertyNames(descs).forEach(prop => _cloneDescriptor(descs[prop]));
-	Object.getOwnPropertySymbols(descs).forEach(sym => _cloneDescriptor(descs[sym]));
+	Object.getOwnPropertyNames(descs).forEach(prop => _cloneDescriptor(descs[prop], cloneMap));
+	Object.getOwnPropertySymbols(descs).forEach(sym => _cloneDescriptor(descs[sym], cloneMap));
 	Object.defineProperties(oTgt, descs);
 	return (oTgt);
 }
@@ -1038,25 +1041,23 @@ function _assign(oSrc, oTgt) {
 	return (oTgt);
 }
 
-function _cloneDescriptor(desc) {
+function _cloneDescriptor(desc, cloneMap) {
 	if (desc.value)
-		desc.value = _cloneValue(desc.value);
+		desc.value = _cloneValue(desc.value, cloneMap);
 	return (desc);
 }
 
-function _cloneValue(v) {
-	if (v) {
-		if (Array.isArray(v))
-			v = _cloneArray(v);
-		else if (typeof v === 'object')
-			v = _clone(v);
-	}
+function _cloneValue(v, cloneMap) {
+	if (Array.isArray(v))
+		return (_cloneArray(v, cloneMap));
+	else if (typeof v === 'object')
+		return (clone(v, cloneMap));
 	return (v);
 }
 
-function _cloneArray(ai) {
+function _cloneArray(ai, cloneMap) {
 	let ao = [];
-	ai.forEach(v => ao.push(_cloneValue(v)));
+	ai.forEach(v => ao.push(_cloneValue(v, cloneMap)));
 	return (ao);
 }
 

@@ -10,7 +10,9 @@ let yaga = require('./Yaga');
 //testProperties();
 //testExceptions();
 //testReaderTable();
-testLatePrivateProtectedAccess();
+testReplicate();
+//testScopes();
+//testLatePrivateProtectedAccess();
 //testComposition();
 //testReadPoint();
 //testInfluence();
@@ -124,6 +126,48 @@ function testReaderTable() {
     log(rt.match('++'));
     log(rt.match('+-'));
     log(rt.match('-aa-xyz'));
+}
+
+function testReplicate() {
+    let o = {
+        a: 1,
+        b: 2,
+        c: 3
+    };
+    let o1 = yaga.copy(o);
+    log(o, o1);
+
+    o.d = {
+        x: 100,
+        y: 200,
+        z: 300
+    };
+    o1 = yaga.clone(o);
+    o.d.z = 400;
+    log(o, o1);
+
+    let Private = yaga.createPrivateScope();
+    Private(o).array = [1, 2, 3, 4, 5, 6];
+    o1 = yaga.clone(o);
+    Private(o1).array.push(7);
+    log(o, Private(o));
+    log(o1, Private(o1));
+}
+
+function testScopes() {
+    let o = {
+        a: 1,
+        b: 2
+    };
+    let Private = yaga.createPrivateScope();
+    Private(o).c = 100;
+    let Private1 = yaga.createPrivateScope();
+    Private1(o).c = 200;
+    log(Private(o), Private1(o));
+    let Private2 = yaga.createPrivateScope({
+        d: 1.1
+    });
+    log(Private2(o), Private2(o).d);
 }
 
 function testLatePrivateProtectedAccess() {
