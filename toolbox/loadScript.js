@@ -10,9 +10,12 @@ module.exports = {
     modules: {
         Character: _,
         Utilities: _,
-        Replicate: _,
         File: _,
         Scopes: _,
+        Replicate: mod => ({
+            copy: mod.copy,
+            clone: mod.clone
+        }),
         Influence: mod => mod.Influence,
         StringBuilder: mod => mod.StringBuilder,
         Exception: mod => mod.Exception,

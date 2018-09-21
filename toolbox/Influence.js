@@ -143,9 +143,11 @@
 
 var _ = undefined;
 var Yaga = require('../Yaga');
+var mods;
 
 module.exports = Object.freeze({
-	Influence
+	Influence,
+	Initialise: m => mods = m,
 });
 Influence.lookup = lookupRegistry;
 Object.freeze(Influence);
@@ -947,17 +949,18 @@ function _applyInitialisers(oInf, oTgt, oInit) {
 }
 
 function copyInitialisers(oInf, oTgt) {
+	let cloneMap = new Map();
 	if (oInf.privateInitialiser) {
 		let o = oInf.private(oTgt);
-		_clone(oInf.privateInitialiser, o);
+		mods.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
 	}
 	if (oInf.protectedInitialiser) {
 		// Don't have a problem here with composite protected space. This scopes environment 
 		// has already been setup correctly by the composite influence code.
 		let o = oInf.protected(oTgt);
-		_clone(oInf.protectedInitialiser, o);
+		mods.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
 	}
-	_clone(oInf.publicInitialiser, oTgt);
+	mods.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
 }
 
 function lookupRegistry(name) {
@@ -989,15 +992,15 @@ function bindThis(oInst, sProp) {
 }
 
 function copy(oInst) {
-	return (_copyClone(oInst, o => _copy(o)))
+	return (_copyClone(oInst, o => mods.Replicate.copyObject(o)))
 }
 
 function clone(oInst, cloneMap) {
-	return (_copyClone(oInst, o => _clone(o, undefined, cloneMap)))
+	return (_copyClone(oInst, o => mods.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
 }
 
 function assign(oInst) {
-	return (_copyClone(oInst, o => _assign(o)))
+	return (_copyClone(oInst, o => Object.assign(Object.create(Object.getPrototypeOf(o)), o)));
 }
 
 function _copyClone(oInst, fCopy) {
@@ -1011,54 +1014,6 @@ function _copyClone(oInst, fCopy) {
 		Scopes.set(oPublic, newScopes)
 	}
 	return (oPublic);
-}
-
-function _copy(oSrc, oTgt) {
-	if (!oTgt)
-		oTgt = Object.create(Object.getPrototypeOf(oSrc));
-	Object.defineProperties(oTgt, Object.getOwnPropertyDescriptors(oSrc));
-	return (oTgt);
-}
-
-function _clone(oSrc, oTgt, cloneMap) {
-	if (!cloneMap) cloneMap = new Map();
-	else if (cloneMap.has(oSrc))
-		return (cloneMap.get(oSrc));
-	if (!oTgt)
-		oTgt = Object.create(Object.getPrototypeOf(oSrc));
-	cloneMap.set(oSrc, oTgt);
-	let descs = Object.getOwnPropertyDescriptors(oSrc);
-	Object.getOwnPropertyNames(descs).forEach(prop => _cloneDescriptor(descs[prop], cloneMap));
-	Object.getOwnPropertySymbols(descs).forEach(sym => _cloneDescriptor(descs[sym], cloneMap));
-	Object.defineProperties(oTgt, descs);
-	return (oTgt);
-}
-
-function _assign(oSrc, oTgt) {
-	if (!oTgt)
-		oTgt = Object.create(Object.getPrototypeOf(oSrc));
-	Object.assign(oTgt, oSrc);
-	return (oTgt);
-}
-
-function _cloneDescriptor(desc, cloneMap) {
-	if (desc.value)
-		desc.value = _cloneValue(desc.value, cloneMap);
-	return (desc);
-}
-
-function _cloneValue(v, cloneMap) {
-	if (Array.isArray(v))
-		return (_cloneArray(v, cloneMap));
-	else if (typeof v === 'object')
-		return (clone(v, cloneMap));
-	return (v);
-}
-
-function _cloneArray(ai, cloneMap) {
-	let ao = [];
-	ai.forEach(v => ao.push(_cloneValue(v, cloneMap)));
-	return (ao);
 }
 
 function freezeProperties(o) {

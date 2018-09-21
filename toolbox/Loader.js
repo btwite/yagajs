@@ -28,7 +28,7 @@
  *  Notes:
  * 		1. Each module export object can contain an 'Initialise' function that is called
  * 		   after the Loader has required each module. This function is passed the completed
- * 		   package exports object.
+ * 		   package modules and exports object.
  * 		2. Each module export object can contain a 'PostInitialise' function that is called
  * 		   after each module has been initialised. This permits package modules to perform
  * 		   additional initialisation that requires access to module services.
@@ -86,13 +86,13 @@ function Loader(oDesc, oInit) {
 	/**
 	 * Initialise each module if they have provided an Initialise method.
 	 */
-	runInitPhase(mods, 'Initialise', exps, mods);
+	runInitPhase(mods, 'Initialise', mods, exps);
 	/**
 	 * Initialise each module if they have provided a PostInitialise method.
 	 * Allows modules to run initialisation processes that require
 	 * access to other module services not just the module reference.
 	 */
-	runInitPhase(mods, 'PostInitialise');
+	runInitPhase(mods, 'PostInitialise', mods, exps);
 
 	return (exps);
 }

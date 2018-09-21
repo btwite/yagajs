@@ -10,7 +10,7 @@ let yaga = require('./Yaga');
 //testProperties();
 //testExceptions();
 //testReaderTable();
-testReplicate();
+//testReplicate();
 //testScopes();
 //testLatePrivateProtectedAccess();
 //testComposition();

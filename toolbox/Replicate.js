@@ -10,6 +10,8 @@ var mods;
 module.exports = Object.freeze({
     copy,
     clone,
+    copyObject,
+    cloneObject,
     Initialise: m => mods = m
 });
 
@@ -24,13 +26,14 @@ function copy(o) {
 }
 
 function clone(o, cloneMap) {
+    if (!cloneMap)
+        cloneMap = new Map();
     if (Array.isArray(o))
-        return (cloneArray(o));
+        return (cloneArray(o, cloneMap));
     else if (typeof o !== 'object')
         return (o);
     if (o.isanInfluenceInstance)
-        return (o.clone());
-    if (!cloneMap) cloneMap = new Map();
+        return (o.clone(cloneMap));
     return (mods.Scopes.clone(o, cloneObject(o, cloneMap), cloneMap));
 }
 
@@ -40,10 +43,11 @@ function copyObject(o) {
     return (o1);
 }
 
-function cloneObject(o, cloneMap) {
+function cloneObject(o, cloneMap, o1) {
     if (cloneMap.has(o))
         return (cloneMap.get(o));
-    let o1 = Object.create(Object.getPrototypeOf(o));
+    if (!o1)
+        o1 = Object.create(Object.getPrototypeOf(o));
     cloneMap.set(o, o1);
     let descs = Object.getOwnPropertyDescriptors(o);
     Object.getOwnPropertyNames(descs).forEach(prop => cloneDescriptor(descs[prop], cloneMap));
