@@ -5,6 +5,8 @@
  */
 "use strict";
 
+var Path = require('path');
+
 module.exports = Object.freeze({
     resolvePath
 });
@@ -21,6 +23,10 @@ module.exports = Object.freeze({
  *                           A 'default' entry should be provided to handle cases where
  *                           we have a partial file spec and no 'require' or 'module' format
  *                           type.
+ *                           Descriptor can also hold aliases for 'require://' if the module
+ *                           name includes path elements.  Ex. './module'.
+ *                           A value of 'undefined' means that the 
+ *                           
  */
 function resolvePath(path, modDesc) {
     if (modDesc && typeof modDesc !== 'object')
@@ -33,10 +39,13 @@ function resolvePath(path, modDesc) {
 
     let tyName = _resolveSpecType(path, 'require://');
     if (tyName) {
-        let modPath = require.resolve(tyName);
+        let reqName = tyName;
+        if (modDesc && typeof modDesc[tyName] === 'string')
+            reqName = modDesc[tyName];
+        let modPath = require.resolve(reqName);
         if (!modPath)
             throw new Error(`Module '${tyName}' cannot be found`);
-        return (Path.dirname(modPath) + path.substr('require://'.length + tyName.length));
+        return (formResolvedPath(modPath, path.substr('require://'.length + tyName.length)));
     }
 
     tyName = _resolveSpecType(path, 'module://');
@@ -44,25 +53,35 @@ function resolvePath(path, modDesc) {
         if (!modDesc || !modDesc[tyName])
             throw new Error(`Module tag '${tyName}' not found in module descriptor object`);
         let modPath = modDesc[tyName];
-        return (Path.dirname(modPath) + path.substr('module://'.length + tyName.length));
+        if (typeof modPath === 'object' && modPath.filename)
+            modPath = modPath.filename;
+        if (typeof modPath !== 'string')
+            throw new Error(`Module or module path expected for '${tyName}'`);
+        return (formResolvedPath(modPath, path.substr('module://'.length + tyName.length)));
     }
 
-    // Will need a '_default_' descriptor entry for the module directory.
+    // Will need a 'default' descriptor entry for the module directory.
     if (!modDesc || !modDesc.default)
         throw new Error("Module tag 'default' not found in module descriptor object");
     let modPath = modDesc.default;
-    return (Path.dirname(modPath) + path.substr('module://'.length + tyName.length));
+    if (typeof modPath === 'object' && modPath.filename)
+        modPath = modPath.filename;
+    if (typeof modPath !== 'string')
+        throw new Error(`Module or module path expected for 'default'`);
+    return (formResolvedPath(modPath, path));
+}
 
-    if (sFile.includes(path.sep)) return (sFile);
-    let mod = optModule ? optModule : module;
-    return (path.dirname(mod.filename) + path.sep + sFile);
+function formResolvedPath(relFileName, suffix) {
+    if (suffix[0] !== '/')
+        suffix = '/' + suffix;
+    return (Path.normalize(Path.dirname(relFileName).replace(/\\/g, '/') + suffix));
 }
 
 function _resolveSpecType(path, ty) {
     let i = path.indexOf(ty);
     if (i !== 0)
         return (null);
-    let j = 'require://'.length,
+    let j = ty.length,
         k = path.indexOf('/', j);
     if (k <= j)
         throw new Error('Missing module name in file path');

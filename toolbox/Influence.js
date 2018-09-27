@@ -176,8 +176,6 @@ const HarmonizerDefaults = {
 	constructor: None
 };
 
-var ScopeID = 0; // Scope ID allocated to each prototype and static definition
-
 function Influence(oDesc) {
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence descriptor '${oDesc}'`);
@@ -818,7 +816,7 @@ function _allocateScope(scopeID, id, ty, fProt) {
 
 function getScopeID(oTgt) {
 	if (!oTgt.scopeID) {
-		oTgt.scopeID = 'sid:' + ++ScopeID;
+		oTgt.scopeID = 'sid:' + mods.Utilities.uuidv4();
 		oTgt.validScopeIDs = {
 			[oTgt.scopeID]: true,
 		};

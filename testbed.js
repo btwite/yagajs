@@ -6,7 +6,9 @@
 
 let yaga = require('./Yaga');
 
+
 //test();
+testResolvePath()
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -43,6 +45,24 @@ function test() {
         },
     });
     r.readString('Hello World').tokens.forEach(tok => log(tok));
+}
+
+function testResolvePath() {
+    log(yaga.resolvePath('require://yaga/Influence/data.txt', {
+        yaga: __dirname + '/./Yaga'
+    }));
+
+    log(yaga.resolvePath('module://testbed/Influence/data.txt', {
+        testbed: __filename
+    }));
+
+    log(yaga.resolvePath('Influence/data.txt', {
+        default: __filename
+    }));
+
+    log(yaga.resolvePath('module://testbed/Influence/.././Influence/data.txt', {
+        testbed: module
+    }));
 }
 
 function testProperties() {

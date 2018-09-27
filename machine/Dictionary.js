@@ -54,24 +54,16 @@
  * 			dictionary: <path>,
  * 			dictionaries: [ <path>, ... ],
  * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>),
- * 			modules: {
- * 				<modTag>: module object | module Name | undefined,
- * 				...
- * 			}
+ * 			modules: Object as per 'File.resolvePath' specification.
  * 		}
- * 
- *  The dictionary path can take the following forms:
- * 		1. Fully qualified path name.
- * 		2. Module relative path of the form: module://<modTag>/...
- * 		   If the module specification is a string then this will be assumed to be
- * 		   a module that can be loaded using 'require'. The <modTag> entry is
- * 		   optional if the tag is the actual name to be required.
  */
 "use strict";
 
 let _ = undefined;
 
 var Yaga = require('../Yaga');
+var Dictionaries = new Map();
+var NamedDictionaries = new Map();
 
 _dictionary = {
 	typeName: 'Dictionary',
@@ -99,6 +91,22 @@ var LoadedDictionary = Yaga.Influence({
 	},
 	constructor(oDesc) {
 		validateDescriptor(oDesc);
+		let ids = Object.create(null), // Dictionary space cannot inherit from Object.
+			mds = Object.create(ids);
+		let coreDict = loadCoreDictionary(ids, oDesc.coreDictionary, oDesc);
+		let dicts = [];
+		if (oDesc.dictionary)
+			dicts.push(loadDictionary(ids, odesc.dictionary, oDesc));
+		else
+			oDesc.dictionaries.forEach(dictPath => dicts.push(loadDictionary(ids, dictPath, oDesc)));
+
+		return {
+			ids: ids,
+			mds: mds,
+			coreDictionary: coreDict,
+			dictionaries: dicts,
+			descriptor: oDesc,
+		};
 	}
 });
 
@@ -106,19 +114,35 @@ module.exports = Object.freeze({
 	LoadedDictionary: LoadedDictionary.create,
 });
 
+function loadDictionary(ids, dictPath, oDesc) {
+	if (!dictPath)
+		return (null);
+	let resPath = Yaga.resolvePath(dictPath, oDesc.modules);
+	let dict = Dictionaries.get(resPath);
+	if (!dict) {
+		let coreDictPath = dictPath !== oDesc.coreDictionary ? oDesc.coreDictionary : undefined;
+		oDesc = Object.assign({}, oDesc);
+		delete oDesc.dictionaries;
+		oDesc.dictionary = resPath;
+		oDesc.coreDictionary = coreDictionary;
+
+	}
+}
+
 function validateDescriptor(oDesc) {
 	Yaga.dispatchPropertyHandlers(oDesc, {
 		coreDictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
 		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
-		modules: () => validateModules(oDesc.modules),
 		_other_: prop => {
 			throw new Error(`Invalid descriptor property '${prop}'`);
 		}
 	});
 	if (oDesc.dictionary && oDesc.dictionaries)
 		throw new Error(`Can only have one of either 'dictionary' or 'dictionaries'`);
+	if (!oDesc.fReadDictionary)
+		throw new Error(`Descriptor must have a 'fReadDictionary' property`);
 }
 
 function validateTypedProperty(oDesc, prop, type) {
@@ -133,10 +157,6 @@ function validateTypedArrayProperty(oDesc, prop, type) {
 		if (typeof val !== type)
 			throw new Error(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
 	});
-}
-
-function validateModules(oMods) {
-	Object.keys(oMods).forEach()
 }
 
 function _loadDictionary(yi, optPath) {

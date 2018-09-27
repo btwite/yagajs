@@ -10,7 +10,8 @@ const SymBindMap = Symbol.for('BindMap');
 module.exports = Object.freeze({
     thisArg,
     dispatchPropertyHandlers,
-    bind
+    bind,
+    uuidv4
 });
 
 function thisArg(f) {
@@ -50,4 +51,12 @@ function bind(o, tgt) {
     bf = map.get(o);
     if (!bf) map.set(o, (bf = f.bind(o)));
     return (bf);
+}
+
+function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        var r = Math.random() * 16 | 0,
+            v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }

@@ -11,7 +11,6 @@
 const SymPublic = Symbol.for('Public');
 const Scopes = new WeakMap(); // Map of scope objects to associated public objects
 
-var ScopeID = 0; // Scope ID allocate to each private scope
 var mods;
 
 module.exports = Object.freeze({
@@ -26,7 +25,7 @@ module.exports = Object.freeze({
 function createPrivateScope(prot) {
     if (prot !== undefined && prot !== null && (typeof prot !== 'object' || Array.isArray(prot)))
         throw new Error('Invalid prototype for private scope accessor');
-    let id = 'Scopes.private:' + ++ScopeID;
+    let id = 'Scopes.private:' + mods.Utilities.uuidv4();
     return oPublic => {
         let oScopes = Scopes.get(oPublic = oPublic[SymPublic] || oPublic);
         if (!oScopes) {

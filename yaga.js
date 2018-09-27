@@ -11,8 +11,6 @@
  */
 "use strict";
 
-var Path = require('path');
-
 module.exports = yaga;
 
 function yaga() {
@@ -34,9 +32,9 @@ yaga.Exception = toolbox.Exception;
 
 yaga.public = toolbox.Scopes.public;
 yaga.createPrivateScope = toolbox.Scopes.createPrivateScope;
-
 yaga.copy = toolbox.Replicate.copy;
 yaga.clone = toolbox.Replicate.clone;
+yaga.resolvePath = toolbox.File.resolvePath;
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
