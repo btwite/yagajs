@@ -48,7 +48,8 @@
  *  Note that a symbol contains multiple ':' characters then the lookup will process
  *  these left to right.
  * 
- *  The LoadedDictionary constructor accepts a descriptor object of the following format:
+ *  LoadedDictionary has a static function 'fromDescriptor'that accepts a descriptor object of the 
+ *  following format:
  * 		{
  * 			coreDictionary: <path>,
  * 			dictionary: <path>,
@@ -65,12 +66,24 @@ var Yaga = require('../Yaga');
 var Dictionaries = new Map();
 var NamedDictionaries = new Map();
 
-_dictionary = {
-	typeName: 'Dictionary',
-	name: undefined,
-	parent: undefined,
-	_space: undefined,
-	isaDictionary: true,
+var Dictionary = Yaga.Influence({
+	name: 'Dictionary',
+	constructor(name, depends, spaceTemplate) {
+		if (name) {
+			if (NamedDictionaries.get(name))
+				throw new Error(`A dictionary named '${name}' already exists`);
+			NamedDictionaries.set(name, this);
+		}
+		return {
+			name: name,
+			dependencies: depends,
+			space: Object.assign(Object.create(null), spaceTemplate),
+		}
+	}
+});
+
+
+({
 	setDependsOn: _setDependsOn,
 	setName: _setName,
 	define: _define,
@@ -79,7 +92,7 @@ _dictionary = {
 	findString: _findString,
 	print: _print,
 	printAll: _printAll,
-}
+});
 
 var LoadedDictionary = Yaga.Influence({
 	name: 'LoadedDictionary',
@@ -87,26 +100,45 @@ var LoadedDictionary = Yaga.Influence({
 		thisArg_: {
 			dictionaryDependsOn,
 			dictionaryName,
-		}
+		},
+		get mds() {
+			return (this.space);
+		},
+		get ids() {
+			return (Object.getPrototypeOf(this.space));
+		},
 	},
-	constructor(oDesc) {
-		validateDescriptor(oDesc);
-		let ids = Object.create(null), // Dictionary space cannot inherit from Object.
-			mds = Object.create(ids);
-		let coreDict = loadCoreDictionary(ids, oDesc.coreDictionary, oDesc);
+	constructor(coreDictPath, dictPaths, fReadDictionary, modules) {
+		let coreDict = loadDictionary(coreDictPath, undefined, fReadDictionary, modules);
 		let dicts = [];
-		if (oDesc.dictionary)
-			dicts.push(loadDictionary(ids, odesc.dictionary, oDesc));
-		else
-			oDesc.dictionaries.forEach(dictPath => dicts.push(loadDictionary(ids, dictPath, oDesc)));
-
+		if (dictPaths) {
+			if (!Array.isArray(dictpaths))
+				dictPaths = [dictPaths];
+			dictPaths.forEach(dictPath => dicts.push(loadDictionary(dictPath, coreDictPath, fReadDictionary, modules)));
+		}
+		// Save the dictionaries in reverse order for folding.
+		dicts = Yaga.reverseCopy(dicts);
 		return {
-			ids: ids,
-			mds: mds,
-			coreDictionary: coreDict,
-			dictionaries: dicts,
-			descriptor: oDesc,
+			freeze_: {
+				space: loadDictionarySpace(coreDict, dicts),
+				coreDictionary: coreDict,
+				dictionaries: dicts,
+				configuration: {
+					coreDictionary: coreDictPath,
+					dictionaries: dictPaths,
+					fReadDictionary: fReadDictionary,
+					modules: modules
+				}
+			},
+			// Properties to save a dictionary name and dependencies that will be picked up during the
+			// read-bind-evaluate process of a dictionary script that is loaded.
+			// Dependencies are ordered from most to least significant.
+			dictionaryName: _,
+			dictionaryDependencies: _,
 		};
+	},
+	static: {
+		fromDescriptor
 	}
 });
 
@@ -114,19 +146,78 @@ module.exports = Object.freeze({
 	LoadedDictionary: LoadedDictionary.create,
 });
 
-function loadDictionary(ids, dictPath, oDesc) {
+function dictionaryName(ld, name) {
+	if (typeof name !== 'string')
+		throw new Error('String expected for Dictionary name');
+	if (ld.dictionaryName)
+		throw new Error(`A Dictionary name '${ld.dictionaryName}' has aleady been defined`);
+	ld.dictionaryName = name;
+}
+
+function dictionaryDependsOn(ld, dictPaths) {
+	if (!Array.isArray(dictPaths))
+		throw new Error('Array expected for Dictionary dependencies');
+	if (ld.dictionaryDependencies)
+		throw new Error('Dictionary dependencies have aleady been defined');
+	let dicts = [];
+	dictPaths.forEach(dictPath => {
+		dicts.push(loadDictionary(dictPath,
+			ld.configuration.coreDictionary,
+			ld.configuration.fReadDictionary,
+			ld.configuration.modules));
+	});
+	ld.dictionaryDependencies = Yaga.reverseCopy(dicts);
+}
+
+function loadDictionarySpace(coreDict, dicts) {
+	let ids = Object.create(null), // Dictionary space cannot inherit from Object.
+		mds = Object.create(ids),
+		foldMap = new Set();
+	// Firstly fold the core dictionary and related dependencies into the ids.
+	foldDictionary(ids, coreDict, foldMap);
+	// Now fold all the user defined dictionaries in least significant order.
+	// Note dictionaries list has already been reversed
+	dicts.forEach(dict => foldDictionary(ids, dict, foldMap));
+	Object.freeze(ids);
+	return (mds);
+}
+
+function foldDictionary(ids, dict, foldMap) {
+	if (foldMap.get(dict))
+		return; // Least significant occurrence has already been folded
+	if (dict.dependencies) {
+		// Need to process dependencies first in least significant order.
+		// Note that the list has already been reversed.
+		dict.dependencies.forEach(dict => foldDictionary(ids, dict, foldMap));
+	}
+	// Fold the dictionary space into the LoadedDictionary ids.
+	Object.assign(ids, dict.space);
+	foldMap.set(dict);
+}
+
+function loadDictionary(dictPath, coreDictPath, fReadDictionary, modules) {
 	if (!dictPath)
 		return (null);
-	let resPath = Yaga.resolvePath(dictPath, oDesc.modules);
+	let resPath = Yaga.resolvePath(dictPath, modules);
 	let dict = Dictionaries.get(resPath);
 	if (!dict) {
-		let coreDictPath = dictPath !== oDesc.coreDictionary ? oDesc.coreDictionary : undefined;
-		oDesc = Object.assign({}, oDesc);
-		delete oDesc.dictionaries;
-		oDesc.dictionary = resPath;
-		oDesc.coreDictionary = coreDictionary;
-
+		// Create a LoadedDictionary with just the Core Dictionary and then request
+		// that the Dictionary be read against this core.
+		let ld = LoadedDictionary.create(coreDictPath, null, fReadDictionary, modules);
+		fReadDictionary(ld, resPath);
+		// Our Dictionary has been read and the definitions are located in the mds
+		// component of the LoadedDictionary space. Use this as a template for creating
+		// the dictionary object.
+		dict = Dictionary.create(ld.dictionaryName, ld.dictionaryDependencies, ld.mds);
 	}
+	return (dict);
+}
+
+function fromDescriptor(oDesc) {
+	validateDescriptor(oDesc);
+	return (LoadedDictionary.create(oDesc.coreDictionary,
+		oDesc.dictionary ? [oDesc.dictionary] : oDesc.dictionaries,
+		oDesc.fReadDictionary, oDesc.modules));
 }
 
 function validateDescriptor(oDesc) {
@@ -135,6 +226,7 @@ function validateDescriptor(oDesc) {
 		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
 		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
+		modules: prop => undefined, // Leave this for 'resolvePath' to handle
 		_other_: prop => {
 			throw new Error(`Invalid descriptor property '${prop}'`);
 		}
@@ -158,6 +250,7 @@ function validateTypedArrayProperty(oDesc, prop, type) {
 			throw new Error(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
 	});
 }
+
 
 function _loadDictionary(yi, optPath) {
 	_getCoreDictionary(yi);

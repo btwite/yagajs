@@ -9,6 +9,7 @@ var mods;
 
 module.exports = Object.freeze({
     copy,
+    reverseCopy,
     clone,
     copyObject,
     cloneObject,
@@ -23,6 +24,12 @@ function copy(o) {
     if (o.isanInfluenceInstance)
         return (o.copy());
     return (mods.Scopes.copy(o, copyObject(o)));
+}
+
+function reverseCopy(a) {
+    if (Array.isArray(a))
+        return ([].concat(a).reverse());
+    return (copy(o));
 }
 
 function clone(o, cloneMap) {

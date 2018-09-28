@@ -8,7 +8,8 @@ let yaga = require('./Yaga');
 
 
 //test();
-testResolvePath()
+testLoadedDictionary()
+//testResolvePath()
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -45,6 +46,20 @@ function test() {
         },
     });
     r.readString('Hello World').tokens.forEach(tok => log(tok));
+}
+
+function testLoadedDictionary() {
+    let desc = {
+        coreDictionary: 'yaga/core.yaga',
+        dictionary: 'yaga/dict.yaga',
+        fReadDictionary(ld, path) {
+            log(path);
+        },
+        modules: {
+            default: __filename,
+        }
+    };
+    let ld = yaga.Machine.LoadedDictionary.fromDescriptor(desc);
 }
 
 function testResolvePath() {
