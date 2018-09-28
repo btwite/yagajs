@@ -50,16 +50,50 @@ function test() {
 
 function testLoadedDictionary() {
     let desc = {
-        coreDictionary: 'yaga/core.yaga',
-        dictionary: 'yaga/dict.yaga',
+        coreDictionary: 'myYaga/core.yaga',
+        dictionary: 'myYaga/dict.yaga',
         fReadDictionary(ld, path) {
             log(path);
+            switch (path.substr(path.lastIndexOf('myYaga')).replace('\\', '/')) {
+                case 'myYaga/core.yaga':
+                    ld.setDictionaryName('core');
+                    ld.setDictionaryDependencies(['myYaga/core1.yaga', 'myYaga/core2.yaga']);
+                    ld.define('core', true);
+                    ld.define('dict2', true);
+                    break;
+                case 'myYaga/core1.yaga':
+                    ld.setDictionaryName('core1');
+                    ld.define('core1', true);
+                    break;
+                case 'myYaga/core2.yaga':
+                    ld.setDictionaryName('core2');
+                    ld.define('core2', true);
+                    break;
+                case 'myYaga/dict.yaga':
+                    ld.setDictionaryName('dict');
+                    ld.setDictionaryDependencies(['myYaga/dict1.yaga', 'myYaga/dict2.yaga']);
+                    ld.define('dict', true);
+                    break;
+                case 'myYaga/dict1.yaga':
+                    ld.setDictionaryName('dict1');
+                    ld.setDictionaryDependencies('myYaga/dict2.yaga');
+                    ld.define('dict1', true);
+                    break;
+                case 'myYaga/dict2.yaga':
+                    ld.setDictionaryName('dict2');
+                    ld.define('dict2', false);
+                    break;
+            }
         },
         modules: {
             default: __filename,
         }
     };
     let ld = yaga.Machine.LoadedDictionary.fromDescriptor(desc);
+    log(ld.ids);
+    ld.print(process.stdout);
+    ld.dictionaries.forEach(dict => dict.print(process.stdout));
+    log(ld.find('dict'));
 }
 
 function testResolvePath() {

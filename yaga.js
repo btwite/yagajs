@@ -5,9 +5,6 @@
  * The Yaga function object is returned and defaults as the interface
  * to create an instance of the yaga machine. The function object also contains
  * other Yaga services.
- *      Ex. let yaga = require('yaga');
- *          let yagaInstance = yaga(...);
- *          let mods = yaga.load({ ... });
  */
 "use strict";
 

@@ -54,7 +54,9 @@ function createException(n, fp, c) {
             else
                 this.stack = (new Error(this.message)).stack;
         }
-        return (this.message = c.call(this, ...args));
+        let msg = c.call(this, ...args);
+        if (!msg) msg = n; // Just answer the full name if there is no message
+        return (this.message = msg);
     }
     fp = fp.exceptionConstructor || fp;
     fExc.prototype = Object.create(fp.prototype);
@@ -70,14 +72,14 @@ function createException(n, fp, c) {
 
 function superConstructor(exc, ...args) {
     let c = exc.exceptionConstructor;
-    return (Object.getPrototypeOf(c.prototype).constructor.call(...args));
+    return (Object.getPrototypeOf(c.prototype).constructor.call(exc, ...args));
 }
 
 function defaultConstructor(...args) {
     let msg = args.shift();
     if (args.length > 0)
         this.data = args;
-    return (msg ? String(o) : '<No Message>');
+    return (msg ? String(msg) : undefined);
 }
 
 function checkType(oDesc, prop, ty) {

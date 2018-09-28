@@ -14,6 +14,7 @@ module.exports = {
         Scopes: _,
         Replicate: mod => ({
             copy: mod.copy,
+            reverseCopy: mod.reverseCopy,
             clone: mod.clone
         }),
         Influence: mod => mod.Influence,

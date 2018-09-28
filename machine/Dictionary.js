@@ -51,6 +51,7 @@
  *  LoadedDictionary has a static function 'fromDescriptor'that accepts a descriptor object of the 
  *  following format:
  * 		{
+ * 			name: <string>,	// Optional tag to be assigned to the LoadedDictionary
  * 			coreDictionary: <path>,
  * 			dictionary: <path>,
  * 			dictionaries: [ <path>, ... ],
@@ -68,38 +69,36 @@ var NamedDictionaries = new Map();
 
 var Dictionary = Yaga.Influence({
 	name: 'Dictionary',
+	prototype: {
+		thisArg_: {
+			find: findDictionary,
+			print: printDictionary,
+		}
+	},
 	constructor(name, depends, spaceTemplate) {
 		if (name) {
 			if (NamedDictionaries.get(name))
-				throw new Error(`A dictionary named '${name}' already exists`);
+				throw DictionaryError(`A dictionary named '${name}' already exists`);
 			NamedDictionaries.set(name, this);
 		}
 		return {
-			name: name,
+			name: name || '<anonymous>',
 			dependencies: depends,
 			space: Object.assign(Object.create(null), spaceTemplate),
 		}
 	}
 });
 
-
-({
-	setDependsOn: _setDependsOn,
-	setName: _setName,
-	define: _define,
-	redefine: _redefine,
-	find: _find,
-	findString: _findString,
-	print: _print,
-	printAll: _printAll,
-});
-
 var LoadedDictionary = Yaga.Influence({
 	name: 'LoadedDictionary',
 	prototype: {
 		thisArg_: {
-			dictionaryDependsOn,
-			dictionaryName,
+			setDictionaryDependencies,
+			setDictionaryName,
+			define,
+			redefine,
+			find: findLoadedDictionary,
+			print: printLoadedDictionary,
 		},
 		get mds() {
 			return (this.space);
@@ -108,11 +107,11 @@ var LoadedDictionary = Yaga.Influence({
 			return (Object.getPrototypeOf(this.space));
 		},
 	},
-	constructor(coreDictPath, dictPaths, fReadDictionary, modules) {
+	constructor(coreDictPath, dictPaths, fReadDictionary, modules, name) {
 		let coreDict = loadDictionary(coreDictPath, undefined, fReadDictionary, modules);
 		let dicts = [];
 		if (dictPaths) {
-			if (!Array.isArray(dictpaths))
+			if (!Array.isArray(dictPaths))
 				dictPaths = [dictPaths];
 			dictPaths.forEach(dictPath => dicts.push(loadDictionary(dictPath, coreDictPath, fReadDictionary, modules)));
 		}
@@ -120,6 +119,7 @@ var LoadedDictionary = Yaga.Influence({
 		dicts = Yaga.reverseCopy(dicts);
 		return {
 			freeze_: {
+				name: name || '<anonymous>',
 				space: loadDictionarySpace(coreDict, dicts),
 				coreDictionary: coreDict,
 				dictionaries: dicts,
@@ -132,7 +132,7 @@ var LoadedDictionary = Yaga.Influence({
 			},
 			// Properties to save a dictionary name and dependencies that will be picked up during the
 			// read-bind-evaluate process of a dictionary script that is loaded.
-			// Dependencies are ordered from most to least significant.
+			// Dependencies are ordered from most to least significant, and then reversed within.
 			dictionaryName: _,
 			dictionaryDependencies: _,
 		};
@@ -146,21 +146,23 @@ module.exports = Object.freeze({
 	LoadedDictionary: LoadedDictionary.create,
 });
 
-function dictionaryName(ld, name) {
+function setDictionaryName(ld, name) {
 	if (typeof name !== 'string')
-		throw new Error('String expected for Dictionary name');
+		throw DictionaryError('String expected for Dictionary name');
 	if (ld.dictionaryName)
-		throw new Error(`A Dictionary name '${ld.dictionaryName}' has aleady been defined`);
+		throw DictionaryError(`A Dictionary name '${ld.dictionaryName}' has aleady been defined`);
 	ld.dictionaryName = name;
 }
 
-function dictionaryDependsOn(ld, dictPaths) {
+function setDictionaryDependencies(ld, dictPaths) {
 	if (!Array.isArray(dictPaths))
-		throw new Error('Array expected for Dictionary dependencies');
+		dictPaths = [dictPaths];
 	if (ld.dictionaryDependencies)
-		throw new Error('Dictionary dependencies have aleady been defined');
+		throw DictionaryError('Dictionary dependencies have aleady been defined');
 	let dicts = [];
 	dictPaths.forEach(dictPath => {
+		if (typeof dictPath !== 'string')
+			throw DictionaryError('Expecting a String for Dictionary dependency');
 		dicts.push(loadDictionary(dictPath,
 			ld.configuration.coreDictionary,
 			ld.configuration.fReadDictionary,
@@ -183,7 +185,7 @@ function loadDictionarySpace(coreDict, dicts) {
 }
 
 function foldDictionary(ids, dict, foldMap) {
-	if (foldMap.get(dict))
+	if (!dict || foldMap.has(dict))
 		return; // Least significant occurrence has already been folded
 	if (dict.dependencies) {
 		// Need to process dependencies first in least significant order.
@@ -192,7 +194,7 @@ function foldDictionary(ids, dict, foldMap) {
 	}
 	// Fold the dictionary space into the LoadedDictionary ids.
 	Object.assign(ids, dict.space);
-	foldMap.set(dict);
+	foldMap.add(dict);
 }
 
 function loadDictionary(dictPath, coreDictPath, fReadDictionary, modules) {
@@ -209,6 +211,7 @@ function loadDictionary(dictPath, coreDictPath, fReadDictionary, modules) {
 		// component of the LoadedDictionary space. Use this as a template for creating
 		// the dictionary object.
 		dict = Dictionary.create(ld.dictionaryName, ld.dictionaryDependencies, ld.mds);
+		Dictionaries.set(resPath, dict);
 	}
 	return (dict);
 }
@@ -217,37 +220,114 @@ function fromDescriptor(oDesc) {
 	validateDescriptor(oDesc);
 	return (LoadedDictionary.create(oDesc.coreDictionary,
 		oDesc.dictionary ? [oDesc.dictionary] : oDesc.dictionaries,
-		oDesc.fReadDictionary, oDesc.modules));
+		oDesc.fReadDictionary, oDesc.modules, oDesc.name));
+}
+
+function keyToString(key) {
+	switch (typeof key) {
+		case 'string':
+			return (key);
+		case 'object':
+			if (typeof key.asString === 'function')
+				return (key.asString());
+		default:
+			return (String(key));
+	}
+}
+
+function define(ld, key, value) {
+	key = keyToString(key);
+	if (Object.getOwnPropertyDescriptor(ld.space, key))
+		throw DictionaryError(key, `'${key}' is already defined`);
+	_define(ld, key, value);
+}
+
+function redefine(ld, key, value) {
+	_define(ld, keyToString(key), value);
+}
+
+function _define(ld, key, value) {
+	Object.defineProperty(ld.space, key, {
+		value: value,
+		configurable: false,
+		writable: true,
+		enumerable: true
+	});
+}
+
+function findLoadedDictionary(ld, key) {
+	key = keyTostring(key);
+	let v = findDictionaryValue(key, key.length);
+	return (v !== undefined ? v : ld.space[key]);
+}
+
+function findDictionaryValue(key, iEnd) {
+	let i = key.lastIndexOf(':', iEnd);
+	if (i < 0) return (undefined);
+	let dict = Dictionaries.get(key.substr(0, i));
+	if (dict) {
+		let v = dict.find(key.substr(i + 1));
+		if (v !== undefined) return (v);
+	}
+	return (i > 0 ? findDictionaryValue(key, i - 1) : undefined);
+}
+
+function findDictionary(dict, key) {
+	return (dict.space[keyTostring(key)])
+}
+
+function printLoadedDictionary(ld, stream, fPrinter) {
+	stream.write(`LoadedDictionary(${ld.name}-IDS) ::\n`)
+	printSpace(ld.ids, stream, fPrinter);
+	stream.write(`LoadedDictionary(${ld.name}-MDS) ::\n`)
+	printSpace(ld.mds, stream, fPrinter);
+}
+
+function printDictionary(dict, stream, fPrinter) {
+	stream.write(`Dictionary(${dict.name}) ::\n`)
+	printSpace(dict.space, stream, fPrinter);
+}
+
+function printSpace(space, stream, fPrinter) {
+	Object.keys(space).forEach(key => {
+		stream.write(`  ${key}: `);
+		let v = space[key];
+		if (fPrinter)
+			fPrinter(v, stream, `  ${key}: `.length + 2);
+		else
+			stream.write(`${String(v)}\n`);
+	});
 }
 
 function validateDescriptor(oDesc) {
 	Yaga.dispatchPropertyHandlers(oDesc, {
+		name: prop => validateTypedProperty(oDesc, prop, 'string'),
 		coreDictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
 		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
 		modules: prop => undefined, // Leave this for 'resolvePath' to handle
 		_other_: prop => {
-			throw new Error(`Invalid descriptor property '${prop}'`);
+			throw DictionaryError(`Invalid descriptor property '${prop}'`);
 		}
 	});
 	if (oDesc.dictionary && oDesc.dictionaries)
-		throw new Error(`Can only have one of either 'dictionary' or 'dictionaries'`);
+		throw DictionaryError(`Can only have one of either 'dictionary' or 'dictionaries'`);
 	if (!oDesc.fReadDictionary)
-		throw new Error(`Descriptor must have a 'fReadDictionary' property`);
+		throw DictionaryError(`Descriptor must have a 'fReadDictionary' property`);
 }
 
 function validateTypedProperty(oDesc, prop, type) {
 	if (typeof oDesc[prop] !== type)
-		throw new Error(`Descriptor property '${prop}' must be a '${type}'`);
+		throw DictionaryError(`Descriptor property '${prop}' must be a '${type}'`);
 }
 
 function validateTypedArrayProperty(oDesc, prop, type) {
 	if (!Array.isArray(oDesc[prop]))
-		throw new Error(`Descriptor property '${prop}' must be an Array of '${type}'`);
+		throw DictionaryError(`Descriptor property '${prop}' must be an Array of '${type}'`);
 	oDesc[prop].forEach(val => {
 		if (typeof val !== type)
-			throw new Error(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
+			throw DictionaryError(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
 	});
 }
 
@@ -301,52 +381,13 @@ function _createDictionaryInstance(parentDict) {
 }
 
 
-function _define(sym, e) {
-	if (e.value() === undefined) {
-		throw yaga.errors.DictionaryException(sym, `'undefined' can not be assigned to a definition`);
+// Exceptions
+var DictionaryError = Yaga.Exception({
+	name: 'yaga.machine.DictionaryError',
+	constructor(key, msg) {
+		if (msg === undefined)
+			return (key);
+		this.key = key;
+		return (msg);
 	}
-	if (this._space[sym] && Object.getOwnPropertyDescriptor(this._space, sym)) {
-		throw yaga.errors.DictionaryException(sym, `'${sym}' is already defined`);
-	}
-	this._space[sym] = e;
-}
-
-function _redefine(sym, e) {
-	if (e === undefined) {
-		throw yaga.errors.DictionaryException(sym, `'undefined' can not be assigned to a definition`);
-	}
-	this._space[sym] = e;
-}
-
-function _find(sym) {
-	return (this._space[sym.asString()]);
-}
-
-function _findString(s) {
-	return (this._space[s]);
-}
-
-function _setDependsOn(yi, path, mod) {
-	if (mod) path = yaga.resolveFileName(path, require(mod));
-	this.parent = _getDictionary(yi, path);
-	this._space = Object.assign(Object.create(this.parent._space), this._space);
-}
-
-function _setName(yi, name) {
-	this.name = name;
-}
-
-function _printAll(yi, stream) {
-	let dict = this;
-	for (; dict.parent != dict; dict = dict.parent) dict.print(yi, stream);
-	dict.print(yi, stream);
-}
-
-function _print(yi, stream) {
-	stream.write(`Dictionary(${this.name}) ::\n`)
-	let space = this._space;
-	Object.keys(space).forEach(key => {
-		stream.write(`  ${key}: `);
-		yi.print(space[key], stream, `  ${key}: `.length + 2);
-	});
-}
+});
