@@ -22,7 +22,7 @@ function thisArg(f) {
 
 function dispatchPropertyHandlers(o, oHandlers) {
     if (typeof o !== 'object')
-        throw new error(`Object expected found '${o}'`);
+        throw new Error(`Object expected found '${o}'`);
     let fOther = oHandlers._other_ || (() => {});
     Object.keys(o).forEach(prop => {
         if (oHandlers.hasOwnProperty(prop))

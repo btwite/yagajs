@@ -8,7 +8,7 @@ let yaga = require('./Yaga');
 
 
 //test();
-testLoadedDictionary()
+//testLoadedDictionary()
 //testResolvePath()
 //testProperties();
 //testExceptions();
@@ -18,6 +18,7 @@ testLoadedDictionary()
 //testLatePrivateProtectedAccess();
 //testComposition();
 //testReadPoint();
+//testAbstractInfluence();
 //testInfluence();
 //testGrammarExtensions();
 
@@ -60,6 +61,7 @@ function testLoadedDictionary() {
                     ld.setDictionaryDependencies(['myYaga/core1.yaga', 'myYaga/core2.yaga']);
                     ld.define('core', true);
                     ld.define('dict2', true);
+                    ld.define('x:y', true);
                     break;
                 case 'myYaga/core1.yaga':
                     ld.setDictionaryName('core1');
@@ -93,7 +95,7 @@ function testLoadedDictionary() {
     log(ld.ids);
     ld.print(process.stdout);
     ld.dictionaries.forEach(dict => dict.print(process.stdout));
-    log(ld.find('dict'));
+    log(ld.find('dict'), ld.find('core:dict2'), ld.find('core:x:y'), ld.find('core:x:y1'));
 }
 
 function testResolvePath() {
@@ -430,6 +432,32 @@ function testComposition() {
     log(inf3.protected(o), inf3.protected(inf3.create()));
     o.showVar0();
     inf3.create.showProtVar();
+}
+
+function testAbstractInfluence() {
+    let myInf = yaga.Influence.abstract({
+        name: 'myAbstractInf',
+        prototype: {
+            helloWorld() {
+                console.log('Hello World');
+                return (this);
+            },
+            protected_: {
+                log() {
+                    console.log('XXX', this.myval, myInf.public(this).myval)
+                },
+            },
+        },
+        static: {
+            foo() {
+                console.log('bar =', this.bar)
+            },
+            bar: 1000,
+        }
+    });
+    log(myInf);
+    trycode(() => myInf.create());
+    myInf.create.foo();
 }
 
 function testInfluence() {

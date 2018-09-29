@@ -198,7 +198,7 @@ function __jsQuote(yi, list, type, fn) {
 
 function _jsParms(yi, list) {
     let parms = __jsParms(yi, list.elements, (msg, e) => _throw(e ? e : list, msg));
-    yaga.assignParameters(parms);
+    yaga.assignParameters(yi, parms);
     return (undefined);
 }
 

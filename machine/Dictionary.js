@@ -67,28 +67,6 @@ var Yaga = require('../Yaga');
 var Dictionaries = new Map();
 var NamedDictionaries = new Map();
 
-var Dictionary = Yaga.Influence({
-	name: 'Dictionary',
-	prototype: {
-		thisArg_: {
-			find: findDictionary,
-			print: printDictionary,
-		}
-	},
-	constructor(name, depends, spaceTemplate) {
-		if (name) {
-			if (NamedDictionaries.get(name))
-				throw DictionaryError(`A dictionary named '${name}' already exists`);
-			NamedDictionaries.set(name, this);
-		}
-		return {
-			name: name || '<anonymous>',
-			dependencies: depends,
-			space: Object.assign(Object.create(null), spaceTemplate),
-		}
-	}
-});
-
 var LoadedDictionary = Yaga.Influence({
 	name: 'LoadedDictionary',
 	prototype: {
@@ -144,6 +122,28 @@ var LoadedDictionary = Yaga.Influence({
 
 module.exports = Object.freeze({
 	LoadedDictionary: LoadedDictionary.create,
+});
+
+var Dictionary = Yaga.Influence({
+	name: 'Dictionary',
+	prototype: {
+		thisArg_: {
+			find: findDictionary,
+			print: printDictionary,
+		}
+	},
+	constructor(name, depends, spaceTemplate) {
+		if (name) {
+			if (NamedDictionaries.get(name))
+				throw DictionaryError(`A dictionary named '${name}' already exists`);
+			NamedDictionaries.set(name, this);
+		}
+		return {
+			name: name || '<anonymous>',
+			dependencies: depends,
+			space: Object.assign(Object.create(null), spaceTemplate),
+		}
+	}
 });
 
 function setDictionaryName(ld, name) {
@@ -256,7 +256,7 @@ function _define(ld, key, value) {
 }
 
 function findLoadedDictionary(ld, key) {
-	key = keyTostring(key);
+	key = keyToString(key);
 	let v = findDictionaryValue(key, key.length);
 	return (v !== undefined ? v : ld.space[key]);
 }
@@ -264,7 +264,7 @@ function findLoadedDictionary(ld, key) {
 function findDictionaryValue(key, iEnd) {
 	let i = key.lastIndexOf(':', iEnd);
 	if (i < 0) return (undefined);
-	let dict = Dictionaries.get(key.substr(0, i));
+	let dict = NamedDictionaries.get(key.substr(0, i));
 	if (dict) {
 		let v = dict.find(key.substr(i + 1));
 		if (v !== undefined) return (v);
@@ -273,7 +273,7 @@ function findDictionaryValue(key, iEnd) {
 }
 
 function findDictionary(dict, key) {
-	return (dict.space[keyTostring(key)])
+	return (dict.space[keyToString(key)])
 }
 
 function printLoadedDictionary(ld, stream, fPrinter) {

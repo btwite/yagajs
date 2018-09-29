@@ -86,13 +86,13 @@ function Loader(oDesc, oInit) {
 	/**
 	 * Initialise each module if they have provided an Initialise method.
 	 */
-	runInitPhase(mods, 'Initialise', mods, exps);
+	runInitPhase(mods, 'Initialise', exps, mods);
 	/**
 	 * Initialise each module if they have provided a PostInitialise method.
 	 * Allows modules to run initialisation processes that require
 	 * access to other module services not just the module reference.
 	 */
-	runInitPhase(mods, 'PostInitialise', mods, exps);
+	runInitPhase(mods, 'PostInitialise', exps, mods);
 
 	return (exps);
 }

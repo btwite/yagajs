@@ -39,9 +39,9 @@ var Reader = Yaga.Influence({
 
 module.exports = Object.freeze({
     Reader: Reader.create,
-    Initialise(mods) {
-        ReadPoint = mods.ReadPoint;
-        ReaderTable = mods.ReaderTable;
+    Initialise(exps) {
+        ReadPoint = exps.ReadPoint;
+        ReaderTable = exps.ReaderTable;
     }
 });
 

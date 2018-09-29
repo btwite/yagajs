@@ -5,7 +5,7 @@
  */
 "use strict";
 
-var mods;
+var exps;
 
 module.exports = Object.freeze({
     copy,
@@ -13,7 +13,7 @@ module.exports = Object.freeze({
     clone,
     copyObject,
     cloneObject,
-    Initialise: m => mods = m
+    Initialise: x => exps = x
 });
 
 function copy(o) {
@@ -23,7 +23,7 @@ function copy(o) {
         return (o);
     if (o.isanInfluenceInstance)
         return (o.copy());
-    return (mods.Scopes.copy(o, copyObject(o)));
+    return (exps.Scopes.copy(o, copyObject(o)));
 }
 
 function reverseCopy(a) {
@@ -41,7 +41,7 @@ function clone(o, cloneMap) {
         return (o);
     if (o.isanInfluenceInstance)
         return (o.clone(cloneMap));
-    return (mods.Scopes.clone(o, cloneObject(o, cloneMap), cloneMap));
+    return (exps.Scopes.clone(o, cloneObject(o, cloneMap), cloneMap));
 }
 
 function copyObject(o) {

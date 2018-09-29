@@ -143,13 +143,14 @@
 
 var _ = undefined;
 var Yaga = require('../Yaga');
-var mods;
+var exps;
 
 module.exports = Object.freeze({
 	Influence,
-	Initialise: m => mods = m,
+	Initialise: x => exps = x,
 });
 Influence.lookup = lookupRegistry;
+Influence.abstract = abstractInfluence;
 Object.freeze(Influence);
 
 const Registry = new Map(); // Registry of well known Influences
@@ -197,6 +198,26 @@ function Influence(oDesc) {
 		prototypeInfluence(oInf, oDesc);
 	else
 		throw new Error("Influence descriptor missing 'prototype', 'composition' or 'constructor' property");
+	return (finaliseInfluence(oInf));
+}
+
+function abstractInfluence(oDesc) {
+	if (typeof oDesc !== 'object')
+		throw new Error(`Invalid influence descriptor '${oDesc}'`);
+	let oInf = {
+		typeName: 'Influence',
+		isanInfluence: true,
+		isAbstract: true,
+		compositeMembership: [],
+	};
+	oInf.prototype = {};
+	if (!oDesc.hasOwnProperty('prototype'))
+		throw new Error("Abstract influence descriptor missing a 'prototype' property");
+	prototypeInfluence(oInf, oDesc);
+	return (finaliseInfluence(oInf));
+}
+
+function finaliseInfluence(oInf) {
 	Object.freeze(oInf.prototype);
 	Object.freeze(oInf.create);
 	freezeProperties(oInf);
@@ -415,7 +436,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			} [vHarm] || harmonizers.influenceProperty)(...args);
+			}[vHarm] || harmonizers.influenceProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
@@ -424,7 +445,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
 					[Most]: harmonizers.mostAllFunctions,
-				} [vHarm[0]] || err)(...args);
+				}[vHarm[0]] || err)(...args);
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
@@ -433,7 +454,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return (harmonizers.influenceProperty(...args));
 			return (harmonizers.func(...args));
 		},
-	} [typeof vHarm] || err)(prop, vHarm);
+	}[typeof vHarm] || err)(prop, vHarm);
 }
 
 function processComposition(oInf, oDesc) {
@@ -525,7 +546,7 @@ function prototypeInfluence(oInf, oDesc) {
 function makeStatics(oInf, oDesc) {
 	if (!oDesc.static) return;
 	if (typeof oDesc.static !== 'object')
-		throw new error("Influence 'static' property must be an object");
+		throw new Error("Influence 'static' property must be an object");
 	oInf.static = {};
 	oInf.static.object = defineConstant({}, 'influence', oInf, false);
 	Yaga.dispatchPropertyHandlers(oDesc.static, {
@@ -564,7 +585,7 @@ function copyStaticPropsToCreator(oInf) {
 
 function copyPrivateStaticProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
-		throw new error(`Influence static 'private_' property must be an object`);
+		throw new Error(`Influence static 'private_' property must be an object`);
 	allocatePrivateStaticScope(oInf);
 	Yaga.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.static.privatePrototype, oSrc[prop]),
@@ -575,7 +596,7 @@ function copyPrivateStaticProps(oInf, oSrc) {
 
 function copyProtectedStaticProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
-		throw new error(`Influence static 'protected_' property must be an object`);
+		throw new Error(`Influence static 'protected_' property must be an object`);
 	allocateProtectedStaticScope(oInf);
 	Yaga.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.static.protectedPrototype, oSrc[prop]),
@@ -594,17 +615,29 @@ function newScopesObject(oTgt, oRoot) {
 }
 
 function makeCreator(oInf, fConstructor) {
-	oInf.create = (...args) => {
-		let o = Object.create(oInf.prototype);
-		if (oInf.isScoped) newScopesObject(o, oInf);
-		fConstructor.call(o, ...args);
-		return (o);
-	};
+	if (oInf.isAbstract) {
+		oInf.create = () => {
+			throw new Error('Influence is abstract');
+		};
+		return;
+	}
+	oInf.create = oInf.isAbstract ?
+		() => {
+			throw new Error('Influence is abstract');
+		} :
+		(...args) => {
+			let o = Object.create(oInf.prototype);
+			if (oInf.isScoped) newScopesObject(o, oInf);
+			fConstructor.call(o, ...args);
+			return (o);
+		};
 }
 
 function makeConstructor(oInf, oDesc) {
 	if (!oDesc.hasOwnProperty('constructor'))
 		return (oInf.constructor = () => undefined);
+	else if (oInf.isAbstract)
+		throw new Error('Constructor invalid for an abstract influence');
 	let ty = typeof oDesc.constructor;
 	if (ty === 'object') {
 		makeInitialiserObject(oInf, oDesc.constructor);
@@ -617,7 +650,7 @@ function makeConstructor(oInf, oDesc) {
 			if (typeof o === 'object' && !Array.isArray(o))
 				applyInitialisers(oInf, this, o);
 		});
-	throw new error(`Invalid influence constructor form '${oDesc.constructor}'`);
+	throw new Error(`Invalid influence constructor form '${oDesc.constructor}'`);
 }
 
 function makeInitialiserObject(oInf, oInit) {
@@ -651,17 +684,18 @@ function makeInitialiserObject(oInf, oInit) {
 
 function processName(oInf, oDesc) {
 	if (oDesc.register && oDesc.name)
-		throw new error(`Influence descriptor contains both 'register' and 'name' properties`);
+		throw new Error(`Influence descriptor contains both 'register' and 'name' properties`);
 	oInf.name = oDesc.register || oDesc.name || Anonymous;
 	defineConstant(oInf.prototype, 'typeName', oInf.name, false);
-	defineConstant(oInf.prototype, 'isa' + oInf.name, true, false);
+	let shortName = oInf.name.includes('.') ? oInf.name.substr(oInf.name.lastIndexOf('.') + 1) : oInf.name;
+	defineConstant(oInf.prototype, 'isa' + shortName, true, false);
 	if (oDesc.register)
 		Registry.set(oInf.name, oInf);
 }
 
 function copyPrivatePrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
-		throw new error(`Influence 'private_' property must be an object`);
+		throw new Error(`Influence 'private_' property must be an object`);
 	allocatePrivateScope(oInf);
 	Yaga.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.privatePrototype, oSrc[prop]),
@@ -672,7 +706,7 @@ function copyPrivatePrototypeProps(oInf, oSrc) {
 
 function copyProtectedPrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
-		throw new error(`Influence 'protected_' property must be an object`);
+		throw new Error(`Influence 'protected_' property must be an object`);
 	allocateProtectedScope(oInf);
 	Yaga.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.protectedPrototype, oSrc[prop]),
@@ -816,7 +850,7 @@ function _allocateScope(scopeID, id, ty, fProt) {
 
 function getScopeID(oTgt) {
 	if (!oTgt.scopeID) {
-		oTgt.scopeID = 'sid:' + mods.Utilities.uuidv4();
+		oTgt.scopeID = 'sid:' + exps.Utilities.uuidv4();
 		oTgt.validScopeIDs = {
 			[oTgt.scopeID]: true,
 		};
@@ -826,7 +860,7 @@ function getScopeID(oTgt) {
 
 function copyThisArgProps(oTgt, oSrc, flFreeze = false) {
 	if (typeof oSrc !== 'object')
-		throw new error(`Influence 'thisarg_' property must be an object`);
+		throw new Error(`Influence 'thisarg_' property must be an object`);
 	Object.keys(oSrc).forEach(prop => {
 		let sDesc = Object.getOwnPropertyDescriptor(oSrc, prop);
 		if (typeof sDesc.value === 'function')
@@ -950,15 +984,15 @@ function copyInitialisers(oInf, oTgt) {
 	let cloneMap = new Map();
 	if (oInf.privateInitialiser) {
 		let o = oInf.private(oTgt);
-		mods.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
+		exps.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
 	}
 	if (oInf.protectedInitialiser) {
 		// Don't have a problem here with composite protected space. This scopes environment 
 		// has already been setup correctly by the composite influence code.
 		let o = oInf.protected(oTgt);
-		mods.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
+		exps.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
 	}
-	mods.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
+	exps.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
 }
 
 function lookupRegistry(name) {
@@ -990,11 +1024,11 @@ function bindThis(oInst, sProp) {
 }
 
 function copy(oInst) {
-	return (_copyClone(oInst, o => mods.Replicate.copyObject(o)))
+	return (_copyClone(oInst, o => exps.Replicate.copyObject(o)))
 }
 
 function clone(oInst, cloneMap) {
-	return (_copyClone(oInst, o => mods.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
+	return (_copyClone(oInst, o => exps.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
 }
 
 function assign(oInst) {

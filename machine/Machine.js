@@ -2,78 +2,20 @@
  * yaga : @file
  * 
  * Entry module for the yaga machine
- * 
  */
 "use strict";
 
-let yaga;
-let _exports = {
-    Instance: {
-        new: _newYagaInstance,
-    },
-    installGrammarExtensions: _installGrammarExtensions,
-    newType: _newType,
-    resolveFileName: _resolveFileName,
-    isaYagaType: _isaYagaType,
-    isCallable: _isCallable,
-    assignParameters: _assignParameters,
-    getParserPoint: _getParserPoint,
-    printErrors: _printErrors,
-};
-module.exports = yaga = _exports;
+let _ = undefined;
 
-_exports.StringBuilder = require('./StringBuilder');
-_exports.Symbol = require('./Symbol');
-_exports.Dictionary = require('./Dictionary');
-_exports.Reader = require('./Reader');
-_exports.YagaReaderTable = require('./YagaReaderTable');
-_exports.Parser = require('./Parser');
-_exports.errors = require('./errors');
-_exports.List = require('./List');
-_exports.Wrapper = require('./Wrapper');
-_exports.Primitives = require('./Primitives');
-_exports.Function = require('./Function');
+var Yaga = require('../Yaga');
 
-Object.freeze(_exports);
-
-var _typeTemplate = {
-    isaYagaType: true,
-    value() {
-        return (`Type(${this.typeName})`);
-    },
-    nativeValue(yi) {
-        return (this.value());
-    },
-    parse() {
-        throw yaga.errors.YagaException(this, `'${this.value()}' cannot be parsed`);
-    },
-    bind(yi) {
-        throw yaga.errors.InternalException(`'${this.typeName}' has no 'bind' method`);
-    },
-    lazyEvaluate(yi) {
-        return (this);
-    },
-    evaluate(yi) {
-        throw yaga.errors.InternalException(`'${this.typeName}' has no 'evaluate' method`);
-    },
-    call(yi) {
-        throw yaga.errors.YagaException(this, `'${this.value()}' cannot be called`);
-    },
-    asString() {
-        return (this.value());
+var Binder = Yaga.Influence({
+    name: 'yaga.Machine',
+    prototype: {
+        pushClosure: _pushClosure,
+        popClosure: _popClosure,
     }
-};
-
-/**
- * Initiialise each module if they have provided an Initialise method.
- */
-_runInitPhase('Initialise', _exports);
-/**
- * Initiialise each module if they have provided a PostInitialise method.
- * This is provided to allow modules to run initialisation processes that require
- * access to other library services not just the library reference.
- */
-_runInitPhase('PostInitialise');
+});
 
 /**
  * Create the prototype for a Yaga instance which inherits this module exports.
@@ -82,165 +24,65 @@ _runInitPhase('PostInitialise');
  *      jsPrimLoader: Alternate JavaScript primitive function loader.
  *      dictionaryPath: Path of the dictionary script to load
  */
-function _newYagaInstance(options = {}) {
-    let yi = Object.create(_instance);
-    yi._options = options;
-    yi.parser = yaga.Parser.new(yi);
-    yi.dictionary = yaga.Dictionary.load(yi, options.dictionaryPath);
-    if (yi.hasErrors()) {
-        throw yaga.errors.YagaException(undefined, 'Dictionary load failed', yi._errors);
-    }
-    yi.isInitialised = true;
-    return (yi);
-}
-
-function _installGrammarExtensions() {
-    if (String.prototype['_']) return;
-    let yi = yaga.Instance.new({
-        dictionaryPath: _resolveFileName('exprjs.yaga'),
-    });
-    let exprMap = new Map();
-    String.prototype['_'] = function (...args) {
-        try {
-            yi.clearErrors();
-            let fn = exprMap.get(this);
-            if (!fn) {
-                let str, l = this.length;
-                if (l == 0 || this[0] != '(' || this[l - 1] != ')') str = `(${this})`;
-                let e = yi.parser.parseString(str)
-                if (yi.hasErrors()) throw yaga.errors.YagaException(undefined, 'Expression parse failed', yi._errors);
-                fn = e.bind(yi);
-                if (yi.hasErrors()) throw yaga.errors.YagaException(undefined, 'Expression bind failed', yi._errors);
-                exprMap.set(this, (fn = fn.nativeValue(yi)));
-            }
-            return (fn(...args));
-        } catch (err) {
-            if (yi.hasErrors()) {
-                if (err.isaYagaException && err.errors) throw err;
-                throw yaga.errors.YagaException(undefined, err.message, yi._errors);
-            }
-            throw err;
-        }
-    }
-}
-
-function _newType(oType) {
-    if (!oType.typeName) throw yaga.errors.InternalException("Yaga type requires a 'typeName'");
-    Object.keys(_typeTemplate).forEach(prop => {
-        if (oType.hasOwnProperty(prop)) return;
-        Object.defineProperty(oType, prop, {
-            value: _typeTemplate[prop],
-            writable: true,
-            configurable: true,
-            enumerable: true
-        })
-    });
-    return (oType);
-}
-
-function _resolveFileName(sFile, optModule) {
-    let path = require('path');
-    if (sFile.includes(path.sep)) return (sFile);
-    let mod = optModule ? optModule : module;
-    return (path.dirname(mod.filename) + path.sep + sFile);
-}
-
-function _isaYagaType(e) {
-    return (e && e.isaYagaType);
-}
-
-function _isCallable(e) {
-    return (e.isaClosure || (typeof e === 'function'));
-}
-
-function _assignParameters(parms) {
-    if (!parms || !Array.isArray(parms) || parms.length == 0) return;
-    let binder = yi.binder;
-    if (!binder.closures || binder.closures.length == 0) {
-        throw yaga.errors.YagaException(parms[0], 'Binder is not active');
-    }
-    let fnType = binder.curDesc && binder.curDesc.fnType;
-    if (!fnType || !fnType.isaBlock) {
-        throw yaga.errors.BindException(parms[0], 'Parameters can only be assigned to a block');
-    }
-    if (fnType.parms) {
-        throw yaga.errors.BindException(parms[0], 'Parameters have already been assigned to the block');
-    }
-    if (!fnType.isaBoundBlock) {
-        throw yaga.errors.InternalException('Attempting to assign parameters to unbound block');
-    }
-    if (fnType.scope.variables.length > 0) {
-        throw yaga.errors.BindException(parms[0], 'Parameters must be declared prior to variables');
-    }
-    fnType.assignParameters(this, parms);
-}
-
-function _getParserPoint(e) {
-    if (e === undefined || e === null) return (yaga.Parser.defaultParserPoint);
-    if (e.isaYagaType) {
-        return (e.parserPoint ? e.parserPoint : yaga.Parser.defaultParserPoint);
-    }
-    if (e.isaParserPoint) return (e);
-    return (yaga.Parser.defaultParserPoint);
-}
-
-function _printErrors(errors, stream) {
-    if (!Array.isArray(errors)) return;
-    if (!stream) stream = process.stdout;
-    errors.forEach((err) => {
-        stream.write(`=> ${err.formattedMessage()}\n`);
-        let attach = err.attachment;
-        if (attach) {
-            if (attach instanceof Error) {
-                stream.write(attach.stack);
-            } else {
-                stream.write(`    ${String(attach)}`);
-            }
-            stream.write('\n\n');
-        }
-    });
-}
-
-
-var _instance = Object.assign(Object.create(_exports), {
-    typeName: 'YagaInstance',
-    isInitialised: false,
-    dictionary: undefined,
-    parser: undefined,
-    evaluateDictionary: _evaluateDictionary,
-    bind: _bind,
-    evaluate: _evaluate,
-    call: _call,
-    newVariable: _newVariable,
-    printDictionaries: _printDictionaries,
-    setDictName: _setDictName,
-    setDictDependsOn: _setDictDependsOn,
-    registerOperator: _registerOperator,
-    getOperatorName: _getOperatorName,
-    _operators: '',
-    binder: {
-        closures: undefined,
-        curDesc: undefined,
-        curBlock: undefined,
-        curIdx: undefined,
-        pushClosure: _pushClosure,
-        popClosure: _popClosure,
+var Machine = Yaga.Influence({
+    name: 'yaga.Machine',
+    prototype: {
+        evaluateDictionary: _evaluateDictionary,
+        bind: _bind,
+        evaluate: _evaluate,
+        call: _call,
+        newVariable: _newVariable,
+        printDictionaries: _printDictionaries,
+        setDictName: _setDictName,
+        setDictDependsOn: _setDictDependsOn,
+        registerOperator: _registerOperator,
+        getOperatorName: _getOperatorName,
+        binder: {
+            closures: undefined,
+            curDesc: undefined,
+            curBlock: undefined,
+            curIdx: undefined,
+        },
+        causedErrors: _causedErrors,
+        addError: _addError,
+        addException: _addException,
+        clearErrors: _clearErrors,
+        hasErrors: _hasErrors,
+        print: _print,
     },
-    causedErrors: _causedErrors,
-    addError: _addError,
-    addException: _addException,
-    clearErrors: _clearErrors,
-    hasErrors: _hasErrors,
-    _options: undefined,
-    _jfnAttacher: undefined,
-    _errors: [],
-    print: _print,
+    constructor(options = {}) {
+        yi._options = options;
+        yi.parser = yaga.Parser.new(yi);
+        yi.dictionary = yaga.Dictionary.load(yi, options.dictionaryPath);
+        if (yi.hasErrors()) {
+            throw yaga.errors.YagaException(undefined, 'Dictionary load failed', yi._errors);
+        }
+        yi.isInitialised = true;
+        return {
+            isInitialised: false,
+            dictionary: undefined,
+            parser: undefined,
+            _options: undefined,
+            _jfnAttacher: undefined,
+            _errors: [],
+            _operators: '',
+        }
+    }
 });
 Object.defineProperty(_instance, 'printErrors', {
     value(...args) {
         _printErrors(this._errors, ...args);
     }
 })
+
+let _exports = {
+    Instance: {
+        new: _newYagaInstance,
+    },
+};
+module.exports = yaga = _exports;
+
+Object.freeze(_exports);
 
 function _bind(exprs) {
     // Can get one or more expressions to bind.
@@ -494,13 +336,4 @@ function _causedErrors(fn) {
     let errCount = this._errors.length;
     fn();
     return (errCount < this._errors.length);
-}
-
-function _runInitPhase(sPhase, ...args) {
-    Object.keys(_exports).forEach(sProp => {
-        let prop = _exports[sProp];
-        if (typeof prop === 'object' && typeof prop[sPhase] === 'function') {
-            prop[sPhase](...args);
-        }
-    });
 }
