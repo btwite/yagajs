@@ -40,6 +40,8 @@
  */
 "use strict";
 
+let _ = undefined;
+
 module.exports = Object.freeze({
 	Loader
 });
@@ -115,7 +117,37 @@ function doRequire(mods, exps, name, src, fExport, modPath) {
 		src = modPath + '/' + src;
 	let mod = require(src);
 	mods[name] = mod;
-	exps[name] = fExport ? fExport(mod) : mod;
+	if (fExport) {
+		let res = callExportFn(exps, mod, fExport, src);
+		if (res)
+			exps[name] = res;
+	} else
+		exps[name] = mod;
+}
+
+function callExportFn(exps, mod, fExport, src) {
+	let helpers = {
+		rollupModuleExports() {
+			let modexps = Yaga.copy(mod);
+			delete modexps.Initialise;
+			delete modexps.PostInitialise;
+			Object.keys(modexps).forEach(prop => {
+				if (exps.hasOwnProperty(prop))
+					throw new Error(`Attempting to rollup a duplicate export property '${prop}'. Module(${src})`);
+				exps[prop] = modexps[prop];
+			});
+			return (_);
+		},
+		rollupSelectedExports(...args) {
+			args.forEach(prop => {
+				if (exps.hasOwnProperty(prop))
+					throw new Error(`Attempting to rollup a duplicate export property '${prop}'. Module(${src})`);
+				exps[prop] = mod[prop];
+			});
+			return (_);
+		}
+	};
+	return (fExport(mod, helpers));
 }
 
 function addRequire(depList, name, src, seq, fExport) {

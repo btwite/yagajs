@@ -25,11 +25,11 @@ var Reader = Yaga.Influence({
             currentSource
         }
     },
-    constructor(rt, options) {
+    constructor(rt, options = {}) {
         return {
             private_: {
                 readerTable: ReaderTable(rt),
-                options: options,
+                options,
                 context: _,
                 contextStack: []
             }
@@ -64,7 +64,7 @@ var ReaderContext = Yaga.Influence({
             sourceName: s,
             line: 0,
             column: 0,
-            tabCount: ps.options && ps.options.tabCount ? ps.options.tabCount : 4,
+            tabCount: ps.options.tabCount ? ps.options.tabCount : 4,
             expression: _,
             exprStack: [],
             curToken: _,

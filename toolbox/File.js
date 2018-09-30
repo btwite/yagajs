@@ -25,8 +25,6 @@ module.exports = Object.freeze({
  *                           type.
  *                           Descriptor can also hold aliases for 'require://' if the module
  *                           name includes path elements.  Ex. './module'.
- *                           A value of 'undefined' means that the 
- *                           
  */
 function resolvePath(path, modDesc) {
     if (modDesc && typeof modDesc !== 'object')

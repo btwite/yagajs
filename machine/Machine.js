@@ -8,151 +8,250 @@
 let _ = undefined;
 
 var Yaga = require('../Yaga');
+var Mach;
 
 var Binder = Yaga.Influence({
-    name: 'yaga.Machine',
+    name: 'yaga.machine.Binder',
     prototype: {
-        pushClosure: _pushClosure,
-        popClosure: _popClosure,
+        thisArg_: {
+            pushClosure,
+            popClosure,
+        }
+    },
+    constructor: {
+        closures: _,
+        curDesc: _,
+        curBlock: _,
+        curIdx: _,
+    },
+});
+
+var MachineContext = Yaga.Influence({
+    name: 'yaga.machine.Context',
+    prototype: {
+        thisArg_: {
+            bind,
+            evaluate,
+            call,
+            printDictionaries,
+            printLoadedDictionary,
+            printDictionary,
+            causedErrors,
+            clearErrors,
+            hasErrors,
+            print,
+            newVariable,
+            registerOperator,
+            addError,
+            addException,
+            start,
+            mustHaveStarted,
+            setDictName,
+            setDictDependsOn,
+        },
+        getOperatorName,
+        printErrors(...args) {
+            Mach.printErrors(this.errors, ...args);
+        },
+    },
+    constructor(machine, options) {
+        return {
+            machine,
+            options: validateOptions(this, options),
+            binder: Binder.create(),
+            isStarted: false,
+            isInitialised: false,
+            ld: _,
+            reader: Yaga.Reader(options.readerTable || Mach.YagaReaderTable),
+            jfnAttacher: _,
+            errors: [],
+            operators: '',
+        }
     }
 });
 
 /**
  * Create the prototype for a Yaga instance which inherits this module exports.
  * Options:
- *      yagaCorePath: Alternate file path for the core yaga definitions.
+ *      readerTable: Alternate startup Yaga ReaderTable.
+ *      coreDictionary: Alternate file path for the core yaga definitions.
  *      jsPrimLoader: Alternate JavaScript primitive function loader.
- *      dictionaryPath: Path of the dictionary script to load
+ *      dictionary: Path of the dictionary script to load
+ *      dictionaries: Array of dictionary paths to load
+ *      modules: Yaga 'resolvePath' module descriptor object for resolving path names
  */
 var Machine = Yaga.Influence({
     name: 'yaga.Machine',
     prototype: {
-        evaluateDictionary: _evaluateDictionary,
-        bind: _bind,
-        evaluate: _evaluate,
-        call: _call,
-        newVariable: _newVariable,
-        printDictionaries: _printDictionaries,
-        setDictName: _setDictName,
-        setDictDependsOn: _setDictDependsOn,
-        registerOperator: _registerOperator,
-        getOperatorName: _getOperatorName,
-        binder: {
-            closures: undefined,
-            curDesc: undefined,
-            curBlock: undefined,
-            curIdx: undefined,
-        },
-        causedErrors: _causedErrors,
-        addError: _addError,
-        addException: _addException,
-        clearErrors: _clearErrors,
-        hasErrors: _hasErrors,
-        print: _print,
+        bind: asMachineContext('bind'),
+        evaluate: asMachineContext('evaluate'),
+        call: asMachineContext('call'),
+        printDictionaries: asMachineContext('printDictionaries'),
+        printLoadedDictionary: asMachineContext('printLoadedDictionary'),
+        printDictionary: asMachineContext('printDictionary'),
+        causedErrors: asMachineContext('causedErrors'),
+        clearErrors: asMachineContext('clearErrors'),
+        hasErrors: asMachineContext('hasErrors'),
+        print: asMachineContext('print'),
+        printErrors: asMachineContext('printErrors'),
     },
     constructor(options = {}) {
-        yi._options = options;
-        yi.parser = yaga.Parser.new(yi);
-        yi.dictionary = yaga.Dictionary.load(yi, options.dictionaryPath);
-        if (yi.hasErrors()) {
-            throw yaga.errors.YagaException(undefined, 'Dictionary load failed', yi._errors);
-        }
-        yi.isInitialised = true;
-        return {
-            isInitialised: false,
-            dictionary: undefined,
-            parser: undefined,
-            _options: undefined,
-            _jfnAttacher: undefined,
-            _errors: [],
-            _operators: '',
-        }
+        let mc = MachineContext.create(this, options);
+        Machine.private(this).context = mc;
+        mc.start();
     }
 });
-Object.defineProperty(_instance, 'printErrors', {
-    value(...args) {
-        _printErrors(this._errors, ...args);
+
+module.exports = Object.freeze({
+    Machine: Machine.create,
+    Initialise: x => Mach = x,
+});
+
+function asMachineContext(meth) {
+    return function (...args) {
+        return (Machine.private(this).context[meth](...args));
     }
-})
+}
 
-let _exports = {
-    Instance: {
-        new: _newYagaInstance,
-    },
-};
-module.exports = yaga = _exports;
+function start(mc) {
+    mc.isStarted = true;
+    mc.ld = Mach.Dictionary.fromDescriptor(mc.options.ldDesc);
+    mc.isInitialised = true;
+}
 
-Object.freeze(_exports);
+function readDictionary(mc, ld, fPath) {
+    let curld = mc.ld;
+    mc.ld = ld;
+    // Before evaluating the core definitions we will need to create the '.jsPrim' macro for
+    // loading JavaScript primitive functions for handling low level operations.
+    if (!ld.ids['.jsPrim']) {
+        let jfn = mc.options.jsPrimLoader;
+        if (!jfn) jfn = Mach.Primitives.jsPrimLoader.bind(Mach.Primitives);
+        let desc = [Mach.Symbol('macro'), Mach.Symbol('jsPrim')];
+        ld.define('.jsPrim', Mach.Function.Macro(desc, jfn));
+    }
+    try {
+        let exprs;
+        if (mc.causedErrors(() => exprs = mc.reader.readFile(fPath)))
+            throw Mach.Error.YagaException(_, `Read failed for dictionary '${path}'`, mc.errors);
+        if (mc.causedErrors(() => exprs = mc.bind(exprs))) {
+            throw Mach.Error.YagaException(_, `Bind failed for dictionary '${path}'`, mc.errors);
+        }
+        mach.evaluate(exprs);
+    } catch (err) {
+        mc.addException(_, err);
+    }
+    if (mc.hasErrors())
+        throw Mach.Error.YagaException(_, 'Yaga dictionary load failed', mc.errors);
+    mc.ld = curld;
+}
 
-function _bind(exprs) {
+function validateOptions(mc, opts) {
+    let o = {
+        ldDesc: {}
+    }
+    Yaga.dispatchPropertyHandlers(opts, {
+        readerTable: prop => o[prop] = opts[prop],
+        coreDictionary: prop => o.ldDesc[prop] = opts[prop],
+        dictionary: prop => o.ldDesc[prop] = opts[prop],
+        dictionaries: prop => o.ldDesc[prop] = opts[prop],
+        jsPrimLoader: prop => validateTypedProperty((o[prop] = opts[prop], opts), prop, 'function'),
+        modules: prop => {
+            let mods = Object.assign({}, opts[prop]);
+            mods.yaga = require.resolve('../Yaga');
+            mods.machine = __filename;
+            if (!mods.hasOwnProperty('default'))
+                mods.default = __filename;
+            o[prop] = o.ldDesc[prop] = mods;
+        },
+        _other_: prop => {
+            throw Mach.Error.YagaException(`Invalid Machine option property '${prop}'`);
+        }
+    });
+    o.ldDesc.fReadDictionary = (ld, fPath) => readDictionary(mc, ld, fPath);
+    return (o);
+}
+
+function validateTypedProperty(opts, prop, type) {
+    if (typeof opts[prop] !== type)
+        throw Mach.Error.YagaException(`Machine descriptor property '${prop}' must be a '${type}'`);
+}
+
+function mustHaveStarted(mc) {
+    if (!mc.isStarted)
+        throw Mach.Error.YagaException('Yaga machine could not be started');
+}
+
+function bind(mc, exprs) {
+    mc.mustHaveStarted();
     // Can get one or more expressions to bind.
     // Anwsers the result of the bind(s).
     let binds = [],
         fn = x => {
-            _resetBinder(this);
-            return (x.bind(this));
+            resetBinder(mc);
+            return (x.bind(mc));
         };
-    if (Array.isArray(exprs)) {
-        exprs.forEach(expr => binds.push(_doPhase(this, fn, expr)));
-    } else {
-        binds = _doPhase(this, fn, exprs);
-    }
-    _resetBinder(this);
+    if (Array.isArray(exprs))
+        exprs.forEach(expr => binds.push(doPhase(mc, fn, expr)));
+    else
+        binds = doPhase(mc, fn, exprs);
+    resetBinder(mc);
     return (binds);
 }
 
-function _evaluate(exprs) {
+function evaluate(exprs) {
+    mc.mustHaveStarted();
     // Can get one or more expressions to evaluate.
     // Anwsers the result of the evaluate(s).
     let result = [],
-        fn = x => x.evaluate(this);
-    if (Array.isArray(exprs)) {
-        exprs.forEach(expr => result.push(_doPhase(this, fn, expr)));
-    } else {
-        result = _doPhase(this, fn, exprs);
-    }
+        fn = x => x.evaluate(mc);
+    if (Array.isArray(exprs))
+        exprs.forEach(expr => result.push(doPhase(mc, fn, expr)));
+    else
+        result = doPhase(mc, fn, exprs);
     return (result);
 }
 
-function _call(fn, ...args) {
-    if (!_isaYagaType(fn) || !fn.isaClosure) throw yaga.errors.YagaException(undefined, 'Require a Yaga function type');
-    return (fn.call(this, yaga.Wrapper.wrap(args)).nativeValue(this));
+function call(mc, fn, ...args) {
+    mc.mustHaveStarted();
+    if (!Mach.isaMachineType(fn) || !fn.isaClosure) throw Mach.Error.YagaException('Require a Yaga machine function type');
+    return (fn.call(this, Mach.Wrapper.wrap(args)).nativeValue(mc));
 }
 
-function _doPhase(yi, fn, expr) {
+function doPhase(mc, fn, expr) {
     try {
         return (fn(expr));
     } catch (err) {
-        yi.addException(expr, err);
+        mc.addException(expr, err);
     }
     return (undefined);
 }
 
 
-function _pushClosure(fnType) {
-    let varMap = Object.create(this.curDesc.varMap);
+function pushClosure(binder, fnType) {
+    let varMap = Object.create(binder.curDesc.varMap);
     let desc = {
         fnType: fnType,
         varMap: varMap
     };
-    this.closures.push(desc);
-    this.curDesc = desc;
-    if (fnType.isaBlock) this.curBlock = fnType;
-    this.curIdx++;
+    binder.closures.push(desc);
+    binder.curDesc = desc;
+    if (fnType.isaBlock) binder.curBlock = fnType;
+    binder.curIdx++;
     return (varMap);
 }
 
-function _popClosure() {
-    let closures = this.closures;
+function popClosure(binder) {
+    let closures = binder.closures;
     closures.pop();
     let desc = closures[closures.length - 1];
-    if (desc.fnType.isaBlock) this.curBlock = desc.fnType;
-    this.curDesc = desc;
-    this.curIdx--;
+    if (desc.fnType.isaBlock) binder.curBlock = desc.fnType;
+    binder.curDesc = desc;
+    binder.curIdx--;
 }
 
-function _resetBinder(yi) {
-    let binder = yi.binder;
+function resetBinder(mc) {
+    let binder = mc.binder;
     binder.closures = [];
     binder.curBlock = undefined;
     binder.curDesc = {
@@ -161,77 +260,57 @@ function _resetBinder(yi) {
     binder.curIdx = -1;
 }
 
-function _newVariable(sym) {
-    let binder = this.binder;
-    if (!binder.closures || binder.closures.length == 0) {
-        throw yaga.errors.YagaException(sym, 'Binder is not active');
-    }
+function newVariable(mc, sym) {
+    let binder = mc.binder;
+    if (!binder.closures || binder.closures.length == 0)
+        throw Mach.Error.YagaException(sym, 'Binder is not active');
     let fnType = binder.curDesc && binder.curDesc.fnType;
-    if (!fnType.isaBoundClosure) {
-        throw yaga.errors.BindException(sym, 'Variable must be declared within a function or block');
-    }
-    return (yaga.Symbol.Variable.new(fnType, sym));
+    if (!fnType.isaBoundClosure)
+        throw Mach.Error.BindException(sym, 'Variable must be declared within a function or block');
+    return (Mach.Symbol.Variable(fnType, sym));
 }
 
-function _resetContext(yi) {
-    let ctxt = yi.context;
-    ctxt.closures = [];
-    ctxt.curClosure = undefined;
-    ctxt.argLists = undefined;
+function setDictName(mc, sName) {
+    if (mc.isInitialised || mc.ld.dictionaryName)
+        throw Mach.Error.YagaException('Dictionary name cannot be set');
+    mc.ld.setDictionaryName(sName);
 }
 
-function _evaluateDictionary(dict, path) {
-    let curDict = this.dictionary;
-    this.dictionary = dict;
-    try {
-        let exprs;
-        if (this.causedErrors(() => exprs = yaga.Parser.new(this).parseFile(path))) {
-            throw yaga.errors.YagaException(undefined, `Parse failed for '${path}'`, this._errors);
-        }
-        if (this.causedErrors(() => exprs = this.bind(exprs))) {
-            throw yaga.errors.YagaException(undefined, `Parse failed for '${path}'`, this._errors);
-        }
-        this.evaluate(exprs);
-    } catch (err) {
-        this.addException(undefined, err);
-    }
-    this.dictionary = curDict;
+function setDictDependsOn(mc, paths) {
+    if (mc.isInitialised || mc.ld.dictionaryDependencies)
+        throw Mach.Error.YagaException('Dictionary dependency cannot be set');
+    mc.ld.setDictionaryDependencies(paths);
 }
 
-function _setDictName(sName) {
-    if (this.isInitialised || this.dictionary.name) {
-        throw yaga.errors.YagaException(undefined, `Dictionary name cannot be set`);
-    }
-    this.dictionary.setName(this, sName);
+function printLoadedDictionary(mc, stream = process.stdout) {
+    stream.write('---------------- Yaga Machine Loaded Dictionary ----------------\n');
+    mc.ld.print(stream, (v, indent) => print(v, stream, indent));
 }
 
-function _setDictDependsOn(sPath, sMod) {
-    if (this.isInitialised || this.dictionary.parent !== yaga.Dictionary.core()) {
-        throw yaga.errors.YagaException(undefined, `Dictionary dependency cannot be set`);
-    }
-    this.dictionary.setDependsOn(this, sPath, sMod);
+function printDictionaries(mc, stream = process.stdout) {
+    stream.write('---------------- All Dictionaries ----------------\n');
+    mc.ld.printDictionaries(stream, (v, indent) => print(v, stream, indent));
 }
 
-function _printDictionaries(stream) {
-    if (!stream) stream = process.stdout;
-    stream.write('---------------- Loaded Dictionaries ----------------\n');
-    this.dictionary.printAll(this, stream);
+function printDictionary(mc, stream = process.stdout, name) {
+    stream.write('---------------- Dictionary ----------------\n');
+    mc.ld.printDictionary(name, stream, (v, indent) => print(v, stream, indent));
 }
 
-function _registerOperator(sOp, wrap) {
+function registerOperator(mc, sOp, wrap) {
     for (let i = 0; i < sOp.length; i++) {
-        if (!this._operators.includes(sOp[i])) this._operators += sOp[i];
+        if (!mc.operators.includes(sOp[i])) mc.operators += sOp[i];
     }
-    sOp = _getOperatorName(sOp);
-    this.dictionary.define(sOp, wrap);
+    sOp = getOperatorName(sOp);
+    mc.ld.define(sOp, wrap);
     return (sOp);
 }
 
-function _getOperatorName(sOp) {
+function getOperatorName(sOp) {
     return (`..<${sOp}>..`);
 }
 
-function _print(exprs, stream, initIndent = 0) {
+function print(mc, exprs, stream, initIndent = 0) {
     if (!stream) stream = process.stdout;
     let indent, length, extra,
         maxIndent = ' '.repeat(32);
@@ -312,28 +391,28 @@ function _print(exprs, stream, initIndent = 0) {
     stream.write('\n');
 }
 
-function _addError(e, msg, attach) {
-    this._errors.push(yaga.errors.Error(e, msg, attach))
-    return (this);
+function addError(mc, e, msg, attach) {
+    mc.errors.push(Mach.Error(e, msg, attach))
+    return (mc);
 }
 
-function _addException(e, excp) {
+function addException(mc, e, excp) {
     if (e === undefined && excp) e = excp.element;
     let msg = `${excp.name}: ${excp.message}`;
-    this._errors.push(yaga.errors.Error(e, msg, excp))
+    mc.errors.push(Mach.Error(e, msg, excp))
 }
 
-function _clearErrors() {
-    this._errors = [];
-    return (this);
+function clearErrors(mc) {
+    mc._errors = [];
+    return (mc);
 }
 
-function _hasErrors() {
-    return (this._errors.length > 0);
+function hasErrors(mc) {
+    return (mc.errors.length > 0);
 }
 
-function _causedErrors(fn) {
-    let errCount = this._errors.length;
+function causedErrors(mc, fn) {
+    let errCount = mc.errors.length;
     fn();
-    return (errCount < this._errors.length);
+    return (errCount < mc.errors.length);
 }

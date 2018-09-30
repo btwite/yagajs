@@ -68,7 +68,7 @@ var Dictionaries = new Map();
 var NamedDictionaries = new Map();
 
 var LoadedDictionary = Yaga.Influence({
-	name: 'LoadedDictionary',
+	name: 'yaga.LoadedDictionary',
 	prototype: {
 		thisArg_: {
 			setDictionaryDependencies,
@@ -77,6 +77,8 @@ var LoadedDictionary = Yaga.Influence({
 			redefine,
 			find: findLoadedDictionary,
 			print: printLoadedDictionary,
+			printDictionaries,
+			printDictionary
 		},
 		get mds() {
 			return (this.space);
@@ -125,21 +127,21 @@ module.exports = Object.freeze({
 });
 
 var Dictionary = Yaga.Influence({
-	name: 'Dictionary',
+	name: 'yaga.Dictionary',
 	prototype: {
 		thisArg_: {
 			find: findDictionary,
-			print: printDictionary,
+			print: _printDictionary,
 		}
 	},
-	constructor(name, depends, spaceTemplate) {
+	constructor(path, name, depends, spaceTemplate) {
 		if (name) {
 			if (NamedDictionaries.get(name))
 				throw DictionaryError(`A dictionary named '${name}' already exists`);
 			NamedDictionaries.set(name, this);
 		}
 		return {
-			name: name || '<anonymous>',
+			name: name || path,
 			dependencies: depends,
 			space: Object.assign(Object.create(null), spaceTemplate),
 		}
@@ -210,7 +212,7 @@ function loadDictionary(dictPath, coreDictPath, fReadDictionary, modules) {
 		// Our Dictionary has been read and the definitions are located in the mds
 		// component of the LoadedDictionary space. Use this as a template for creating
 		// the dictionary object.
-		dict = Dictionary.create(ld.dictionaryName, ld.dictionaryDependencies, ld.mds);
+		dict = Dictionary.create(resPath, ld.dictionaryName, ld.dictionaryDependencies, ld.mds);
 		Dictionaries.set(resPath, dict);
 	}
 	return (dict);
@@ -283,7 +285,18 @@ function printLoadedDictionary(ld, stream, fPrinter) {
 	printSpace(ld.mds, stream, fPrinter);
 }
 
-function printDictionary(dict, stream, fPrinter) {
+function printDictionaries(ld, stream, fPrinter) {
+	Dictionaries.forEach((v, k) => k.print(stream, fPrinter));
+}
+
+function printDictionary(ld, name, stream, fPrinter) {
+	let dict = Dictionaries.get(name) || NamedDictionaries.get(name);
+	if (!dict)
+		throw new Error(`Dictionary '${name}' not found`);
+	dict.print(stream, fPrinter);
+}
+
+function _printDictionary(dict, stream, fPrinter) {
 	stream.write(`Dictionary(${dict.name}) ::\n`)
 	printSpace(dict.space, stream, fPrinter);
 }
@@ -293,7 +306,7 @@ function printSpace(space, stream, fPrinter) {
 		stream.write(`  ${key}: `);
 		let v = space[key];
 		if (fPrinter)
-			fPrinter(v, stream, `  ${key}: `.length + 2);
+			fPrinter(v, `  ${key}: `.length + 2, stream);
 		else
 			stream.write(`${String(v)}\n`);
 	});
@@ -330,56 +343,6 @@ function validateTypedArrayProperty(oDesc, prop, type) {
 			throw DictionaryError(`Descriptor property '${prop}' value '${val}' must be a '${type}'`);
 	});
 }
-
-
-function _loadDictionary(yi, optPath) {
-	_getCoreDictionary(yi);
-	if (!optPath) return (_createDictionaryInstance(_core));
-	let dict = _getDictionary(yi, optPath);
-	return (_createDictionaryInstance(dict))
-}
-
-function _getDictionary(yi, path) {
-	let dict = _dictionaries[path];
-	if (dict) return (dict);
-	dict = Object.create(_dictionary);
-	dict._space = Object.create(_core._space);
-	_evaluateDictionary(yi, dict, path);
-	return (dict);
-}
-
-function _getCoreDictionary(yi, optPath) {
-	if (_core) return (_core);
-	let path = yi._options.yagaCorePath;
-	if (!path) path = yaga.resolveFileName('core.yaga', module);
-	_core = Object.create(_dictionary);
-	_core._space = Object.create(null);
-
-	// Before evaluating the core definitions we will need to create the '.jsPrim' macro for
-	// loading JavaScript primitive functions for handling low level operations.
-	let jfn = yi._options.jsPrimLoader;
-	if (!jfn) jfn = yaga.Primitives.jsPrimLoader.bind(yaga.Primitives);
-	let desc = [yaga.Symbol.new('macro'), yaga.Symbol.new('jsPrim')];
-	_core.define('.jsPrim', yaga.Function.Macro.jsNew(desc, jfn));
-	_evaluateDictionary(yi, _core, path);
-	return (_core);
-}
-
-function _evaluateDictionary(yi, dict, path) {
-	dict.parent = _core;
-	yi.evaluateDictionary(dict, path);
-	if (!dict.name) dict.name = path;
-	_dictionaries[path] = dict;
-}
-
-function _createDictionaryInstance(parentDict) {
-	let dict = Object.create(_dictionary);
-	dict.parent = parentDict;
-	dict._space = Object.create(parentDict._space);
-	dict.name = '<local>'
-	return (dict);
-}
-
 
 // Exceptions
 var DictionaryError = Yaga.Exception({

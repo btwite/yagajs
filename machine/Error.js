@@ -7,18 +7,18 @@
 'use strict';
 
 var Yaga = require('../Yaga');
-var exps;
+var Mach;
 
 var Error = Yaga.Influence({
-    name: 'yaga.Error',
+    name: 'yaga.machine.Error',
     constructor(e, msg, attach) {
         let point;
         if (e && e.isaReadPoint) {
             point = e;
-            e = exps.List.nil();
+            e = Mach.List.nil();
         } else {
-            point = exps.Tools.getReadPoint(e);
-            if (!exps.Tools.isaMachineType(e)) e = exps.Wrapper.new(e, point);
+            point = Mach.getReadPoint(e);
+            if (!Mach.isaMachineType(e)) e = Mach.Wrapper.new(e, point);
         }
         return {
             element: e,
@@ -41,11 +41,11 @@ var Error = Yaga.Influence({
 
 module.exports = Object.freeze({
     Error: Error.create,
-    Initialise: x => exps = x,
+    Initialise: x => Mach = x,
 });
 
 var YagaException = Yaga.Exception({
-    name: 'yaga.YagaException',
+    name: 'yaga.machine.YagaException',
     constructor(e, msg, optErrors) {
         if (typeof e === 'string' && !msg) {
             msg = e;
@@ -58,7 +58,7 @@ var YagaException = Yaga.Exception({
 });
 
 var InternalException = Yaga.Exception({
-    name: 'yaga.InternalException',
+    name: 'yaga.machine.InternalException',
     prototype: YagaException,
     constructor(msg) {
         setErrorDetails(this, undefined, msg);
@@ -67,7 +67,7 @@ var InternalException = Yaga.Exception({
 });
 
 var ReaderException = Yaga.Exception({
-    name: 'yaga.ReaderException',
+    name: 'yaga.machine.ReaderException',
     prototype: YagaException,
     constructor(src, msg, rsn) {
         setErrorDetails(this, src, msg);
@@ -77,7 +77,7 @@ var ReaderException = Yaga.Exception({
 });
 
 var DictionaryException = Yaga.Exception({
-    name: 'yaga.DictionaryException',
+    name: 'yaga.machine.DictionaryException',
     prototype: YagaException,
     constructor(e, msg) {
         setErrorDetails(this, e, msg);
@@ -86,7 +86,7 @@ var DictionaryException = Yaga.Exception({
 });
 
 var BindException = Yaga.Exception({
-    name: 'yaga.BindException',
+    name: 'yaga.machine.BindException',
     prototype: YagaException,
     constructor(e, msg) {
         setErrorDetails(this, e, msg);
@@ -97,12 +97,12 @@ var BindException = Yaga.Exception({
 function setErrorDetails(exc, src, msg) {
     if (!src) {
         exc.readPoint = Yaga.ReadPoint.default;
-        exc.element = exps.List.nil();
+        exc.element = Mach.List.nil();
     } else if (src.isaReadPoint) {
         exc.readPoint = src;
-        exc.element = exps.List.nil();
+        exc.element = Mach.List.nil();
     } else {
-        exc.readPoint = exps.Tools.getReadPoint(src);
+        exc.readPoint = Mach.getReadPoint(src);
         exc.element = src;
     }
 }
