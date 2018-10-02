@@ -4,12 +4,14 @@
 
 "use strict"
 
+let _ = undefined;
 let yaga = require('./Yaga');
 
 
 //test();
+//testReader();
 //testLoadedDictionary()
-//testResolvePath()
+testResolvePath()
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -23,6 +25,23 @@ let yaga = require('./Yaga');
 //testGrammarExtensions();
 
 function test() {
+    function f(...args) {
+        log(Array.isArray(args));
+    };
+    f(1, 2, 3);
+    /*
+    let mc = yaga.Machine({
+        readerTable: _,
+        coreDictionary: _,
+        jsPrimLoader: _,
+        dictionary: _,
+        dictionaries: _,
+        paths: _,
+    })
+    */
+}
+
+function testReader() {
     //    let rt = yaga.Reader.ReaderTable({});
     let r = yaga.Reader({
         startReader: (...args) => console.log('startReader', ...args),
@@ -99,21 +118,9 @@ function testLoadedDictionary() {
 }
 
 function testResolvePath() {
-    log(yaga.resolvePath('require://yaga/Influence/data.txt', {
-        yaga: __dirname + '/./Yaga'
-    }));
-
-    log(yaga.resolvePath('module://testbed/Influence/data.txt', {
-        testbed: __filename
-    }));
-
-    log(yaga.resolvePath('Influence/data.txt', {
-        default: __filename
-    }));
-
-    log(yaga.resolvePath('module://testbed/Influence/.././Influence/data.txt', {
-        testbed: module
-    }));
+    log(yaga.resolvePath('path://yaga/toolbox/Influence.js'));
+    log(yaga.resolvePath('path://yaga.machine/core.yaga'));
+    log(yaga.resolvePath('toolbox/Influence.js'));
 }
 
 function testProperties() {

@@ -143,11 +143,14 @@
 
 var _ = undefined;
 var Yaga = require('../Yaga');
-var exps;
+var Exps, Mods;
 
 module.exports = Object.freeze({
 	Influence,
-	Initialise: x => exps = x,
+	Initialise: (x, m) => {
+		Exps = x;
+		Mods = m;
+	}
 });
 Influence.lookup = lookupRegistry;
 Influence.abstract = abstractInfluence;
@@ -850,7 +853,7 @@ function _allocateScope(scopeID, id, ty, fProt) {
 
 function getScopeID(oTgt) {
 	if (!oTgt.scopeID) {
-		oTgt.scopeID = 'sid:' + exps.Utilities.uuidv4();
+		oTgt.scopeID = 'sid:' + Exps.Utilities.uuidv4();
 		oTgt.validScopeIDs = {
 			[oTgt.scopeID]: true,
 		};
@@ -984,15 +987,15 @@ function copyInitialisers(oInf, oTgt) {
 	let cloneMap = new Map();
 	if (oInf.privateInitialiser) {
 		let o = oInf.private(oTgt);
-		exps.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
+		Exps.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
 	}
 	if (oInf.protectedInitialiser) {
 		// Don't have a problem here with composite protected space. This scopes environment 
 		// has already been setup correctly by the composite influence code.
 		let o = oInf.protected(oTgt);
-		exps.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
+		Exps.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
 	}
-	exps.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
+	Exps.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
 }
 
 function lookupRegistry(name) {
@@ -1024,11 +1027,11 @@ function bindThis(oInst, sProp) {
 }
 
 function copy(oInst) {
-	return (_copyClone(oInst, o => exps.Replicate.copyObject(o)))
+	return (_copyClone(oInst, o => Mods.Replicate.copyObject(o)))
 }
 
 function clone(oInst, cloneMap) {
-	return (_copyClone(oInst, o => exps.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
+	return (_copyClone(oInst, o => Mods.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
 }
 
 function assign(oInst) {
@@ -1049,7 +1052,6 @@ function _copyClone(oInst, fCopy) {
 }
 
 function freezeProperties(o) {
-
 	Object.getOwnPropertySymbols(o).forEach(prop => {
 		let desc = Object.getOwnPropertyDescriptor(o, prop);
 		if (!o.desc.configurable || FreezeExclusions[prop])

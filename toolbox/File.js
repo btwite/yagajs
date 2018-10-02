@@ -5,83 +5,150 @@
  */
 "use strict";
 
+let Default = '__default__';
+
 var Path = require('path');
+var Fs = require('fs');
+var Paths = {
+    append: pathsAppend,
+    insert: pathsInsert,
+    remove: pathsRemove,
+    forAppend: pathsForAppend,
+    forInsert: pathsForInsert,
+    forRemove: pathsForRemove
+};
+var PathsMap = {
+    [Default]: [],
+};
 
 module.exports = Object.freeze({
-    resolvePath
+    Paths,
+    resolvePath,
+    tryResolvePath,
 });
 
 /**
  * Function:    resolvePath
- * Description: Answers a fully qualified path name for a partial file specification.
+ * Description: Answers a fully qualified path name for a partial file or directory specification.
  *              The path can contain the following type prefix:
- *                  require://<reqName>/... : Use the required module path.
- *                  module://<modTag>/...   : Use module in descriptor to get path.
+ *                  path://<pathTag>/... : Try named Paths specification first followed by Default
  * 
- * @param {string} path : Full or relative path of the file to resolve.
- * @param {object} modDesc : Descriptor object with module tags and associated directory paths.
- *                           A 'default' entry should be provided to handle cases where
- *                           we have a partial file spec and no 'require' or 'module' format
- *                           type.
- *                           Descriptor can also hold aliases for 'require://' if the module
- *                           name includes path elements.  Ex. './module'.
+ * @param {string} path : Full or relative path of the file or directory to resolve.
  */
-function resolvePath(path, modDesc) {
-    if (modDesc && typeof modDesc !== 'object')
-        throw new Error('Invalid module descriptor');
+function resolvePath(path) {
+    let absPath = tryResolvePath(path);
+    if (!absPath)
+        throw new Error(`Relative path '${path}' could not be resolved`);
+    return (absPath);
+}
+
+function tryResolvePath(path) {
     // May have a fully qualified path to start with.
     if (typeof path !== 'string' || path.length <= 0)
         throw new Error('String required for file path');
-    if (path[0] === '/' || (path.length > 1 && path[1] === ':'))
+    if (Path.isAbsolute(path))
         return (path);
-
-    let tyName = _resolveSpecType(path, 'require://');
-    if (tyName) {
-        let reqName = tyName;
-        if (modDesc && typeof modDesc[tyName] === 'string')
-            reqName = modDesc[tyName];
-        let modPath = require.resolve(reqName);
-        if (!modPath)
-            throw new Error(`Module '${tyName}' cannot be found`);
-        return (formResolvedPath(modPath, path.substr('require://'.length + tyName.length)));
-    }
-
-    tyName = _resolveSpecType(path, 'module://');
-    if (tyName) {
-        if (!modDesc || !modDesc[tyName])
-            throw new Error(`Module tag '${tyName}' not found in module descriptor object`);
-        let modPath = modDesc[tyName];
-        if (typeof modPath === 'object' && modPath.filename)
-            modPath = modPath.filename;
-        if (typeof modPath !== 'string')
-            throw new Error(`Module or module path expected for '${tyName}'`);
-        return (formResolvedPath(modPath, path.substr('module://'.length + tyName.length)));
-    }
-
-    // Will need a 'default' descriptor entry for the module directory.
-    if (!modDesc || !modDesc.default)
-        throw new Error("Module tag 'default' not found in module descriptor object");
-    let modPath = modDesc.default;
-    if (typeof modPath === 'object' && modPath.filename)
-        modPath = modPath.filename;
-    if (typeof modPath !== 'string')
-        throw new Error(`Module or module path expected for 'default'`);
-    return (formResolvedPath(modPath, path));
+    let absPath, paths, tyName = resolveSpecType(path, 'path://');
+    if (tyName && (paths = PathsMap[tyName])) {
+        path = path.substr('path://'.length + tyName.length + 1);
+        absPath = formResolvedPath(paths, path);
+    } else if (!absPath)
+        absPath = formResolvedPath(PathsMap[Default], path);
+    return (absPath);
 }
 
-function formResolvedPath(relFileName, suffix) {
-    if (suffix[0] !== '/')
-        suffix = '/' + suffix;
-    return (Path.normalize(Path.dirname(relFileName).replace(/\\/g, '/') + suffix));
+function formResolvedPath(paths, relPath) {
+    if (!paths)
+        return (null);
+    for (let i = 0; i < paths.length; i++) {
+        let absPath = Path.normalize(paths[i] + relPath);
+        if (Fs.existsSync(absPath))
+            return (absPath);
+    }
+    return (null);
 }
 
-function _resolveSpecType(path, ty) {
+function resolveSpecType(path, ty) {
     let i = path.indexOf(ty);
     if (i !== 0)
         return (null);
     let j = ty.length,
-        k = path.indexOf('/', j);
+        k = path.indexOf('/', j),
+        l = path.indexOf('\\', j);
+    if (l > 0 && l < k)
+        k = l;
     if (k <= j)
-        throw new Error('Missing module name in file path');
+        throw new Error('Missing tag name in file path');
     return (path.substring(j, k));
+}
+
+function pathsAppend(...args) {
+    pathsForAppend(Default, ...args);
+}
+
+function pathsInsert(...args) {
+    pathsForInsert(Default, ...args);
+}
+
+function pathsRemove(...args) {
+    pathsForRemove(Default, ...args);
+}
+
+function pathsForAppend(tag, ...args) {
+    _pathsOperation(tag, args, _pathAppend);
+}
+
+function pathsForInsert(tag, ...args) {
+    _pathsOperation(tag, args, _pathInsert);
+}
+
+function pathsForRemove(tag, ...args) {
+    _pathsOperation(tag, args, _pathRemove);
+}
+
+function _pathsOperation(tag, pathSpec, fOp) {
+    if (typeof tag !== 'string')
+        throw new Error('Path tag must be a String');
+    if (!PathsMap.hasOwnProperty(tag))
+        PathsMap[tag] = [];
+    __pathsOperation(tag, pathSpec, fOp);
+}
+
+function __pathsOperation(tag, pathSpec, fOp) {
+    let ty = typeof pathSpec;
+    if (ty === 'string' && pathSpec.length > 0) {
+        let a = pathSpec.split(Path.delimiter);
+        if (a.length === 1) {
+            let c = pathSpec[pathSpec.length - 1];
+            if (c != '/' && c != '\\')
+                pathSpec += '/';
+            fOp(tag, pathSpec);
+        } else
+            a.forEach(ps => __pathsOperation(tag, ps, fOp));
+    } else if (Array.isArray(pathSpec))
+        pathSpec.forEach(ps => __pathsOperation(tag, ps, fOp));
+    else
+        throw new Error('Path specification must be a non empty String or an Array of Strings');
+}
+
+function _pathAppend(tag, path) {
+    let a = PathsMap[tag];
+    if (!a.includes(path))
+        a.push(path);
+    return (a);
+}
+
+function _pathInsert(tag, path) {
+    let a = PathsMap[tag];
+    if (a.includes(path))
+        a = _pathRemove(tag, path);
+    return (PathsMap[tag] = [path].concat(a));
+}
+
+function _pathRemove(tag, path) {
+    let a = PathsMap[tag];
+    let i = a.indexOf(path);
+    if (i >= 0)
+        a.splice(i, 1);
+    return (a);
 }

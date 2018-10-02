@@ -11,21 +11,21 @@
 const SymPublic = Symbol.for('Public');
 const Scopes = new WeakMap(); // Map of scope objects to associated public objects
 
-var exps;
+var Exps;
 
 module.exports = Object.freeze({
     public: o => o[SymPublic] || o,
     createPrivateScope,
     copy,
     clone,
-    Initialise: x => exps = x,
+    Initialise: x => Exps = x,
 });
 
 
 function createPrivateScope(prot) {
     if (prot !== undefined && prot !== null && (typeof prot !== 'object' || Array.isArray(prot)))
         throw new Error('Invalid prototype for private scope accessor');
-    let id = 'Scopes.private:' + exps.Utilities.uuidv4();
+    let id = 'Scopes.private:' + Exps.Utilities.uuidv4();
     return oPublic => {
         let oScopes = Scopes.get(oPublic = oPublic[SymPublic] || oPublic);
         if (!oScopes) {
@@ -45,11 +45,11 @@ function createPrivateScope(prot) {
 // Internal support for replication of non Influence objects.
 
 function copy(oSrc, oTgt) {
-    return (copyClone(oSrc, oTgt, o => exps.Replicate.copy(o)));
+    return (copyClone(oSrc, oTgt, o => Exps.Replicate.copy(o)));
 }
 
 function clone(oSrc, oTgt, cloneMap) {
-    return (copyClone(oSrc, oTgt, o => exps.Replicate.clone(o, cloneMap)));
+    return (copyClone(oSrc, oTgt, o => Exps.Replicate.clone(o, cloneMap)));
 }
 
 function copyClone(oSrc, oTgt, fCopy) {

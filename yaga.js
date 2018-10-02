@@ -31,6 +31,12 @@ Yaga.copy = toolbox.Replicate.copy;
 Yaga.reverseCopy = toolbox.Replicate.reverseCopy;
 Yaga.clone = toolbox.Replicate.clone;
 Yaga.resolvePath = toolbox.File.resolvePath;
+Yaga.tryResolvePath = toolbox.File.tryResolvePath;
+Yaga.Paths = toolbox.File.Paths;
+
+Yaga.Paths.append(__dirname);
+Yaga.Paths.forAppend('yaga', __dirname);
+Yaga.Paths.forAppend('yaga.machine', __dirname + '/machine');
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;

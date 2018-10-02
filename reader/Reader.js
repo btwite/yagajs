@@ -229,6 +229,7 @@ function readChar(ctxt) {
 }
 
 function readNextChar(ctxt) {
+    var ch;
     if (ctxt.textPosition >= ctxt.textLength) {
         if (ctxt.eos)
             throw EndOfStream(ctxt.currentPoint);
@@ -371,8 +372,8 @@ var NullInput = {
 
 function Token(ctxt, readPoint = ctxt.currentPoint, chs = '') {
     return {
-        typeName: 'ReaderToken',
-        isaReaderToken: true,
+        typeName: 'Reader.Token',
+        isaToken: true,
         add(ch) {
             this.chars += ch;
         },
@@ -387,9 +388,9 @@ function Token(ctxt, readPoint = ctxt.currentPoint, chs = '') {
 function Expression(ctxt, startToken, endToken) {
     let readPoint = (startToken && startToken.readPoint) || ctxt.currentPoint;
     return {
-        typeName: 'ReaderExpression',
-        isaReaderToken: true,
-        isaReaderExpression: true,
+        typeName: 'Reader.Expression',
+        isaToken: true,
+        isaExpression: true,
         add(tok) {
             this.tokens.push(tok);
         },
@@ -519,7 +520,7 @@ function statePrototypes(ctxt) {
     }
 
     function fAddToken(tok) {
-        if (typeof tok != 'object' || !tok.isaReaderToken)
+        if (typeof tok != 'object' || !tok.isaToken)
             throw ReaderError(ctxt.currentPoint, 'Reader Token expected');
         addToken(ctxt, tok)
     }
@@ -531,7 +532,7 @@ function statePrototypes(ctxt) {
     }
 
     function fExpression(startToken, endToken) {
-        return (Expression(startToken, endToken));
+        return (Expression(ctxt, startToken, endToken));
     }
 
     function fStartExpression(exprTok, startToken, endToken) {
@@ -555,7 +556,7 @@ function statePrototypes(ctxt) {
     function fPeeker() {
         function PeekerChar(ch, point) {
             return {
-                typeName: 'Peeker:Char',
+                typeName: 'Reader.Peeker.Char',
                 char: ch,
                 readPoint: point
             }
@@ -565,7 +566,7 @@ function statePrototypes(ctxt) {
         if (curInput)
             curInput.startPeek();
         return {
-            typeName: 'Reader:Peeker',
+            typeName: 'Reader.Peeker',
             next() {
                 if (curInput) {
                     if (ch = curInput.peekNext())
@@ -583,31 +584,31 @@ function statePrototypes(ctxt) {
 
     return {
         startReaderState: {
-            typeName: 'State:StartReader',
+            typeName: 'State.StartReader',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
         },
         endReaderState: {
-            typeName: 'State:EndReader',
+            typeName: 'State.EndReader',
             reader: ctxt.reader,
             throw: fThrow,
             popReaderTable: fPopReaderTable,
         },
         startStreamState: {
-            typeName: 'State:StartReader',
+            typeName: 'State.StartReader',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
         },
         endStreamState: {
-            typeName: 'State:EndReader',
+            typeName: 'State.EndReader',
             reader: ctxt.reader,
             throw: fThrow,
             popReaderTable: fPopReaderTable,
         },
         startLineState: {
-            typeName: 'State:StartLine',
+            typeName: 'State.StartLine',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -619,7 +620,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         endLineState: {
-            typeName: 'State:EndLine',
+            typeName: 'State.EndLine',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -631,7 +632,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         commitExpressionState: {
-            typeName: 'State:CommitExpression',
+            typeName: 'State.CommitExpression',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -643,7 +644,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         commitTokenState: {
-            typeName: 'State:CommitToken',
+            typeName: 'State.CommitToken',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -655,7 +656,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         commitCharState: {
-            typeName: 'State:CommitChar',
+            typeName: 'State.CommitChar',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -668,7 +669,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         patternState: {
-            typeName: 'State:Pattern',
+            typeName: 'State.Pattern',
             reader: ctxt.reader,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
@@ -680,7 +681,7 @@ function statePrototypes(ctxt) {
             peeker: fPeeker,
         },
         errorState: {
-            typeName: 'State:Error',
+            typeName: 'State.Error',
             reader: ctxt.reader,
         },
     }

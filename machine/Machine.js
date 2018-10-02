@@ -78,7 +78,7 @@ var MachineContext = Yaga.Influence({
  *      jsPrimLoader: Alternate JavaScript primitive function loader.
  *      dictionary: Path of the dictionary script to load
  *      dictionaries: Array of dictionary paths to load
- *      modules: Yaga 'resolvePath' module descriptor object for resolving path names
+ *      paths: Yaga 'resolvePath' paths descriptor object for resolving path names
  */
 var Machine = Yaga.Influence({
     name: 'yaga.Machine',
@@ -403,7 +403,7 @@ function addException(mc, e, excp) {
 }
 
 function clearErrors(mc) {
-    mc._errors = [];
+    mc.errors = [];
     return (mc);
 }
 

@@ -1,0 +1,10 @@
+((.jsPrim macro jsDefine) define (.jsPrim macro jsDefine))		// Call internal js primitive loader to set up define function
+(define function (.jsPrim macro jsFunction))
+(define macro (.jsPrim macro jsMacro))
+(define parms (.jsPrim macro jsParms))
+(define let (.jsPrim macro jsLet))
+(define list (.jsPrim function jsList))
+(define dictionaryName (.jsPrim macro jsDictName))
+(define dictionaryDependsOn (.jsPrim macro jsDictDependsOn))
+(define defop (.jsPrim macro jsDefop))
+(define call (.jsPrim function jsCall))
