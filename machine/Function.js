@@ -9,6 +9,13 @@
 
 'use strict';
 
+module.exports = {
+    Function: {
+        Macro: () => 'Macro',
+    }
+}
+return;
+
 var yaga, _function, _block, _jsFunction;
 
 module.exports = {

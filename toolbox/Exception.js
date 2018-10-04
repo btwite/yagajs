@@ -40,9 +40,8 @@ function Exception(oDesc) {
         throw new Error('Exception prototype must inherit from Error');
     return (createException(name, prot, constructor));
 }
-Exception.super = superConstructor;
 
-function createException(n, fp, c) {
+function createException(n, prot, c) {
     let shortName, idx = (shortName = n).lastIndexOf('.');
     if (idx >= 0) shortName = shortName.substr(idx + 1);
     let fExc = function (...args) {
@@ -58,8 +57,8 @@ function createException(n, fp, c) {
         if (!msg) msg = n; // Just answer the full name if there is no message
         return (this.message = msg);
     }
-    fp = fp.exceptionConstructor || fp;
-    fExc.prototype = Object.create(fp.prototype);
+    prot = prot.exceptionConstructor || prot;
+    fExc.prototype = Object.create(prot.prototype);
     fExc.prototype.constructor = fExc;
     fExc.prototype.name = n;
 
@@ -67,12 +66,16 @@ function createException(n, fp, c) {
     // The constructor is stored as a property of our factory function.
     var factory = (...args) => new fExc(...args);
     factory.exceptionConstructor = fExc;
+    factory.super = (exc, ...args) => {
+        return (Object.getPrototypeOf(fExc.prototype).constructor.call(exc, ...args));
+    }
     return (factory);
 }
 
-function superConstructor(exc, ...args) {
-    let c = exc.exceptionConstructor;
-    return (Object.getPrototypeOf(c.prototype).constructor.call(exc, ...args));
+// Can also call 'super' via Exception and pass the factory or constructor object.
+Exception.super = (prot, exc, ...args) => {
+    prot = prot.exceptionConstructor || prot;
+    return (Object.getPrototypeOf(prot.prototype).constructor.call(exc, ...args));
 }
 
 function defaultConstructor(...args) {

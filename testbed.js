@@ -7,11 +7,11 @@
 let _ = undefined;
 let yaga = require('./Yaga');
 
-
-//test();
+//test()
+testMachine();
 //testReader();
 //testLoadedDictionary()
-testResolvePath()
+//testResolvePath()
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -25,20 +25,32 @@ testResolvePath()
 //testGrammarExtensions();
 
 function test() {
-    function f(...args) {
-        log(Array.isArray(args));
-    };
-    f(1, 2, 3);
-    /*
-    let mc = yaga.Machine({
-        readerTable: _,
-        coreDictionary: _,
-        jsPrimLoader: _,
-        dictionary: _,
-        dictionaries: _,
-        paths: _,
-    })
-    */
+    let rt = require('./machine/YagaReaderTable').YagaReaderTable;
+    //    log(rt.match('((.jsPrim'));
+    let reader = yaga.Reader(rt);
+    let exprs = reader.readFile(__dirname + '\\test.yaga');
+    log(exprs);
+}
+
+function testMachine() {
+    let ymi;
+    try {
+        ymi = yaga.Machine({
+            readerTable: _,
+            coreDictionary: 'test.yaga',
+            jsPrimLoader: () => _,
+            //        dictionary: _,
+            //        dictionaries: _,
+        });
+    } catch (err) {
+        ymi = err.ymi || ymi;
+        if (ymi.hasErrors()) {
+            ymi.printErrors();
+            if (err.expressions.readExpression)
+                log(err.expressions.readExpression);
+        } else
+            throw err;
+    }
 }
 
 function testReader() {
@@ -118,9 +130,10 @@ function testLoadedDictionary() {
 }
 
 function testResolvePath() {
-    log(yaga.resolvePath('path://yaga/toolbox/Influence.js'));
-    log(yaga.resolvePath('path://yaga.machine/core.yaga'));
-    log(yaga.resolvePath('toolbox/Influence.js'));
+    log(yaga.Paths.resolve('path://yaga/toolbox/Influence.js'));
+    log(yaga.Paths.resolve('path://yaga.machine/core.yaga'));
+    log(yaga.Paths.resolve('toolbox/Influence.js'));
+    log(yaga.Paths.tryResolve('toolbox1/Influence.js'));
 }
 
 function testProperties() {
@@ -159,12 +172,23 @@ function testExceptions() {
         name: 'my.TestException1',
         constructor(a, b, c, d) {
             this.d = d;
-            return (yaga.Exception.super(exc1, this, a, b, c) + ' ' + d);
+            return (exc1.super(this, a, b, c) + ' ' + d);
         },
         prototype: exc
     });
     trycode(() => {
         throw exc1(10, 20, 30, 40);
+    });
+    let exc2 = yaga.Exception({
+        name: 'my.TestException2',
+        constructor(a, b, c, d) {
+            this.d = d;
+            return (yaga.Exception.super(exc2, this, a, b, c) + ' ' + d);
+        },
+        prototype: exc
+    });
+    trycode(() => {
+        throw exc2(100, 200, 300, 400);
     });
 }
 

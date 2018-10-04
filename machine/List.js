@@ -6,6 +6,13 @@
 
 'use strict';
 
+module.exports = {
+	List: {
+		nil: () => undefined
+	}
+};
+return;
+
 var yaga, _list, _nil;
 
 module.exports = {

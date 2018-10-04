@@ -51,6 +51,7 @@ var Character = Yaga.Character;
 
 var PatternMatcher = {
 	typeName: 'PatternMatcher',
+	regexprs: {}, // Allow the PatterMatcher prototype to act as an empty pattern matcher
 	match: Yaga.thisArg(match),
 };
 
@@ -74,12 +75,19 @@ var ReaderTable = Yaga.Influence({
 			patternMatcher: PatternMatcher, // Default. Pattern matcher prototype will always fail
 		}
 	},
-	constructor(rtTemplate) {
-		// May actually have a ReaderTable so just answer it.
-		if (typeof rtTemplate === 'object' && rtTemplate.isaReaderTable)
-			return (rtTemplate);
+	constructor(rtDesc) {
+		if (rtDesc && (typeof rtDesc !== 'object' || rtDesc.isaReaderTable))
+			throw new Error('Invalid ReaderTable descriptor');
 		this.patterns = {};
-		this.addTemplate(rtTemplate || {});
+		this.addTemplate(rtDesc || {});
+	},
+	static: {
+		check(rtDesc) {
+			// May actually have a ReaderTable so just answer it.
+			if (typeof rtDesc === 'object' && rtDesc.isaReaderTable)
+				return (rtDesc);
+			return (ReaderTable(rtDesc))
+		}
 	}
 });
 
@@ -210,43 +218,83 @@ function updateRegexprPattern(rt, pat, val) {
 	rt.patterns[pat] = val;
 }
 
-function match(pm, s, fConfirmMatch) {
-	var result;
-	if (pm.mainExpr) {
-		console.log(pm.mainExpr);
-		result = pm.mainExpr.exec(s);
-		if (result && (fConfirmMatch || (() => true))(result[0]))
-			return {
-				position: result.index,
-				what: result[0],
-				fHandler: pm.patterns[result[0]]
-			}
+function match(pm, s) {
+	// There are two phases to the match process. In the first we attempt to
+	// match against the begin matching patterns. This includes simple patterns as well
+	// as any regular expressions that are explicitly defined as begin matchers. This phase
+	// continues through the string until a match occurs or end of string is reached. Note
+	// that if the first character is an alphanumeric and no match occurs then all following
+	// alphanumerics are skipped. 
+	// In the second phase we run the 'any' matchers across the whole string. In this case
+	// it is upto the caller to handle potential splitting of alphanumeric sequences.
+	// At completion of the two phases the best match is returned, which will be the longest
+	// match closest to the start of the string.
+	return (bestMatch(beginMatchers(pm, s), anyMatchers(pm, s)));
+}
+
+function beginMatchers(pm, s, offset = 0) {
+	let match = runRegexpr(pm.mainExpr, s, offset, m => pm.patterns[m[0]]);
+	if (match = bestMatch(match, tryRegexprPatterns(pm.regexprs.beginMatch, s, offset)))
+		return (match);
+	if (s.length <= 1)
+		return (null);
+	// Skip alphanumerics if we just tried an alphanumeric.
+	let i = 1;
+	if (Character.isAlphaNumeric(s[0])) {
+		for (; i < s.length && Character.isAlphaNumeric(s[i]); i++);
+		if (i >= s.length)
+			return (null);
 	}
-	// Failed the main expression, so now try the explicit regexprs
-	if (!pm.regexprs) return (null);
-	// With no block type closure will use loops to handle the arrays.
-	for (let i = 0; i < pm.regexprs.length; i++) {
-		let list = pm.regexprs[i];
-		for (let j = 0; j < list.length; j++) {
-			console.log(list[j][0]);
-			result = list[j][0].exec(s);
-			if (result)
-				return {
-					position: result.index,
-					what: result[0],
-					fHandler: list[j][1]
-				}
-		}
+	// Need to go round again and try the next substring.
+	return (beginMatchers(pm, s.substr(i), offset + i))
+}
+
+function anyMatchers(pm, s) {
+	return (tryRegexprPatterns(pm.regexprs.anyMatch, s));
+}
+
+function tryRegexprPatterns(regexprs, s, offset = 0) {
+	if (!regexprs)
+		return (null);
+	// Answer the best match at the highest significance level
+	for (let i = 0; i < regexprs.length; i++) {
+		let match = null,
+			list = regexprs[i];
+		for (let j = 0; j < list.length; j++)
+			match = bestMatch(match, runRegexpr(list[j][0], s, offset, () => list[j][1]));
+		if (match)
+			return (match);
 	}
-	// Nothing matches.
 	return (null);
+}
+
+function runRegexpr(r, s, offset, fHandler) {
+	if (!r)
+		return (null);
+	let result = r.exec(s);
+	return (result ? {
+		position: result.index + offset,
+		what: result[0],
+		fHandler: fHandler(result),
+	} : null);
+}
+
+function bestMatch(match1, match2) {
+	if (!match1 || !match2)
+		return (match1 || match2);
+	if (match1.position === match2.position)
+		return (match2.what.length > match1.what.length ? match2 : match1);
+	return (match2.position < match1.position ? match2 : match1);
 }
 
 function buildPatternMatcher(rt) {
 	let pm = Object.create(PatternMatcher),
 		alphanums = [],
 		operators = [],
-		regexprs = [];
+		regexprs = {
+			beginMatch: [],
+			anyMatch: []
+		};
 	Object.keys(rt.patterns).forEach(pat => {
 		if (pat.length > 2 && pat[0] === '/' && pat[pat.length - 1] === '/')
 			return (orderRegexpr(regexprs, pat.substr(1, pat.length - 2), rt.patterns[pat]));
@@ -267,8 +315,11 @@ function sizePattern(list, pat) {
 	list[l].push(pat);
 }
 
-function orderRegexpr(list, pat, spec) {
+function orderRegexpr(regexprs, pat, spec) {
 	// Arrange regexprs in level order. If no level provided then store in slot 0.
+	// Regexprs are split into two lists. Those that match at beginning of string only and
+	// that match anywhere in string. Beginning expressions must start with a '^'.
+	let list = pat[0] === '^' ? regexprs.beginMatch : regexprs.anyMatch;
 	let fHandler = spec,
 		lvl = 0;
 	if (typeof spec === 'object') {
@@ -280,17 +331,23 @@ function orderRegexpr(list, pat, spec) {
 }
 
 function buildRegexprs(pm, regexprs) {
-	pm.regexprs = undefined;
-	if (regexprs.length === 0)
-		return;
-	pm.regexprs = [];
+	pm.regexprs = {};
+	pm.regexprs.beginMatch = _buildRegexprs(pm, regexprs.beginMatch);
+	pm.regexprs.anyMatch = _buildRegexprs(pm, regexprs.anyMatch);
+}
+
+function _buildRegexprs(pm, list) {
+	if (list.length === 0)
+		return (null);
+	let newList = [];
 	// Slot 0 are the least significant expressions
-	for (let i = 1; i < regexprs.length; i++) {
-		if (!regexprs[i]) continue;
-		pm.regexprs.push(buildLevelExprs(regexprs[i]));
+	for (let i = 1; i < list.length; i++) {
+		if (!list[i]) continue;
+		newList.push(buildLevelExprs(list[i]));
 	}
-	if (regexprs[0])
-		pm.regexprs.push(buildLevelExprs(regexprs[0]));
+	if (list[0])
+		newList.push(buildLevelExprs(list[0]));
+	return (newList);
 }
 
 function buildLevelExprs(list) {

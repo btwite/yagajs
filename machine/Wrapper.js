@@ -6,6 +6,11 @@
 
 'use strict';
 
+module.exports = {
+    Wrapper: () => 'Wrapper',
+};
+return;
+
 var yaga, _wrapper;
 
 module.exports = {

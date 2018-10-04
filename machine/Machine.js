@@ -48,11 +48,9 @@ var MachineContext = Yaga.Influence({
             mustHaveStarted,
             setDictName,
             setDictDependsOn,
+            printErrors,
         },
         getOperatorName,
-        printErrors(...args) {
-            Mach.printErrors(this.errors, ...args);
-        },
     },
     constructor(machine, options) {
         return {
@@ -78,7 +76,6 @@ var MachineContext = Yaga.Influence({
  *      jsPrimLoader: Alternate JavaScript primitive function loader.
  *      dictionary: Path of the dictionary script to load
  *      dictionaries: Array of dictionary paths to load
- *      paths: Yaga 'resolvePath' paths descriptor object for resolving path names
  */
 var Machine = Yaga.Influence({
     name: 'yaga.Machine',
@@ -115,6 +112,8 @@ function asMachineContext(meth) {
 
 function start(mc) {
     mc.isStarted = true;
+    if (!mc.options.ldDesc.coreDictionary)
+        mc.options.ldDesc.coreDictionary = 'path://yaga.machine/core.yaga';
     mc.ld = Mach.Dictionary.fromDescriptor(mc.options.ldDesc);
     mc.isInitialised = true;
 }
@@ -130,19 +129,19 @@ function readDictionary(mc, ld, fPath) {
         let desc = [Mach.Symbol('macro'), Mach.Symbol('jsPrim')];
         ld.define('.jsPrim', Mach.Function.Macro(desc, jfn));
     }
+    let exprs = {};
     try {
-        let exprs;
-        if (mc.causedErrors(() => exprs = mc.reader.readFile(fPath)))
-            throw Mach.Error.YagaException(_, `Read failed for dictionary '${path}'`, mc.errors);
-        if (mc.causedErrors(() => exprs = mc.bind(exprs))) {
-            throw Mach.Error.YagaException(_, `Bind failed for dictionary '${path}'`, mc.errors);
+        if (mc.causedErrors(() => exprs.readExpression = mc.reader.readFile(fPath)))
+            throw Mach.Error.ReadDictionaryException(mc.machine, `Read failed for dictionary '${fPath}'`, exprs, mc.errors);
+        if (mc.causedErrors(() => exprs.bindExpression = mc.bind(exprs.readExpression))) {
+            throw Mach.Error.ReadDictionaryException(mc.machine, `Bind failed for dictionary '${fPath}'`, exprs, mc.errors);
         }
-        mach.evaluate(exprs);
+        exprs.evaluateExpression = mach.evaluate(exprs.bindExpression);
     } catch (err) {
         mc.addException(_, err);
     }
     if (mc.hasErrors())
-        throw Mach.Error.YagaException(_, 'Yaga dictionary load failed', mc.errors);
+        throw Mach.Error.ReadDictionaryException(mc.machine, 'Yaga dictionary read failed', exprs, mc.errors);
     mc.ld = curld;
 }
 
@@ -156,14 +155,6 @@ function validateOptions(mc, opts) {
         dictionary: prop => o.ldDesc[prop] = opts[prop],
         dictionaries: prop => o.ldDesc[prop] = opts[prop],
         jsPrimLoader: prop => validateTypedProperty((o[prop] = opts[prop], opts), prop, 'function'),
-        modules: prop => {
-            let mods = Object.assign({}, opts[prop]);
-            mods.yaga = require.resolve('../Yaga');
-            mods.machine = __filename;
-            if (!mods.hasOwnProperty('default'))
-                mods.default = __filename;
-            o[prop] = o.ldDesc[prop] = mods;
-        },
         _other_: prop => {
             throw Mach.Error.YagaException(`Invalid Machine option property '${prop}'`);
         }
@@ -415,4 +406,22 @@ function causedErrors(mc, fn) {
     let errCount = mc.errors.length;
     fn();
     return (errCount < mc.errors.length);
+}
+
+function printErrors(mc, stream) {
+    let errors = mc.errors;
+    if (!Array.isArray(errors)) return;
+    if (!stream) stream = process.stdout;
+    errors.forEach((err) => {
+        stream.write(`=> ${err.formattedMessage()}\n`);
+        let attach = err.attachment;
+        if (attach) {
+            if (attach instanceof Error) {
+                stream.write(attach.stack);
+            } else {
+                stream.write(`    ${String(attach)}`);
+            }
+            stream.write('\n\n');
+        }
+    });
 }

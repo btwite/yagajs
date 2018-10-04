@@ -16,6 +16,10 @@ module.exports = {
         },
         Machine: mod => mod.Machine,
         YagaReaderTable: mod => mod.YagaReaderTable,
+        List: mod => mod.List,
+        Function: mod => mod.Function,
+        Symbol: mod => mod.Symbol,
+        Wrapper: mod => mod.Wrapper,
     },
     path: __dirname
 };

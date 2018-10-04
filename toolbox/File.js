@@ -10,6 +10,8 @@ let Default = '__default__';
 var Path = require('path');
 var Fs = require('fs');
 var Paths = {
+    resolve: resolvePath,
+    tryResolve: tryResolvePath,
     append: pathsAppend,
     insert: pathsInsert,
     remove: pathsRemove,
@@ -23,8 +25,6 @@ var PathsMap = {
 
 module.exports = Object.freeze({
     Paths,
-    resolvePath,
-    tryResolvePath,
 });
 
 /**
@@ -47,7 +47,7 @@ function tryResolvePath(path) {
     if (typeof path !== 'string' || path.length <= 0)
         throw new Error('String required for file path');
     if (Path.isAbsolute(path))
-        return (path);
+        return (Fs.existsSync(path) ? path : null);
     let absPath, paths, tyName = resolveSpecType(path, 'path://');
     if (tyName && (paths = PathsMap[tyName])) {
         path = path.substr('path://'.length + tyName.length + 1);

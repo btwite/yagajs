@@ -439,7 +439,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				[Least]: harmonizers.leastProperty,
 				[Most]: harmonizers.mostProperty,
 				[None]: harmonizers.noneProperty,
-			}[vHarm] || harmonizers.influenceProperty)(...args);
+			} [vHarm] || harmonizers.influenceProperty)(...args);
 		},
 		object: (...args) => {
 			if (!Array.isArray(vHarm))
@@ -448,7 +448,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return ({
 					[Least]: harmonizers.leastAllFunctions,
 					[Most]: harmonizers.mostAllFunctions,
-				}[vHarm[0]] || err)(...args);
+				} [vHarm[0]] || err)(...args);
 			}
 			return (harmonizers.selectedFunctions(...args));
 		},
@@ -457,7 +457,7 @@ function _harmonizeProperty(oInf, vHarm, prop, harmonizers) {
 				return (harmonizers.influenceProperty(...args));
 			return (harmonizers.func(...args));
 		},
-	}[typeof vHarm] || err)(prop, vHarm);
+	} [typeof vHarm] || err)(prop, vHarm);
 }
 
 function processComposition(oInf, oDesc) {
@@ -987,15 +987,15 @@ function copyInitialisers(oInf, oTgt) {
 	let cloneMap = new Map();
 	if (oInf.privateInitialiser) {
 		let o = oInf.private(oTgt);
-		Exps.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
+		Mods.Replicate.cloneObject(oInf.privateInitialiser, cloneMap, o);
 	}
 	if (oInf.protectedInitialiser) {
 		// Don't have a problem here with composite protected space. This scopes environment 
 		// has already been setup correctly by the composite influence code.
 		let o = oInf.protected(oTgt);
-		Exps.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
+		Mods.Replicate.cloneObject(oInf.protectedInitialiser, cloneMap, o);
 	}
-	Exps.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
+	Mods.Replicate.cloneObject(oInf.publicInitialiser, cloneMap, oTgt);
 }
 
 function lookupRegistry(name) {

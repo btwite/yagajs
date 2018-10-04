@@ -35,37 +35,37 @@ const NonSpecial = AlphaNumerics + Whitespace + Operators + Bells;
 // Will need to be extend the following functions properly handle ucs-2 extended characters
 
 function isSpecial(ch) {
-    return (!NonSpecial.includes(ch));
+    return (ch !== '' && !NonSpecial.includes(ch));
 }
 
 function isAlpha(ch) {
-    return (Alphas.includes(ch));
+    return (ch !== '' && Alphas.includes(ch));
 }
 
 function isAlphaNumeric(ch) {
-    return (AlphaNumerics.includes(ch));
+    return (ch !== '' && AlphaNumerics.includes(ch));
 }
 
 function isDigit(ch) {
-    return (Digits.includes(ch));
+    return (ch !== '' && Digits.includes(ch));
 }
 
 function isNumeric(ch) {
-    return (isDigit(ch));
+    return (ch !== '' && isDigit(ch));
 }
 
 function isControl(ch) {
-    return (Controls.includes(ch));
+    return (ch !== '' && Controls.includes(ch));
 }
 
 function isOperator(ch) {
-    return (Operators.includes(ch));
+    return (ch !== '' && Operators.includes(ch));
 }
 
 function isWhitespace(ch) {
-    return (Whitespace.includes(ch));
+    return (ch !== '' && Whitespace.includes(ch));
 }
 
 function isEndOfLine(ch) {
-    return (EndLine.includes(ch));
+    return (ch !== '' && EndLine.includes(ch));
 }

@@ -15,7 +15,6 @@ module.exports = Object.freeze({
     isCallable,
     assignParameters,
     getReadPoint,
-    printErrors,
     Initialise: x => Mach = x,
 });
 
@@ -50,29 +49,12 @@ function assignParameters(mi, parms) {
 }
 
 function getReadPoint(e) {
-    if (e === undefined || e === null) return (Yaga.ReadPoint.default);
+    if (e === undefined || e === null) return (Yaga.Reader.ReadPoint.default);
     if (e.isaMachineType) {
-        return (e.readPoint ? e.readPoint : Yaga.ReadPoint.default);
+        return (e.readPoint ? e.readPoint : Yaga.Reader.ReadPoint.default);
     }
     if (e.isaReadPoint) return (e);
-    return (Yaga.ReadPoint.default);
-}
-
-function printErrors(errors, stream) {
-    if (!Array.isArray(errors)) return;
-    if (!stream) stream = process.stdout;
-    errors.forEach((err) => {
-        stream.write(`=> ${err.formattedMessage()}\n`);
-        let attach = err.attachment;
-        if (attach) {
-            if (attach instanceof Error) {
-                stream.write(attach.stack);
-            } else {
-                stream.write(`    ${String(attach)}`);
-            }
-            stream.write('\n\n');
-        }
-    });
+    return (Yaga.Reader.ReadPoint.default);
 }
 
 function _installGrammarExtensions() {

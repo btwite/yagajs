@@ -56,7 +56,6 @@
  * 			dictionary: <path>,
  * 			dictionaries: [ <path>, ... ],
  * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>),
- * 			modules: Object as per 'File.resolvePath' specification.
  * 		}
  */
 "use strict";
@@ -87,13 +86,13 @@ var LoadedDictionary = Yaga.Influence({
 			return (Object.getPrototypeOf(this.space));
 		},
 	},
-	constructor(coreDictPath, dictPaths, fReadDictionary, modules, name) {
-		let coreDict = loadDictionary(coreDictPath, undefined, fReadDictionary, modules);
+	constructor(coreDictPath, dictPaths, fReadDictionary, name) {
+		let coreDict = loadDictionary(coreDictPath, undefined, fReadDictionary);
 		let dicts = [];
 		if (dictPaths) {
 			if (!Array.isArray(dictPaths))
 				dictPaths = [dictPaths];
-			dictPaths.forEach(dictPath => dicts.push(loadDictionary(dictPath, coreDictPath, fReadDictionary, modules)));
+			dictPaths.forEach(dictPath => dicts.push(loadDictionary(dictPath, coreDictPath, fReadDictionary)));
 		}
 		// Save the dictionaries in reverse order for folding.
 		dicts = Yaga.reverseCopy(dicts);
@@ -107,7 +106,6 @@ var LoadedDictionary = Yaga.Influence({
 					coreDictionary: coreDictPath,
 					dictionaries: dictPaths,
 					fReadDictionary: fReadDictionary,
-					modules: modules
 				}
 			},
 			// Properties to save a dictionary name and dependencies that will be picked up during the
@@ -167,8 +165,7 @@ function setDictionaryDependencies(ld, dictPaths) {
 			throw DictionaryError('Expecting a String for Dictionary dependency');
 		dicts.push(loadDictionary(dictPath,
 			ld.configuration.coreDictionary,
-			ld.configuration.fReadDictionary,
-			ld.configuration.modules));
+			ld.configuration.fReadDictionary));
 	});
 	ld.dictionaryDependencies = Yaga.reverseCopy(dicts);
 }
@@ -199,15 +196,15 @@ function foldDictionary(ids, dict, foldMap) {
 	foldMap.add(dict);
 }
 
-function loadDictionary(dictPath, coreDictPath, fReadDictionary, modules) {
+function loadDictionary(dictPath, coreDictPath, fReadDictionary) {
 	if (!dictPath)
 		return (null);
-	let resPath = Yaga.resolvePath(dictPath, modules);
+	let resPath = Yaga.Paths.resolve(dictPath);
 	let dict = Dictionaries.get(resPath);
 	if (!dict) {
 		// Create a LoadedDictionary with just the Core Dictionary and then request
 		// that the Dictionary be read against this core.
-		let ld = LoadedDictionary.create(coreDictPath, null, fReadDictionary, modules);
+		let ld = LoadedDictionary.create(coreDictPath, null, fReadDictionary);
 		fReadDictionary(ld, resPath);
 		// Our Dictionary has been read and the definitions are located in the mds
 		// component of the LoadedDictionary space. Use this as a template for creating
@@ -222,7 +219,7 @@ function fromDescriptor(oDesc) {
 	validateDescriptor(oDesc);
 	return (LoadedDictionary.create(oDesc.coreDictionary,
 		oDesc.dictionary ? [oDesc.dictionary] : oDesc.dictionaries,
-		oDesc.fReadDictionary, oDesc.modules, oDesc.name));
+		oDesc.fReadDictionary, oDesc.name));
 }
 
 function keyToString(key) {
@@ -319,7 +316,6 @@ function validateDescriptor(oDesc) {
 		dictionary: prop => validateTypedProperty(oDesc, prop, 'string'),
 		dictionaries: prop => validateTypedArrayProperty(oDesc, prop, 'string'),
 		fReadDictionary: prop => validateTypedProperty(oDesc, prop, 'function'),
-		modules: prop => undefined, // Leave this for 'resolvePath' to handle
 		_other_: prop => {
 			throw DictionaryError(`Invalid descriptor property '${prop}'`);
 		}

@@ -128,13 +128,12 @@ function doRequire(mods, exps, name, src, fExport, modPath) {
 function callExportFn(exps, mod, fExport, src) {
 	let helpers = {
 		rollupModuleExports() {
-			let modexps = Yaga.copy(mod);
-			delete modexps.Initialise;
-			delete modexps.PostInitialise;
-			Object.keys(modexps).forEach(prop => {
+			Object.keys(mod).forEach(prop => {
+				if (prop === 'Initialise' || prop === 'PostInitialise')
+					return; // Don't rollup Initialise or PostInitialise
 				if (exps.hasOwnProperty(prop))
 					throw new Error(`Attempting to rollup a duplicate export property '${prop}'. Module(${src})`);
-				exps[prop] = modexps[prop];
+				exps[prop] = mod[prop];
 			});
 			return (_);
 		},

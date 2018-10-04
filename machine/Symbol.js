@@ -6,6 +6,11 @@
 
 'use strict';
 
+module.exports = {
+    Symbol: () => 'Symbol',
+};
+return;
+
 var yaga, _symbol;
 
 module.exports = {

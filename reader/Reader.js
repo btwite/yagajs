@@ -28,7 +28,7 @@ var Reader = Yaga.Influence({
     constructor(rt, options = {}) {
         return {
             private_: {
-                readerTable: ReaderTable(rt),
+                readerTable: ReaderTable.check(rt),
                 options,
                 context: _,
                 contextStack: []
@@ -221,8 +221,8 @@ function readChar(ctxt) {
                 return (ch);
             return (readNextChar(ctxt));
         case '\t':
-            let tc = this.tabCount;
-            this.column = (this.column + tc) / tc * tc + 1;
+            let tc = ctxt.tabCount;
+            ctxt.column = (ctxt.column + tc) / tc * tc + 1;
         default:
             return (ch);
     }
@@ -250,10 +250,8 @@ function readNextChar(ctxt) {
 
 function peekNextChar(ctxt) {
     if (ctxt.textPosition >= ctxt.textLength) {
-        if (ctxt.eos || (ctxt.text = ctxt.fnRead()) == null) {
-            ctxt.eos = true;
+        if (ctxt.eos || (ctxt.text = ctxt.fnRead()) == null)
             return (chEOS);
-        }
         ctxt.textPosition = 0;
         if ((ctxt.textLength = ctxt.text.length) == 0)
             return (peekNextChar(ctxt));
@@ -291,11 +289,12 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
             }
             if (this.fHandler) {
                 // Up to the a ReaderTable pattern handler to process the token for this input.
-                patternHandler(ctxt, this.fHandler, ctxt.curToken = Token(ctxt, this.readPoint, this.chars));
+                patternHandler(ctxt, this.fHandler, Token(ctxt, this.readPoint, this.chars));
                 return (true);
             }
             // Default processing required, so will need to commit each char, followed by the resultant token
             // if it has any content.
+            let tok;
             if (ctxt.readerTable.commitChar) {
                 ctxt.curInput = this;
                 ctxt.curToken = Token(ctxt, this.readPoint);
@@ -306,22 +305,22 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
                     commitChar(ctxt, this.chars[i], this.readPoint.increment(i));
                 }
                 ctxt.curInput = _;
-                if (ctxt.curToken.chars.length === 0)
-                    return;
+                tok = ctxt.curToken;
+                ctxt.curToken = null;
+                if (tok.chars.length === 0)
+                    return (true);
             } else
-                ctxt.curToken = Token(ctxt, this.readPoint, this.chars);
-            let tok = ctxt.curToken;
-            ctxt.curToken = null;
+                tok = Token(ctxt, this.readPoint, this.chars);
             commitToken(ctxt, tok);
             return (true);
         },
         split(pos, len = this.chars.length - pos, match = [true, true, false]) {
             let a = [NullInput, null, NullInput];
             if (pos > 0)
-                a[0] = TokenInput(ctxt, this.chs.substr(0, pos), this.readPoint, match[0]);
-            a[1] = TokenInput(ctxt, this.chs.substr(pos, len), pos === 0 ? this.readPoint : this.readPoint.increment(pos), match[1]);
-            if (pos + len >= this.chars.length)
-                a[2] = TokenInput(ctxt, this.chs.substr(pos + len), this.readPoint.increment(pos + len), match[2]);
+                a[0] = TokenInput(ctxt, this.chars.substr(0, pos), this.readPoint, match[0]);
+            a[1] = TokenInput(ctxt, this.chars.substr(pos, len), pos === 0 ? this.readPoint : this.readPoint.increment(pos), match[1]);
+            if (pos + len < this.chars.length)
+                a[2] = TokenInput(ctxt, this.chars.substr(pos + len), this.readPoint.increment(pos + len), match[2]);
             return (a);
         }
     }
@@ -393,6 +392,9 @@ function Expression(ctxt, startToken, endToken) {
         isaExpression: true,
         add(tok) {
             this.tokens.push(tok);
+        },
+        nextReadPoint() {
+            return (readPoint.increment(startToken ? startToken.chars.length : 1));
         },
         readPoint: readPoint,
         get startToken() {
@@ -491,8 +493,9 @@ function addToken(ctxt, tok) {
     // committed these characters. Will still give the ReaderTable a chance to throw the
     // operation away by calling commitToken.
     if (ctxt.curToken && ctxt.curToken.chars.length > 0) {
-        commitToken(ctxt, ctxt.curToken);
-        ctxt.curToken = Token(ctxt, tok.readPoint.nextReadPoint()); // Leave a fresh token for additional commitChars
+        let curToken = ctxt.curToken;
+        ctxt.curToken = Token(ctxt, tok.nextReadPoint()); // Leave a fresh token for additional commitChars
+        commitToken(ctxt, curToken);
     }
     ctxt.expression.add(tok);
 }
@@ -535,6 +538,10 @@ function statePrototypes(ctxt) {
         return (Expression(ctxt, startToken, endToken));
     }
 
+    function fToken(chs, readPoint = ctxt.currentPoint) {
+        return (Token(ctxt, readPoint, chs));
+    }
+
     function fStartExpression(exprTok, startToken, endToken) {
         ctxt.exprStack.push(ctxt.expression);
         ctxt.expression = exprTok;
@@ -548,6 +555,7 @@ function statePrototypes(ctxt) {
         if (ctxt.exprStack.length === 0)
             throw ReaderError(ctxt.currentPoint, 'No open expression');
         let exprTok = ctxt.expression;
+        ctxt.expression = ctxt.exprStack.pop();
         if (endToken) exprTok.endToken = endToken;
         commitExpression(ctxt, exprTok);
         ctxt.parentPoint = ctxt.parentPoints.pop();
@@ -613,7 +621,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
@@ -625,7 +634,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
@@ -637,7 +647,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
@@ -649,7 +660,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
@@ -661,7 +673,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
@@ -674,7 +687,8 @@ function statePrototypes(ctxt) {
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
-            expression: fExpression,
+            newExpression: fExpression,
+            newToken: fToken,
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
