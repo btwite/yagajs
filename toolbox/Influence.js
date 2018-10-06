@@ -23,7 +23,8 @@
  * 				}
  * 			},
  * 			constructor: <fInitialiser> | <oInitialiser>,
- * 			static: {				// Static properties for the Infleunce
+ * 			createExit: <function>	// Pre-empt construction after examining constructor arguments.
+ * 			static: {				// Static properties for the Influence
  * 				...
  * 				thisArg_: {			// Bounded prototype functions require 'this' argument not 'this' property.
  * 				},
@@ -40,7 +41,7 @@
  * 				<descriptor> | <influence object> | <influence function> | <registry name>,
  * 				...
  * 			],
- * 			harmonizers: {
+ * 			harmonizers: '.least.' | '.most.' | {
  * 				defaults: {
  * 					prototype: <See below>,			// Default is '.most.'
  * 					static: <See below>,			// Default is '.none.'
@@ -132,6 +133,8 @@
  *				   The same bound function will be answered for a given instance/function combination. Located in the public, private and
  *				   protected prototypes. Not supported in the static scope.
  *				3. 'assign' will create a shallow value level copy of an influence instance. Located in public prototype.
+ *	   13. 'createExit' can examine the constructor arguments and answer a pre-defined object before construction begins.
+ *			An 'undefined' will allow construction to continue.
  *
  * 	Future Enhancements:
  * 		1. Influence.inheritsFrom(<inf instance>, <inf object> | <inf function> | <registry name>) - Checks whether the object is an
@@ -176,8 +179,8 @@ const FreezeExclusions = {
 
 const HarmonizerDefaults = {
 	prototype: Most,
+	constructor: Most,
 	static: None,
-	constructor: None
 };
 
 function Influence(oDesc) {
@@ -188,6 +191,11 @@ function Influence(oDesc) {
 		isanInfluence: true,
 		compositeMembership: [],
 	};
+	if (oDesc.createExit) {
+		if (typeof oDesc.createExit !== 'function')
+			throw new Error("Influence descriptor 'createExit' property must be a function");
+		oInf.createExit = oDesc.createExit;
+	}
 	oInf.prototype = defineConstant({}, 'copy', Yaga.thisArg(copy), false);
 	defineConstant(oInf.prototype, 'clone', Yaga.thisArg(clone), false);
 	defineConstant(oInf.prototype, 'assign', Yaga.thisArg(assign), false);
@@ -274,16 +282,30 @@ function compositionInfluence(oInf, oDesc) {
 	oInf.isaComposition = true;
 	processName(oInf, oDesc);
 	processComposition(oInf, oDesc);
-	Yaga.dispatchPropertyHandlers(oDesc.harmonizers, {
-		prototype: () => harmonize(oInf, _, 'prototype', oDesc.harmonizers.prototype),
-		static: () => {
-			allocStaticSegment(oInf);
-			harmonize(oInf, 'static', 'object', oDesc.harmonizers.static);
-		},
-		constructor: () => harmonizeConstructor(oInf, oDesc.harmonizers.constructor)
-	});
+	let harmonizers = oDesc.harmonizers;
+	if (typeof harmonizers === 'string') {
+		// Apply the same default across all harmonized segments.
+		harmonizers = {
+			defaults: {
+				prototype: harmonizers,
+				static: harmonizers,
+				constructor: harmonizers
+			}
+		};
+	} else if (typeof harmonizers === 'object') {
+		Yaga.dispatchPropertyHandlers(harmonizers, {
+			prototype: () => harmonize(oInf, _, 'prototype', harmonizers.prototype),
+			static: () => {
+				allocStaticSegment(oInf);
+				harmonize(oInf, 'static', 'object', harmonizers.static);
+			},
+			constructor: () => harmonizeConstructor(oInf, harmonizers.constructor)
+		});
+	} else
+		harmonizers = {};
+
 	let harmDefaults = Object.assign({}, HarmonizerDefaults); // Fill the gaps
-	harmDefaults = Object.assign(harmDefaults, oDesc.harmonizers.defaults || {});
+	harmDefaults = Object.assign(harmDefaults, harmonizers.defaults || {});
 	applyDefaultHarmonizer(oInf, 'prototype', harmDefaults.prototype);
 	applyDefaultHarmonizer(oInf, 'protectedPrototype', harmDefaults.prototype);
 	applyDefaultStaticHarmonizer(oInf, 'object', harmDefaults.static);
@@ -618,18 +640,15 @@ function newScopesObject(oTgt, oRoot) {
 }
 
 function makeCreator(oInf, fConstructor) {
-	if (oInf.isAbstract) {
-		oInf.create = () => {
-			throw new Error('Influence is abstract');
-		};
-		return;
-	}
 	oInf.create = oInf.isAbstract ?
 		() => {
 			throw new Error('Influence is abstract');
 		} :
 		(...args) => {
-			let o = Object.create(oInf.prototype);
+			let o;
+			if (oInf.createExit && (o == oInf.createExit(...args) !== undefined))
+				return (o);
+			o = Object.create(oInf.prototype);
 			if (oInf.isScoped) newScopesObject(o, oInf);
 			fConstructor.call(o, ...args);
 			return (o);
@@ -688,10 +707,14 @@ function makeInitialiserObject(oInf, oInit) {
 function processName(oInf, oDesc) {
 	if (oDesc.register && oDesc.name)
 		throw new Error(`Influence descriptor contains both 'register' and 'name' properties`);
-	oInf.name = oDesc.register || oDesc.name || Anonymous;
-	defineConstant(oInf.prototype, 'typeName', oInf.name, false);
-	let shortName = oInf.name.includes('.') ? oInf.name.substr(oInf.name.lastIndexOf('.') + 1) : oInf.name;
-	defineConstant(oInf.prototype, 'isa' + shortName, true, false);
+	let name = oDesc.register || oDesc.name;
+	if (name) {
+		let shortName = name.includes('.') ? name.substr(name.lastIndexOf('.') + 1) : name;
+		defineConstant(oInf.prototype, 'isa' + shortName, true, false);
+	} else
+		name = Anonymous;
+	defineConstant(oInf.prototype, 'typeName', name, false);
+	oInf.name = name;
 	if (oDesc.register)
 		Registry.set(oInf.name, oInf);
 }

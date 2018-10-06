@@ -6,12 +6,120 @@
 
 'use strict';
 
+let _ = undefined;
+
+var Yaga = require('../Yaga');
+var Common = require('./Common').Common;
+var Mach;
+
+let Symbol = Yaga.Influence({
+    name: 'yaga.machine.Symbol',
+    composition: [{
+        prototype: {
+            thisArg_: {
+                asQuoted,
+                asQuasiQuoted,
+                asQuasiOverride,
+                asQuasiInjection,
+            },
+            isBindable(ymc) {
+                // Check if the Symbol is in the closures
+                let varMap = ymc.binder.curDesc.varMap;
+                let v = varMap && varMap[this.name];
+                if (v) return (v)
+                // Now try the Dictionaries.
+                return (ymc.gd.find(this));
+            },
+            bind(ymc) {
+                let binding = this.isBindable(ymc);
+                if (!binding) return (UnboundSymbol.create(this));
+                if (binding.isDeclared) return (Reference.create(v));
+                return (_bindSymbol(this, binding));
+            },
+            evaluate(ymc) {
+                return (this.bind(ymc).evaluate(ymc));
+            },
+            write(ymc, val) {
+                throw yaga.errors.YagaException(this, 'Can only write to variables');
+            },
+            asString() {
+                return (this.name)
+            },
+            print(printer) {
+                if (this.leadSyntax) printer.printLead(this.leadSyntax);
+                printer.printElement(this.name);
+            }
+            value() {
+                return (`Symbol(${this.name})`);
+            },
+            isQuoted: false,
+            isQuasiQuoted: false,
+            isQuasiOverride: false,
+            isQuasiInjection: false,
+            leadSyntax: _,
+            trailSyntax: _,
+        },
+        constructor(arr, point, refList) {
+            this.elements = arr;
+            this.length = arr.length;
+            this.readPoint = point;
+            this.referenceList = refList;
+        },
+        static: {
+            get Nil() {
+                return (Nil.create);
+            },
+            get nil() {
+                return (Nil.create);
+            },
+            get Insertable() {
+                return (InsertableList.create);
+            },
+            get Expression() {
+                return (Expression.create);
+            }
+        }
+    }, Common],
+    createExit(arr, point) {
+        if (arr.length === 0)
+            return (Nil.create(point));
+    },
+    harmonizers: '.most.'
+});
+
+function _newSymbol(symName, optPoint) {
+    if (typeof symName !== 'string') symName = symName.toString(); // Handle StringBuilder case.
+    let sym = Object.create(_symbol);
+    sym.name = symName;
+    sym.reference = sym;
+    if (optPoint)
+        sym.parserPoint = optPoint;
+    return (sym);
+}
+
+_symbol = {
+    typeName: 'Symbol',
+    value() {
+        return (`Symbol(${this.name})`);
+    },
+    name: undefined,
+    parserPoint: undefined,
+    reference: undefined,
+    asQuoted: _asQuoted,
+    asQuasiQuoted: _asQuasiQuoted,
+    asQuasiOverride: _asQuasiOverride,
+    asQuasiInjection: _asQuasiInjection,
+    isaSymbol: true,
+    isQuoted: false,
+    isQuasiOverride: false,
+    isQuasiInjection: false,
+    leadSyntax: undefined,
+};
+
 module.exports = {
     Symbol: () => 'Symbol',
 };
 return;
-
-var yaga, _symbol;
 
 module.exports = {
     new: _newSymbol,
@@ -39,16 +147,6 @@ module.exports = {
     },
 };
 
-function _newSymbol(symName, optPoint) {
-    if (typeof symName !== 'string') symName = symName.toString(); // Handle StringBuilder case.
-    let sym = Object.create(_symbol);
-    sym.name = symName;
-    sym.reference = sym;
-    if (optPoint)
-        sym.parserPoint = optPoint;
-    return (sym);
-}
-
 function _newOperator(symName, specs, optPoint) {
     let sym = _newSymbol(symName, optPoint);
     sym = _newUnboundSymbol(sym);
@@ -69,10 +167,10 @@ function _newParameter(sym, defaultValue) {
         idx: undefined,
         isBindable: () => true,
         bind: _returnThis,
-        evaluate(yi) {
-            return (yi.context.argLists[this.idxClosure][this.idx]);
+        evaluate(ymc) {
+            return (ymc.context.argLists[this.idxClosure][this.idx]);
         },
-        write(yi, val) {
+        write(ymc, val) {
             throw yaga.errors.YagaException(this, `Parameter '${this.name}' is read-only`);
         }
     });
@@ -84,9 +182,9 @@ function _newVarParm(sym) {
     let parm = _newParameter(sym);
     parm.typeName = 'VariableParameter';
     parm.isaVariableParameter = true;
-    parm.evaluate = function (yi) {
+    parm.evaluate = function (ymc) {
         // needs to be changed
-        return (yi.context.argLists[this.idxClosure][this.idx]);
+        return (ymc.context.argLists[this.idxClosure][this.idx]);
     };
     return (parm);
 }
@@ -100,11 +198,11 @@ function _newVariable(boundFnType, sym) {
         idx: undefined,
         isBindable: () => true,
         bind: _returnThis,
-        evaluate(yi) {
-            return (yi.context.curClosure[this.name]);
+        evaluate(ymc) {
+            return (ymc.context.curClosure[this.name]);
         },
-        write(yi, val) {
-            return (yi.context.closures[this.idxClosure][this.name] = val);
+        write(ymc, val) {
+            return (ymc.context.closures[this.idxClosure][this.name] = val);
         }
     });
     boundFnType.addVariable(v);
@@ -132,60 +230,14 @@ function _bindSymbol(sym, val) {
     return (Object.assign(Object.create(val), {
         _symbol: sym,
         bind: _returnThis,
-        evaluate(yi) {
-            return (Object.getPrototypeOf(this).evaluate(yi))
+        evaluate(ymc) {
+            return (Object.getPrototypeOf(this).evaluate(ymc))
         },
         print(printer) {
             return (this._symbol.print(printer));
         }
     }));
 }
-
-_symbol = {
-    typeName: 'Symbol',
-    value() {
-        return (`Symbol(${this.name})`);
-    },
-    name: undefined,
-    parserPoint: undefined,
-    reference: undefined,
-    asQuoted: _asQuoted,
-    asQuasiQuoted: _asQuasiQuoted,
-    asQuasiOverride: _asQuasiOverride,
-    asQuasiInjection: _asQuasiInjection,
-    isaSymbol: true,
-    isQuoted: false,
-    isQuasiOverride: false,
-    isQuasiInjection: false,
-    leadSyntax: undefined,
-    isBindable(yi) {
-        // Check if the Symbol is in the closures
-        let varMap = yi.binder.curDesc.varMap;
-        let v = varMap && varMap[this.name];
-        if (v) return (v)
-        // Now try the Dictionaries.
-        return (yi.dictionary.find(this));
-    },
-    bind(yi) {
-        let binding = this.isBindable(yi);
-        if (!binding) return (_newUnboundSymbol(this));
-        if (binding.isDeclared) return (_newReference(v));
-        return (_bindSymbol(this, binding));
-    },
-    evaluate(yi) {
-        return (this.bind(yi).evaluate(yi));
-    },
-    write(yi, val) {
-        throw yaga.errors.YagaException(this, 'Can only write to variables');
-    },
-    asString() {
-        return (this.name)
-    },
-    print(printer) {
-        if (this.leadSyntax) printer.printLead(this.leadSyntax);
-        printer.printElement(this.name);
-    }
-};
 
 function _newUnboundSymbol(sym) {
     sym = Object.create(sym);
@@ -196,11 +248,11 @@ function _newUnboundSymbol(sym) {
     sym._unboundMessage = function () {
         return (`'${sym.name}' is not declared or defined`);
     };
-    sym.evaluate = function (yi) {
+    sym.evaluate = function (ymc) {
         throw yaga.errors.YagaException(this, this._unboundMessage());
     };
-    sym.raiseError = function (yi) {
-        yi.addError(this, this._unboundMessage());
+    sym.raiseError = function (ymc) {
+        ymc.addError(this, this._unboundMessage());
         return (this);
     };
     return (sym)
@@ -230,11 +282,11 @@ function _asQuasiOverride() {
     sym.typeName = 'QuasiOverrideSymbol';
     sym.isQuasiOverride = true;
     sym.leadSyntax = ',';
-    sym.bind = function (yi) {
+    sym.bind = function (ymc) {
         let sym = Object.getPrototypeOf(this);
-        return (_newBoundQuasiOverride(sym, sym.bind(yi)));
+        return (_newBoundQuasiOverride(sym, sym.bind(ymc)));
     };
-    sym.evaluate = function (yi) {
+    sym.evaluate = function (ymc) {
         throw new yaga.errors.YagaException(this, "Misplaced quasi override");
     }
     return (sym);
@@ -251,11 +303,11 @@ function _asQuasiInjection() {
     sym.typeName = 'QuasiInjectionSymbol';
     sym.isQuasiInjection = true;
     sym.leadSyntax = ',@';
-    sym.bind = function (yi) {
+    sym.bind = function (ymc) {
         let sym = Object.getPrototypeOf(this);
-        return (_newBoundQuasiInjection(sym, sym.bind(yi)));
+        return (_newBoundQuasiInjection(sym, sym.bind(ymc)));
     };
-    sym.evaluate = function (yi) {
+    sym.evaluate = function (ymc) {
         throw new yaga.errors.YagaException(this, "Misplaced quasi override");
     }
     return (sym);
@@ -264,8 +316,8 @@ function _asQuasiInjection() {
 function _newBoundQuasiInjection(sym, val) {
     let bind = _newBoundQuasiOverride(sym, val);
     bind.isQuasiInjection = true;
-    bind.evaluate = function (yi) {
-        let e = Object.getPrototypeOf(this).evaluate(yi);
+    bind.evaluate = function (ymc) {
+        let e = Object.getPrototypeOf(this).evaluate(ymc);
         if (e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
         return (e)
     };

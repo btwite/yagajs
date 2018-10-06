@@ -6,185 +6,311 @@
 
 'use strict';
 
-module.exports = {
-	List: {
-		nil: () => undefined
+let _ = undefined;
+
+var Yaga = require('../Yaga');
+var Common = require('./Common').Common;
+var Mach;
+
+let List = Yaga.Influence({
+	name: 'yaga.machine.List',
+	composition: [{
+		prototype: {
+			thisArg_: {
+				asQuoted,
+				asQuasiQuoted,
+				asQuasiOverride,
+				asQuasiInjection,
+			},
+			bind(ymc) {
+				return (bindList(ymc, this));
+			},
+			evaluate: returnThis,
+			print(printer) {
+				let list = this.referenceList || this;
+				printer
+					.printLead(list.leadSyntax)
+					.increaseIndent(2);
+				list.elements.forEach(e => printer.printExpression(e));
+				printer
+					.decreaseIndent(2)
+					.printTrail(list.trailSyntax);
+			},
+			isQuoted: false,
+			isQuasiQuoted: false,
+			isQuasiOverride: false,
+			isQuasiInjection: false,
+			leadSyntax: '(',
+			trailSyntax: ')',
+			isEmpty: false,
+			isInsertable: false,
+			isBound: false,
+			isUnbound: false,
+			isNil: false,
+		},
+		constructor(arr, point, refList) {
+			this.elements = arr;
+			this.length = arr.length;
+			this.readPoint = point;
+			this.referenceList = refList;
+		},
+		static: {
+			get Nil() {
+				return (Nil.create);
+			},
+			get nil() {
+				return (Nil.create);
+			},
+			get Insertable() {
+				return (InsertableList.create);
+			},
+			get Expression() {
+				return (Expression.create);
+			}
+		}
+	}, Common],
+	createExit(arr, point) {
+		if (arr.length === 0)
+			return (Nil.create(point));
+	},
+	harmonizers: '.most.'
+});
+
+var InsertableList = Yaga.Influence({
+	name: 'yaga.machine.InsertableList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isInsertable: true,
+			bind: invalidOperation,
+			evaluate: invalidOperation,
+		},
+	}, List],
+	createExit(arr, point) {
+		if (arr.length === 0)
+			throw Mach.Error.InternalException('Atempting to create an empty InsertableList');
+	},
+});
+
+var BoundList = Yaga.Influence({
+	name: 'yaga.machine.BoundList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isBound: true,
+			bind: returnThis,
+			evaluate(ymc) {
+				let es = this.elements;
+				return (es[0].call(ymc, es.slice(1), point));
+			},
+		},
+	}, List],
+	createExit(arr, point) {
+		if (!Array.isArray(arr))
+			return (arr); // This can happen if macros transform a list into a value.
+	},
+});
+
+var RelatedList = Yaga.Influence.abstract({
+	name: 'yaga.machine.RelatedList',
+	prototype: {
+		isaList: true,
+		get isaToken() {
+			return (this.relatedList.isaToken);
+		},
+		get elements() {
+			return (this.relatedList.elements);
+		},
+		get length() {
+			return (this.relatedList.length);
+		},
+		get readPoint() {
+			return (this.relatedList.readPoint);
+		},
+		get referenceList() {
+			return (this.relatedList.referenceList);
+		},
+		value(...args) {
+			return (this.relatedList.value(...args));
+		},
+		nativeValue(...args) {
+			return (this.relatedList.nativeValue(...args));
+		},
+		read(...args) {
+			return (this.relatedList.read(...args));
+		},
+		bind(...args) {
+			return (this.relatedList.bind(...args));
+		},
+		lazyEvaluate(...args) {
+			return (this.relatedList.lazyEvaluate(...args));
+		},
+		evaluate(...args) {
+			return (this.relatedList.evaluate(...args));
+		},
+		call(...args) {
+			return (this.relatedList.call(...args));
+		},
+		asString(...args) {
+			return (this.relatedList.asString(...args));
+		}
 	}
-};
-return;
+});
 
-var yaga, _list, _nil;
+var UnboundList = Yaga.Influence({
+	name: 'yaga.machine.UnBoundList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isUnbound: true,
+			bind: returnThis,
+			evaluate(ymc) {
+				throw Yaga.Error.YagaException(this, this.rsn);
+			},
+			raiseError(ymc) {
+				ymc.addError(this, this.rsn);
+				return (this);
+			}
+		},
+		constructor(list, rsn) {
+			this.relatedList = list;
+			this.rsn = rsn;
+		},
+	}, RelatedList, List],
+});
 
-module.exports = {
-	new: _newList,
-	newInsertable: _newInsertableList,
-	nil: _newNil,
-	prototype: _list,
-	Initialise: y => yaga = yaga ? yaga : y,
-	PostInitialise: () => {
-		yaga.newType(_list);
-		_list.parserPoint = yaga.Parser.defaultParserPoint;
-		_nil = Object.create(_list);
-		_nil.elements = [];
-		_nil.isNil = true;
+var DefaultNil, Nil = Yaga.Influence({
+	name: 'yaga.machine.Nil',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isNil: true,
+			isEmpty: true,
+			elements: [],
+			length: 0
+		},
+		constructor(point) {
+			this.readPoint = point;
+		},
+		static: {
+			get default() {
+				return (DefaultNil);
+			}
+		}
+	}, List],
+	createExit(readPoint) {
+		if (!readPoint)
+			return (DefaultNil);
 	},
-};
-Object.freeze(module.exports);
+	harmonizers: {
+		static: {
+			default: 0
+		}
+	}
+});
 
-function _newList(arr, point, refList) {
-	if (arr.length == 0) return (point ? _newNil(point) : _nil);
-	let list = Object.create(_list);
-	list.elements = arr;
-	list.length = arr.length;
-	list.isEmpty = false;
-	if (point) list.parserPoint = point;
-	if (refList) list.referenceList = refList;
-	return (list);
-}
+var Expression = Yaga.Influence({
+	name: 'yaga.machine.Expression',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isaToken: true,
+			isaExpression: true,
+			add(tok) {
+				this.elements.push(tok);
+				this.length++;
+			},
+			nextReadPoint() {
+				return (this.readPoint.increment(this.leadSyntax.length));
+			},
+			set startToken(tok) {
+				this.readPoint = tok.readPoint;
+			},
+			set endToken(tok) {
+				// Nothing to do
+			},
+		},
+		constructor(readPoint, tok) {
+			this.elements = [];
+			this.length = 0;
+			this.readPoint = readPoint;
+			this.referenceList = _;
+		}
+	}, List]
+});
 
-function _newInsertableList(arr, point) {
-	let list = _newList(arr, point);
-	list.isInsertable = true;
-	list.bind = _invalidOperation;
-	list.evaluate = _invalidOperation;
-	return (list);
-}
-
-function _invalidOperation(yi) {
-	throw yaga.errors.InternalException('Invalid operation')
-}
-
-function _newBoundList(arr, point) {
-	if (!Array.isArray(arr)) return (arr); // This can happen if macros transform a list into a value.
-	let list = _newList(arr, point);
-	list.typeName = 'BoundList';
-	list.isBound = true;
-	list.bind = _returnThis;
-	list.evaluate = function (yi) {
-		let es = this.elements;
-		return (es[0].call(yi, es.slice(1), point));
-	};
-	return (list);
-}
-
-function _newUnboundList(list, rsn) {
-	list = Object.create(list);
-	list.typeName = 'UnboundList';
-	list.isUnbound = true;
-	list.bind = _returnThis;
-	list.evaluate = function (yi) {
-		throw yaga.errors.YagaException(this, rsn);
-	};
-	list.raiseError = function (yi) {
-		yi.addError(this, rsn);
-		return (this);
-	};
-	return (list);
-}
-
-function _newNil(point) {
-	if (!point) return (_nil);
-	let nil = Object.create(_nil);
-	nil.parserPoint = point;
-	return (nil);
-}
-
-_list = {
-	typeName: 'List',
-	parserPoint: undefined,
-	asQuoted: _asQuoted,
-	asQuasiQuoted: _asQuasiQuoted,
-	asQuasiOverride: _asQuasiOverride,
-	asQuasiInjection: _asQuasiInjection,
-	isaList: true,
-	isQuoted: false,
-	isQuasiQuoted: false,
-	isQuasiOverride: false,
-	isQuasiInjection: false,
-	isEmpty: true,
-	elements: undefined,
-	length: 0,
-	referenceList: undefined, // Can be assigned to handle printer operations
-	leadSyntax: '(',
-	trailSyntax: ')',
-
-	bind(yi) {
-		return (_bindList(yi, this));
+module.exports = Object.freeze({
+	List: List.create,
+	Initialise(x) {
+		Mach = x;
+		DefaultNil = Nil.create(Yaga.Reader.ReadPoint.default);
 	},
-	evaluate: _returnThis,
+});
 
-	print(printer) {
-		let list = this.referenceList || this;
-		printer
-			.printLead(list.leadSyntax)
-			.increaseIndent(2);
-		list.elements.forEach((e) => printer.printExpression(e));
-		printer
-			.decreaseIndent(2)
-			.printTrail(list.trailSyntax);
-	},
+function invalidOperation(ymc) {
+	throw Yaga.Error.InternalException('Invalid operation')
 }
 
-function _bindList(yi, list) {
+function bindList(ymc, list) {
 	let isCallable, arr = [],
 		es = list.elements;
 	if (es.length == 0) return (this);
 	// Process any operators before we continue. Note that operators take precedence over
 	// macros.
-	es = _processOperators(yi, es);
+	es = processOperators(ymc, es);
 
-	let head = es[0].bind(yi);
-	if ((isCallable = yaga.isCallable(head)) && head.isaMacro) {
+	let head = es[0].bind(ymc);
+	if ((isCallable = Mach.isCallable(head)) && head.isaMacro) {
 		// Evaluate prepares the context call will take the context and instaniate
-		let args = _newList(es.slice(1), es[0].parserPoint);
+		let args = List.create(es.slice(1), es[0].readPoint);
 		args.isaMacroCall = true;
-		head = head.evaluate(yi).call(yi, args);
+		head = head.evaluate(ymc).call(ymc, args);
 		if (head.isaList && head.isInsertable) return (head);
-		return (head.bind(yi));
+		return (head.bind(ymc));
 	}
 	arr.push(head);
-	_bindElements(yi, arr, es, 1);
+	bindElements(ymc, arr, es, 1);
 	// Check if all the elements have been bound.
-	if (_checkBindings(arr)) {
-		return (isCallable ? _newBoundList(arr, list.parserPoint) :
-			(_newUnboundList(list, 'Head element must be a function or macro').raiseError(yi)));
+	if (checkBindings(arr)) {
+		return (isCallable ? BoundList.create(arr, list.readPoint) :
+			(UnboundList.create(list, 'Head element must be a function or macro').raiseError(ymc)));
 	}
 	// If our head is callable then we just raise errors and return an unboundlist
-	if (isCallable) return (_raiseListErrors(yi, list, arr, 'List is a function or macro but has unbound elements or operators'));
+	if (isCallable) return (raiseListErrors(ymc, list, arr, 'List is a function or macro but has unbound elements or operators'));
 	// Our head is not callable so we just raise the errors in the bind list
-	return (_raiseListErrors(yi, list, arr));
+	return (raiseListErrors(ymc, list, arr));
 }
 
-function _bindElements(yi, arr, es, iStart) {
+function bindElements(ymc, arr, es, iStart) {
 	for (let i = iStart; i < es.length; i++) {
-		let e = es[i].bind(yi);
-		if (e.isInsertable) _bindElements(yi, arr, e.elements, 0);
+		let e = es[i].bind(ymc);
+		if (e.isInsertable) bindElements(ymc, arr, e.elements, 0);
 		else arr.push(e);
 	}
 	return (arr);
 }
 
-function _processOperators(yi, es) {
+function processOperators(ymc, es) {
 	// Check for non-bindable symbols, and if there are any then we apply operator processing.
 	let flBindable = true,
 		arr = [];
 	es.forEach(e => {
-		if (e.isaSymbol && !e.isBindable(yi)) {
+		if (e.isaSymbol && !e.isBindable(ymc)) {
 			flBindable = false;
-			e = e.bind(yi);
+			e = e.bind(ymc);
 		}
 		arr.push(e);
 	});
 	if (flBindable) return (es); // Nothing that could be an operator so nothing to do
-	if (!_checkOperators((arr = _parseOperators(yi, arr)))) return (es);
-	//es = _bindOperators(yi, arr);
-	//	yi.print(_newList(es));
+	if (!checkOperators((arr = parseOperators(ymc, arr)))) return (es);
+	//es = _bindOperators(ymc, arr);
+	//	ymc.print(_newList(es));
 	//	return (es);
-	return (_bindOperators(yi, arr));
+	return (bindOperators(ymc, arr));
 }
 
-function _bindOperators(yi, es, er) {
-	if (es.length === 0) throw yaga.errors.BindException(er, `Missing argument for operator '${er.value()}'`);
+function bindOperators(ymc, es, er) {
+	if (es.length === 0) throw Yaga.Error.BindException(er, `Missing argument for operator '${er.value()}'`);
 	if (es.length === 1) return (es); // Down to the last element in this branch
 	const dirPrec = {
 		none: {},
@@ -213,74 +339,74 @@ function _bindOperators(yi, es, er) {
 			iOp = i;
 		}
 	}
-	if (!curSpec) throw yaga.errors.BindException(es[0], 'Missing operator specification when binding an operator expression');
+	if (!curSpec) throw Yaga.Error.BindException(es[0], 'Missing operator specification when binding an operator expression');
 	if (iOp === 0) {
 		if (curSpec.type !== 'prefix' || curSpec.type !== 'list') {
-			throw yaga.errors.BindException(es[0], `Expecting a prefix or list operator. Found('${curSpec.type}')`);
+			throw Yaga.Error.BindException(es[0], `Expecting a prefix or list operator. Found('${curSpec.type}')`);
 		}
-		return (_bindSequenceOp(yi, curSpec, es, iOp));
+		return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
 	if (iOp === es.length - 1) {
-		if (curSpec.type !== 'postfix') throw yaga.errors.InternalException(`Expecting a postfix operator Found('${curSpec.type}')`);
-		return (_bindSequenceOp(yi, curSpec, es, iOp));
+		if (curSpec.type !== 'postfix') throw Yaga.Error.InternalException(`Expecting a postfix operator Found('${curSpec.type}')`);
+		return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
 	switch (curSpec.type) {
 		case 'binary':
-			let symFn = yaga.Symbol.new(curSpec.function, es[iOp].parserPoint);
-			return ([symFn, __bindOperators(yi, es.slice(0, iOp), es[iOp]), __bindOperators(yi, es.slice(iOp + 1), es[iOp])]);
+			let symFn = yaga.Symbol.new(curSpec.function, es[iOp].readPoint);
+			return ([symFn, _bindOperators(ymc, es.slice(0, iOp), es[iOp]), _bindOperators(ymc, es.slice(iOp + 1), es[iOp])]);
 		case 'list':
 		case 'postfix':
 		case 'prefix':
 		case 'connector':
-			return (_bindSequenceOp(yi, curSpec, es, iOp));
+			return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
-	throw yaga.errors.BindException(es[iOp], `Invalid operator specification type '${curSpec.type}'`);
+	throw Yaga.Error.BindException(es[iOp], `Invalid operator specification type '${curSpec.type}'`);
 }
 
-function __bindOperators(yi, es, er) {
-	if (_checkOperators(es)) es = _bindOperators(yi, es, er);
+function _bindOperators(ymc, es, er) {
+	if (checkOperators(es)) es = bindOperators(ymc, es, er);
 	if (es.length == 1) return (es[0]); // Down to the last element in this branch
-	return (_newList(es, es[0].parserPoint));
+	return (List.create(es, es[0].readPoint));
 }
 
-function _bindSequenceOp(yi, spec, es, iOp) {
+function bindSequenceOp(ymc, spec, es, iOp) {
 	let arr = [],
-		symFn = yaga.Symbol.new(spec.function, es[iOp].parserPoint);
+		symFn = Yaga.Symbol(spec.function, es[iOp].readPoint);
 	switch (spec.type) {
 		case 'prefix':
 			if (es.length == 2) return ([symFn, es[1]])
 			if (iOp > 0) arr = es.slice(0, iOp);
-			arr.push(_newList([symFn, es[iOp + 1]], es[iOp].parserPoint));
+			arr.push(List.create([symFn, es[iOp + 1]], es[iOp].readPoint));
 			if (iOp + 2 < es.length) arr = arr.concat(es.slice(iOp + 2));
 			break;
 		case 'postfix':
 			if (es.length == 2) return ([symFn, es[0]])
 			if (iOp > 1) arr = es.slice(0, iOp - 1);
-			arr.push(_newList([symFn, es[iOp - 1]], es[iOp].parserPoint));
+			arr.push(List.create([symFn, es[iOp - 1]], es[iOp].readPoint));
 			if (iOp + 1 < es.length) arr = arr.concat(es.slice(iOp + 1));
 			break;
 		case 'list':
-			let iEnd = _findEndOfList(yi, spec, es, iOp);
+			let iEnd = findEndOfList(ymc, spec, es, iOp);
 			if (iOp === 0 && iEnd === es.length - 1) return ([symfn].concat(es.slice(iOp + 1, iEnd)));
 			if (iOp > 0) arr = es.slice(0, iOp);
-			arr.push(_newList([symFn].concat(es.slice(iOp + 1, iEnd)), es[iOp].parserPoint));
+			arr.push(List.create([symFn].concat(es.slice(iOp + 1, iEnd)), es[iOp].readPoint));
 			if (iEnd < es.length - 1) arr = arr.concat(es.slice(iEnd + 1));
 			break;
 		case 'connector':
 			let seq = [symFn, es[iOp - 1], es[iOp + 1]];
 			if (es.length === 3) return (seq);
 			if (iOp > 1) arr = es.slice(0, iOp - 1);
-			arr.push(_newList(seq, es[iOp].parserPoint));
+			arr.push(List.create(seq, es[iOp].readPoint));
 			if (iOp + 1 < es.length - 1) arr = arr.concat(es.slice(iOp + 2));
 			break;
 		default:
-			throw yaga.errors.InternalException('Invalid bind sequence');
+			throw Yaga.Error.InternalException('Invalid bind sequence');
 	}
-	if (_checkOperators(arr)) arr = _bindOperators(yi, arr, arr[0]);
+	if (checkOperators(arr)) arr = bindOperators(ymc, arr, arr[0]);
 	return (arr);
 }
 
-function _findEndOfList(yi, spec, es, iOp) {
+function findEndOfList(ymc, spec, es, iOp) {
 	let sfx = spec.sfx;
 	let i = iOp + 1,
 		cnt = 1;
@@ -295,15 +421,15 @@ function _findEndOfList(yi, spec, es, iOp) {
 		if (e.spec.type === 'endlist' && e.spec.op === sfx) {
 			if (--cnt > 0) continue;
 			let nArgs = i - iOp - 1;
-			if (spec.minElements && nArgs < spec.minElements) yi.addError(es[iOp], 'Too few arguments for list operator');
-			if (spec.maxElements && nArgs > spec.maxElements) yi.addError(es[iOp], 'Too many arguments for list operator');
+			if (spec.minElements && nArgs < spec.minElements) ymc.addError(es[iOp], 'Too few arguments for list operator');
+			if (spec.maxElements && nArgs > spec.maxElements) ymc.addError(es[iOp], 'Too many arguments for list operator');
 			return (i);
 		}
 	}
-	throw yaga.errors.BindException(es[iOp], 'Missing end of list');
+	throw Yaga.Error.BindException(es[iOp], 'Missing end of list');
 }
 
-function _parseOperators(yi, es) {
+function parseOperators(ymc, es) {
 	let arr = [];
 	// First of all find the operators splitting up any symbols that have been aggregated
 	let i;
@@ -313,7 +439,7 @@ function _parseOperators(yi, es) {
 			arr.push(e);
 			continue;
 		}
-		arr = arr.concat(_parseSymbol(yi, e));
+		arr = arr.concat(parseSymbol(ymc, e));
 	}
 	// Work through our resolved operator expression.
 	let e, eNext, ePrevSpec, eNextSpecs, spec;
@@ -352,183 +478,242 @@ function _parseOperators(yi, es) {
 	return (arr);
 }
 
-function _parseSymbol(yi, e) {
+function parseSymbol(ymc, e) {
 	// Try and split the token up by know operators. Operator reduction is from the end to the front
 	// shifting the front up on each failed pass.
 	let arr = [];
 	let s = e.name;
 	let i, j, k, iStart;
 	for (i = 0, iStart = 0; i < s.length; i++) {
-		if (!yi._operators.includes(s[i])) continue;
+		if (!ymc.operators.includes(s[i])) continue;
 		let specs, sOp;
 		// Determine the end of this operator character sequence
-		for (j = i + 1; j < s.length && yi._operators.includes(s[j]); j++);
+		for (j = i + 1; j < s.length && ymc.operators.includes(s[j]); j++);
 		for (k = j; k > i; k--) {
 			sOp = s.substring(i, k);
-			if (specs = yi.dictionary.findString(yi.getOperatorName(sOp))) {
+			if (specs = ymc.gd.find(ymc.getOperatorName(sOp))) {
 				specs = specs.value();
 				break;
 			}
 		}
 		if (!specs) continue;
 		if (iStart < i) {
-			let e1 = yi.parser.parseString(s.substring(iStart, i));
-			e1.parserPoint = e.parserPoint.increment(iStart);
+			let e1 = ymc.reader.readString(s.substring(iStart, i));
+			e1.readPoint = e.readPoint.increment(iStart);
 			arr.push(e1);
 		}
-		arr.push(yaga.Symbol.newOperator(sOp, specs, e.parserPoint.increment(i)));
+		arr.push(yaga.Symbol.Operator(sOp, specs, e.readPoint.increment(i)));
 		iStart = k;
 		i = k - 1; // Need to allow for loop incrementer
 	}
 	if (arr.length === 0) return ([e]);
 	if (iStart < s.length) {
-		let e1 = yi.parser.parseString(s.substr(iStart));
-		e1.parserPoint = e.parserPoint.increment(iStart);
+		let e1 = ymc.reader.readString(s.substr(iStart));
+		e1.readPoint = e.readPoint.increment(iStart);
 		arr.push(e1);
 	}
 	return (arr);
 }
 
-function _raiseListErrors(yi, list, arr, msg) {
+function raiseListErrors(ymc, list, arr, msg) {
 	arr.forEach(e => {
 		// Allow unbound operators that have an implementation spec.
-		if (e.isUnbound && !e.spec) e.raiseError(yi);
+		if (e.isUnbound && !e.spec) e.raiseError(ymc);
 	});
-	if (!msg) return (_newUnboundList(list, 'List had bind errors'))
-	return (_newUnboundList(list, msg).raiseError(yi))
+	if (!msg) return (UnboundList.create(list, 'List had bind errors'))
+	return (UnboundList.create(list, msg).raiseError(ymc))
 }
 
-function _checkBindings(es) {
+function checkBindings(es) {
 	for (let i = 0; i < es.length; i++) {
 		if (es[i].isUnbound) return (false);
 	};
 	return (true);
 }
 
-function _checkOperators(es) {
+function checkOperators(es) {
 	for (let i = 0; i < es.length; i++) {
 		if (es[i].isanOperator && es[i].spec) return (true);
 	};
 	return (false);
 }
 
-function _evaluateArray(yi, es) {
+function evaluateArray(ymc, es) {
 	let arr = [];
 	es.forEach(e => {
-		e = e.evaluate(yi);
+		e = e.evaluate(ymc);
 		if (e.isInsertable) arr = arr.concat(e.elements);
 		else arr.push(e);
 	});
 	return (arr);
 }
 
-function _asQuoted() {
-	let list = Object.create(this);
-	list.typeName = 'QuotedList';
-	list.isQuoted = true;
-	list.leadSyntax = '\'(';
-	list.bind = _returnThis;
-	list.evaluate = _returnPrototype;
-	return (list);
+// Quoted type lists
+var QuotedList = Yaga.Influence({
+	name: 'yaga.machine.QuotedList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuoted: true,
+			leadSyntax: '\'(',
+			bind: returnThis,
+			evaluate: returnRelated,
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+})
+
+function asQuoted(list) {
+	return (QuotedList.create(list));
 }
 
-function _asQuasiQuoted() {
-	let list = Object.create(this);
-	list.typeName = 'QuasiQuotedList';
-	list.isQuasiQuoted = true;
-	list.leadSyntax = '`(';
-	list.bind = function (yi) {
-		let arr = [];
-		this.elements.forEach(e => {
-			if (e.isQuasiOverride) e = e.bind(yi);
-			arr.push(e);
-		});
-		return (_newBoundQuasiQuoted(arr, this.parserPoint));
-	};
-	list.evaluate = _returnThis;
-	return (list);
+var QuasiQuotedList = Yaga.Influence({
+	name: 'yaga.machine.QuasiQuotedList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuasiQuoted: true,
+			leadSyntax: '`(',
+			bind(ymc) {
+				let arr = [];
+				this.elements.forEach(e => {
+					if (e.isQuasiOverride) e = e.bind(ymc);
+					arr.push(e);
+				});
+				return (BoundQuasiQuotedList.create(arr, this.readPoint));
+			},
+			evaluate: returnThis,
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+});
+
+function asQuasiQuoted(list) {
+	return (QuasiQuotedList.create(list));
 }
 
-function _newBoundQuasiQuoted(arr, point) {
-	let list = _newList(arr, point);
-	list.typeName = 'BoundQuasiQuotedList';
-	list.isQuasiQuoted = true;
-	list.leadSyntax = '`(';
-	list.bind = _returnThis;
-	list.evaluate = function (yi) {
-		let arr = [];
-		this.elements.forEach(e => {
-			if (e.isQuasiOverride) {
-				if ((e = e.evaluate(yi)).isInsertable) {
-					arr = arr.concat(e.elements);
-					return;
-				}
-			}
-			arr.push(e);
-		});
-		return (_newList(arr, this.parserPoint));
-	};
-	return (list);
-}
+var BoundQuasiQuotedList = Yaga.Influence({
+	name: 'yaga.machine.BoundQuasiQuotedList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuasiQuoted: true,
+			leadSyntax: '`(',
+			bind: returnThis,
+			evaluate(ymc) {
+				let arr = [];
+				this.elements.forEach(e => {
+					if (e.isQuasiOverride) {
+						if ((e = e.evaluate(ymc)).isInsertable) {
+							arr = arr.concat(e.elements);
+							return;
+						}
+					}
+					arr.push(e);
+				});
+				return (List.create(arr, this.readPoint));
+			},
+		},
+	}, List],
+	harmonizers: {
+		constructor: List
+	}
+});
 
 // May change bind so that parent list is passed to handle quasi overrides rather than the parent having
 // to check every element.
-function _asQuasiOverride() {
-	let list = Object.create(this);
-	list.typeName = 'QuasiOverrideList';
-	list.isQuasiOverride = true;
-	list.leadSyntax = ',(';
-	list.bind = function (yi) {
-		return (_newBoundQuasiOverride(Object.getPrototypeOf(this).bind(yi)));
-	};
-	list.evaluate = function (yi) {
-		throw new yaga.errors.YagaException(this, "Misplaced quasi override");
-	}
-	return (list);
+var QuasiOverrideList = Yaga.Influence({
+	name: 'yaga.machine.QuasiOverrideList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuasiOverride: true,
+			leadSyntax: ',(',
+			bind(ymc) {
+				return (BoundQuasiOverrideList.create(this.relatedList.bind(ymc)));
+			},
+			evaluate(ymc) {
+				throw Yaga.Error.YagaException(this, "Misplaced quasi override");
+			},
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+});
+
+function asQuasiOverride(list) {
+	return (QuasiOverrideList.create(list));
 }
 
-function _newBoundQuasiOverride(list) {
-	// Evaluate method will default to the lists normal evaluate.
-	list.typeName = 'BoundQuasiOverrideList';
-	list.isQuasiOverride = true;
-	list.leadSyntax = ',(';
-	list.bind = _returnThis;
-	return (list);
+var BoundQuasiOverrideList = Yaga.Influence({
+	name: 'yaga.machine.BoundQuasiOverrideList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuasiOverride: true,
+			leadSyntax: ',(',
+			bind: returnThis,
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+});
+
+var QuasiInjectionList = Yaga.Influence({
+	name: 'yaga.machine.QuasiInjectionList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			isQuasiInjection: true,
+			leadSyntax: ',@(',
+			bind(ymc) {
+				return (BoundQuasiInjectionList.create(this.relatedList.bind(ymc)));
+			},
+			evaluate(ymc) {
+				throw Yaga.Error.YagaException(this, "Misplaced quasi injection");
+			},
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+});
+
+function asQuasiInjection(list) {
+	return (QuasiInjectionList.create(list));
 }
 
-function _asQuasiInjection() {
-	let list = _asQuasiOverride.call(this);
-	list.typeName = 'QuasiInjectionList';
-	list.leadSyntax = ',@(';
-	list.isQuasiInjection = true;
-	list.bind = function (yi) {
-		return (_newBoundQuasiInjection(Object.getPrototypeOf(this).bind(yi)));
-	};
-	list.evaluate = function (yi) {
-		throw new yaga.errors.YagaException(this, "Misplaced quasi injection");
-	}
-	return (list);
-}
+var BoundQuasiInjectionList = Yaga.Influence({
+	name: 'yaga.machine.BoundQuasiInjectionList',
+	composition: [{
+		prototype: {
+			isaList: true,
+			leadSyntax: ',@(',
+			isQuasiOverride: true,
+			isQuasiInjection: true,
+			bind: returnThis,
+			evaluate(ymc) {
+				let e = this.relatedList.call(this, ymc);
+				if (e.isaList) e = InsertableList.create(e.elements, e.readPoint);
+				return (e);
+			},
+		},
+		constructor(list) {
+			this.relatedList = list;
+		}
+	}, RelatedList, List]
+});
 
-function _newBoundQuasiInjection(list) {
-	list.typeName = 'BoundQuasiInjectionList';
-	list.leadSyntax = ',@(';
-	list.isQuasiOverride = true;
-	list.isQuasiInjection = true;
-	list.bind = _returnThis;
-	let actEvaluate = list.evaluate;
-	list.evaluate = function (yi) {
-		let e = actEvaluate.call(this, yi);
-		if (e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
-		return (e);
-	};
-	return (list);
-}
-
-function _returnThis() {
+function returnThis() {
 	return (this);
 }
 
-function _returnPrototype() {
-	return (Object.getPrototypeOf(this));
+function returnRelated() {
+	return (this.relatedList);
 }

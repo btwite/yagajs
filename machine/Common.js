@@ -8,7 +8,7 @@
 let _ = undefined;
 
 var Yaga = require('../Yaga');
-var exps;
+var Mach;
 
 var Common = Yaga.Influence.abstract({
     name: 'yaga.Common',
@@ -17,23 +17,23 @@ var Common = Yaga.Influence.abstract({
         value() {
             return (`Type(${this.typeName})`);
         },
-        nativeValue(mi) {
+        nativeValue() {
             return (this.value());
         },
-        parse() {
-            throw exps.Error.YagaException(this, `'${this.value()}' cannot be parsed`);
+        read() {
+            throw Mach.Error.YagaException(this, `'${this.value()}' cannot be read`);
         },
-        bind(mi) {
-            throw exps.Error.InternalException(`'${this.typeName}' has no 'bind' method`);
+        bind() {
+            throw Mach.Error.InternalException(`'${this.typeName}' has no 'bind' method`);
         },
-        lazyEvaluate(mi) {
+        lazyEvaluate() {
             return (this);
         },
-        evaluate(mi) {
-            throw exps.Error.InternalException(`'${this.typeName}' has no 'evaluate' method`);
+        evaluate() {
+            throw Mach.Error.InternalException(`'${this.typeName}' has no 'evaluate' method`);
         },
-        call(mi) {
-            throw exps.Error.YagaException(this, `'${this.value()}' cannot be called`);
+        call() {
+            throw Mach.Error.YagaException(this, `'${this.value()}' cannot be called`);
         },
         asString() {
             return (this.value());
@@ -43,5 +43,5 @@ var Common = Yaga.Influence.abstract({
 
 module.exports = Object.freeze({
     Common: Common.create,
-    Initialise: x => exps = x,
+    Initialise: x => Mach = x,
 });

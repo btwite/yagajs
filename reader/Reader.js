@@ -54,8 +54,10 @@ var ReaderContext = Yaga.Influence({
     },
     constructor(r, s, f) {
         let ps = Reader.private(r);
+        // 'reader' & 'rtcb' must be initialised before call to 'statePrototypes'
+        this.reader = r;
+        this.rtcb = {};
         return {
-            reader: r,
             fnRead: f,
             readerTable: ps.readerTable,
             readerTableStack: [],
@@ -219,10 +221,11 @@ function readChar(ctxt) {
         case '\r':
             if (peekNextChar(ctxt) !== '\n')
                 return (ch);
+            ctxt.column--; // Count /r/n as 1 character
             return (readNextChar(ctxt));
         case '\t':
             let tc = ctxt.tabCount;
-            ctxt.column = (ctxt.column + tc) / tc * tc + 1;
+            ctxt.column = Math.floor((ctxt.column - 1 + tc) / tc) * tc;
         default:
             return (ch);
     }
@@ -328,8 +331,6 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
 
 function EOLInput(ctxt) {
     let iPeek, readPoint = ctxt.currentPoint;
-    ctxt.line++;
-    ctxt.column = 0;
     return {
         typeName: 'EOLInput',
         readPoint: readPoint,
@@ -338,6 +339,8 @@ function EOLInput(ctxt) {
         peekReadPoint: () => readPoint,
         action() {
             endLine(ctxt, this.readPoint);
+            ctxt.line++;
+            ctxt.column = 0;
             if (peekNextChar(ctxt) !== chEOS)
                 startLine(ctxt);
             return (true);
@@ -514,12 +517,14 @@ function statePrototypes(ctxt) {
     }
 
     function fPushReaderTable(rt) {
-        ctxt.readTableStack.push(ctxt.readTable);
-        return (ctxt.readTable = tr);
+        ctxt.readerTableStack.push(ctxt.readerTable);
+        return (ctxt.readerTable = rt);
     }
 
     function fPopReaderTable() {
-        return (ctxt.readTable = ctxt.readTableStack.pop());
+        if (ctxt.readerTableStack.length <= 0)
+            throw ReaderError((ctxt.currentPoint, 'ReaderTable stack is empty'));
+        return (ctxt.readerTable = ctxt.readerTableStack.pop());
     }
 
     function fAddToken(tok) {
@@ -594,30 +599,35 @@ function statePrototypes(ctxt) {
         startReaderState: {
             typeName: 'State.StartReader',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
         },
         endReaderState: {
             typeName: 'State.EndReader',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             popReaderTable: fPopReaderTable,
         },
         startStreamState: {
             typeName: 'State.StartReader',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
         },
         endStreamState: {
             typeName: 'State.EndReader',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             popReaderTable: fPopReaderTable,
         },
         startLineState: {
             typeName: 'State.StartLine',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -631,6 +641,7 @@ function statePrototypes(ctxt) {
         endLineState: {
             typeName: 'State.EndLine',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -644,6 +655,7 @@ function statePrototypes(ctxt) {
         commitExpressionState: {
             typeName: 'State.CommitExpression',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -657,6 +669,7 @@ function statePrototypes(ctxt) {
         commitTokenState: {
             typeName: 'State.CommitToken',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -670,6 +683,7 @@ function statePrototypes(ctxt) {
         commitCharState: {
             typeName: 'State.CommitChar',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -684,6 +698,7 @@ function statePrototypes(ctxt) {
         patternState: {
             typeName: 'State.Pattern',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
             throw: fThrow,
             pushReaderTable: fPushReaderTable,
             popReaderTable: fPopReaderTable,
@@ -697,6 +712,7 @@ function statePrototypes(ctxt) {
         errorState: {
             typeName: 'State.Error',
             reader: ctxt.reader,
+            rtcb: ctxt.rtcb,
         },
     }
 }

@@ -7,11 +7,11 @@
 let _ = undefined;
 let yaga = require('./Yaga');
 
-//test()
+//test();
 testMachine();
 //testReader();
-//testLoadedDictionary()
-//testResolvePath()
+//testGlobalDictionary();
+//testResolvePath();
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -33,9 +33,9 @@ function test() {
 }
 
 function testMachine() {
-    let ymi;
+    let mach;
     try {
-        ymi = yaga.Machine({
+        mach = yaga.Machine({
             readerTable: _,
             coreDictionary: 'test.yaga',
             jsPrimLoader: () => _,
@@ -43,9 +43,8 @@ function testMachine() {
             //        dictionaries: _,
         });
     } catch (err) {
-        ymi = err.ymi || ymi;
-        if (ymi.hasErrors()) {
-            ymi.printErrors();
+        if ((mach = err.machine || mach) && mach.hasErrors()) {
+            mach.printErrors();
             if (err.expressions.readExpression)
                 log(err.expressions.readExpression);
         } else
@@ -80,53 +79,59 @@ function testReader() {
     r.readString('Hello World').tokens.forEach(tok => log(tok));
 }
 
-function testLoadedDictionary() {
+function testGlobalDictionary() {
     let desc = {
-        coreDictionary: 'myYaga/core.yaga',
-        dictionary: 'myYaga/dict.yaga',
-        fReadDictionary(ld, path) {
-            log(path);
+        name: 'testGlobalDictionary',
+        coreDictionary: 'testpath://myYaga/core.yaga',
+        dictionary: 'testpath://myYaga/dict.yaga',
+        fReadDictionary(gd, path) {
+            log('fReadDictionary:', path);
             switch (path.substr(path.lastIndexOf('myYaga')).replace('\\', '/')) {
                 case 'myYaga/core.yaga':
-                    ld.setDictionaryName('core');
-                    ld.setDictionaryDependencies(['myYaga/core1.yaga', 'myYaga/core2.yaga']);
-                    ld.define('core', true);
-                    ld.define('dict2', true);
-                    ld.define('x:y', true);
+                    gd.setDictionaryName('core');
+                    gd.setDictionaryDependencies(['testpath://myYaga/core1.yaga', 'testpath://myYaga/core2.yaga']);
+                    gd.define('core', true);
+                    gd.define('dict2', true);
+                    gd.define('x:y', true);
                     break;
                 case 'myYaga/core1.yaga':
-                    ld.setDictionaryName('core1');
-                    ld.define('core1', true);
+                    gd.setDictionaryName('core1');
+                    gd.define('core1', true);
                     break;
                 case 'myYaga/core2.yaga':
-                    ld.setDictionaryName('core2');
-                    ld.define('core2', true);
+                    gd.setDictionaryName('core2');
+                    gd.define('core2', true);
                     break;
                 case 'myYaga/dict.yaga':
-                    ld.setDictionaryName('dict');
-                    ld.setDictionaryDependencies(['myYaga/dict1.yaga', 'myYaga/dict2.yaga']);
-                    ld.define('dict', true);
+                    gd.setDictionaryName('dict');
+                    gd.setDictionaryDependencies(['testpath://myYaga/dict1.yaga', 'testpath://myYaga/dict2.yaga']);
+                    gd.define('dict', true);
                     break;
                 case 'myYaga/dict1.yaga':
-                    ld.setDictionaryName('dict1');
-                    ld.setDictionaryDependencies('myYaga/dict2.yaga');
-                    ld.define('dict1', true);
+                    gd.setDictionaryName('dict1');
+                    gd.setDictionaryDependencies('testpath://myYaga/dict2.yaga');
+                    gd.define('dict1', true);
                     break;
                 case 'myYaga/dict2.yaga':
-                    ld.setDictionaryName('dict2');
-                    ld.define('dict2', false);
+                    gd.setDictionaryName('dict2');
+                    gd.define('dict2', false);
+                    break;
+                case 'myYaga/dict3.yaga':
+                    gd.setDictionaryName('dict3');
+                    gd.define('dict3', 'Hello World');
                     break;
             }
-        },
-        modules: {
-            default: __filename,
         }
     };
-    let ld = yaga.Machine.LoadedDictionary.fromDescriptor(desc);
-    log(ld.ids);
-    ld.print(process.stdout);
-    ld.dictionaries.forEach(dict => dict.print(process.stdout));
-    log(ld.find('dict'), ld.find('core:dict2'), ld.find('core:x:y'), ld.find('core:x:y1'));
+    let gd = yaga.Machine.GlobalDictionary.fromDescriptor(desc);
+    log(gd.ids);
+    gd.print(process.stdout);
+    yaga.Machine.GlobalDictionary.printDictionaries(process.stdout);
+    yaga.Machine.GlobalDictionary.printDictionary('dict2', process.stdout);
+    log(gd.find('dict'), gd.find('core:dict2'), gd.find('core:x:y'), gd.find('core:x:y1'));
+    let dict = gd.loadDictionary('testpath://myYaga/dict3.yaga');
+    dict.print(process.stdout);
+    log(gd.find('dict'), gd.find('core:dict2'), gd.find('core:x:y'), gd.find('core:x:y1'));
 }
 
 function testResolvePath() {

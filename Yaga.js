@@ -56,7 +56,7 @@ Object.defineProperty(Yaga, 'Machine', {
         if (Machine) return (Machine);
         let exps = Yaga.Loader(require('./machine/loadScript'));
         Machine = (...args) => exps.Machine(...args);
-        Machine.LoadedDictionary = exps.Dictionary;
+        Machine.GlobalDictionary = exps.Dictionary;
         return (Machine);
     }
 });

@@ -1,10 +1,10 @@
 /*
  *  Dictionary: @file
  * 
- *  This module contains the behaviour for creating a LoadedDictionary from one or more
- *  Dictionary segments.
+ *  This module contains the behaviour for creating a GlobalDictionary from one or more
+ *  Dictionary segments, as well as loading inidividual dictionaries.
  *
- *  A LoadedDictionary is a loosely coupled dependency hierachy of Dictionaries with 
+ *  A GlobalDictionary is a loosely coupled dependency hierachy of Dictionaries with 
  *  the root Dictionary segment set to the Yaga core dictionary definitions (which can 
  *  also be extended and overwritten).
  *  Yaga instance initialisation allows the instance to be assigned a list of startup 
@@ -44,18 +44,18 @@
  *  (dictionaryName "myDictionary"). The name is used to reference a specific Dictionary
  *  entry. For example the symbol 'foo:bar' will attempt to bind to the entry 'bar' in
  *  the Dictionary named 'foo'. If this fails then a lookup will attempt to bind to
- *  the 'foo:bar' symbol in the overall LoadedDictionary space.
+ *  the 'foo:bar' symbol in the overall GlobalDictionary space.
  *  Note that a symbol contains multiple ':' characters then the lookup will process
  *  these left to right.
  * 
- *  LoadedDictionary has a static function 'fromDescriptor'that accepts a descriptor object of the 
+ *  GlobalDictionary has a static function 'fromDescriptor'that accepts a descriptor object of the 
  *  following format:
  * 		{
- * 			name: <string>,	// Optional tag to be assigned to the LoadedDictionary
+ * 			name: <string>,	// Optional tag to be assigned to the GlobalDictionary
  * 			coreDictionary: <path>,
  * 			dictionary: <path>,
  * 			dictionaries: [ <path>, ... ],
- * 			fReadDictionary: function(LoadedDictionary, <path of dictionary to read>),
+ * 			fReadDictionary: function(GlobalDictionary, <path of dictionary to read>),
  * 		}
  */
 "use strict";
@@ -66,18 +66,43 @@ var Yaga = require('../Yaga');
 var Dictionaries = new Map();
 var NamedDictionaries = new Map();
 
-var LoadedDictionary = Yaga.Influence({
-	name: 'yaga.LoadedDictionary',
+var Dictionary = Yaga.Influence({
+	name: 'yaga.Dictionary',
+	prototype: {
+		thisArg_: {
+			find: findDictionary,
+			print: _printDictionary,
+		}
+	},
+	constructor(path, name, depends, spaceTemplate) {
+		if (name) {
+			if (NamedDictionaries.get(name))
+				throw DictionaryError(`A dictionary named '${name}' already exists`);
+			NamedDictionaries.set(name, this);
+		}
+		return {
+			freeze_: {
+				name: name || path,
+				dependencies: Object.freeze(Yaga.copy(depends)),
+				space: Object.freeze(Object.assign(Object.create(null), spaceTemplate)),
+			}
+		}
+	}
+});
+
+var GlobalDictionary = Yaga.Influence({
+	name: 'yaga.GlobalDictionary',
 	prototype: {
 		thisArg_: {
 			setDictionaryDependencies,
 			setDictionaryName,
 			define,
 			redefine,
-			find: findLoadedDictionary,
-			print: printLoadedDictionary,
-			printDictionaries,
-			printDictionary
+			find: findGlobalDictionary,
+			print: printGlobalDictionary,
+		},
+		loadDictionary(dictPath) {
+			return (loadDictionary(dictPath, this.configuration.coreDictionary, this.configuration.fReadDictionary));
 		},
 		get mds() {
 			return (this.space);
@@ -99,7 +124,7 @@ var LoadedDictionary = Yaga.Influence({
 		return {
 			freeze_: {
 				name: name || '<anonymous>',
-				space: loadDictionarySpace(coreDict, dicts),
+				space: loadGlobalDictionarySpace(coreDict, dicts),
 				coreDictionary: coreDict,
 				dictionaries: dicts,
 				configuration: {
@@ -116,61 +141,41 @@ var LoadedDictionary = Yaga.Influence({
 		};
 	},
 	static: {
-		fromDescriptor
+		fromDescriptor,
+		printDictionaries,
+		printDictionary
 	}
 });
 
 module.exports = Object.freeze({
-	LoadedDictionary: LoadedDictionary.create,
+	GlobalDictionary: GlobalDictionary.create,
 });
 
-var Dictionary = Yaga.Influence({
-	name: 'yaga.Dictionary',
-	prototype: {
-		thisArg_: {
-			find: findDictionary,
-			print: _printDictionary,
-		}
-	},
-	constructor(path, name, depends, spaceTemplate) {
-		if (name) {
-			if (NamedDictionaries.get(name))
-				throw DictionaryError(`A dictionary named '${name}' already exists`);
-			NamedDictionaries.set(name, this);
-		}
-		return {
-			name: name || path,
-			dependencies: depends,
-			space: Object.assign(Object.create(null), spaceTemplate),
-		}
-	}
-});
-
-function setDictionaryName(ld, name) {
+function setDictionaryName(gd, name) {
 	if (typeof name !== 'string')
 		throw DictionaryError('String expected for Dictionary name');
-	if (ld.dictionaryName)
-		throw DictionaryError(`A Dictionary name '${ld.dictionaryName}' has aleady been defined`);
-	ld.dictionaryName = name;
+	if (gd.dictionaryName)
+		throw DictionaryError(`A Dictionary name '${gd.dictionaryName}' has aleady been defined`);
+	gd.dictionaryName = name;
 }
 
-function setDictionaryDependencies(ld, dictPaths) {
+function setDictionaryDependencies(gd, dictPaths) {
 	if (!Array.isArray(dictPaths))
 		dictPaths = [dictPaths];
-	if (ld.dictionaryDependencies)
+	if (gd.dictionaryDependencies)
 		throw DictionaryError('Dictionary dependencies have aleady been defined');
 	let dicts = [];
 	dictPaths.forEach(dictPath => {
 		if (typeof dictPath !== 'string')
 			throw DictionaryError('Expecting a String for Dictionary dependency');
 		dicts.push(loadDictionary(dictPath,
-			ld.configuration.coreDictionary,
-			ld.configuration.fReadDictionary));
+			gd.configuration.coreDictionary,
+			gd.configuration.fReadDictionary));
 	});
-	ld.dictionaryDependencies = Yaga.reverseCopy(dicts);
+	gd.dictionaryDependencies = Yaga.reverseCopy(dicts);
 }
 
-function loadDictionarySpace(coreDict, dicts) {
+function loadGlobalDictionarySpace(coreDict, dicts) {
 	let ids = Object.create(null), // Dictionary space cannot inherit from Object.
 		mds = Object.create(ids),
 		foldMap = new Set();
@@ -191,7 +196,7 @@ function foldDictionary(ids, dict, foldMap) {
 		// Note that the list has already been reversed.
 		dict.dependencies.forEach(dict => foldDictionary(ids, dict, foldMap));
 	}
-	// Fold the dictionary space into the LoadedDictionary ids.
+	// Fold the dictionary space into the GlobalDictionary ids.
 	Object.assign(ids, dict.space);
 	foldMap.add(dict);
 }
@@ -202,14 +207,14 @@ function loadDictionary(dictPath, coreDictPath, fReadDictionary) {
 	let resPath = Yaga.Paths.resolve(dictPath);
 	let dict = Dictionaries.get(resPath);
 	if (!dict) {
-		// Create a LoadedDictionary with just the Core Dictionary and then request
+		// Create a GlobalDictionary with just the Core Dictionary and then request
 		// that the Dictionary be read against this core.
-		let ld = LoadedDictionary.create(coreDictPath, null, fReadDictionary);
-		fReadDictionary(ld, resPath);
+		let gd = GlobalDictionary.create(coreDictPath, null, fReadDictionary);
+		fReadDictionary(gd, resPath);
 		// Our Dictionary has been read and the definitions are located in the mds
-		// component of the LoadedDictionary space. Use this as a template for creating
+		// component of the GlobalDictionary space. Use this as a template for creating
 		// the dictionary object.
-		dict = Dictionary.create(resPath, ld.dictionaryName, ld.dictionaryDependencies, ld.mds);
+		dict = Dictionary.create(resPath, gd.dictionaryName, gd.dictionaryDependencies, gd.mds);
 		Dictionaries.set(resPath, dict);
 	}
 	return (dict);
@@ -217,7 +222,7 @@ function loadDictionary(dictPath, coreDictPath, fReadDictionary) {
 
 function fromDescriptor(oDesc) {
 	validateDescriptor(oDesc);
-	return (LoadedDictionary.create(oDesc.coreDictionary,
+	return (GlobalDictionary.create(oDesc.coreDictionary,
 		oDesc.dictionary ? [oDesc.dictionary] : oDesc.dictionaries,
 		oDesc.fReadDictionary, oDesc.name));
 }
@@ -234,19 +239,19 @@ function keyToString(key) {
 	}
 }
 
-function define(ld, key, value) {
+function define(gd, key, value) {
 	key = keyToString(key);
-	if (Object.getOwnPropertyDescriptor(ld.space, key))
+	if (Object.getOwnPropertyDescriptor(gd.space, key))
 		throw DictionaryError(key, `'${key}' is already defined`);
-	_define(ld, key, value);
+	_define(gd, key, value);
 }
 
-function redefine(ld, key, value) {
-	_define(ld, keyToString(key), value);
+function redefine(gd, key, value) {
+	_define(gd, keyToString(key), value);
 }
 
-function _define(ld, key, value) {
-	Object.defineProperty(ld.space, key, {
+function _define(gd, key, value) {
+	Object.defineProperty(gd.space, key, {
 		value: value,
 		configurable: false,
 		writable: true,
@@ -254,10 +259,10 @@ function _define(ld, key, value) {
 	});
 }
 
-function findLoadedDictionary(ld, key) {
+function findGlobalDictionary(gd, key) {
 	key = keyToString(key);
 	let v = findDictionaryValue(key, key.length);
-	return (v !== undefined ? v : ld.space[key]);
+	return (v !== undefined ? v : gd.space[key]);
 }
 
 function findDictionaryValue(key, iEnd) {
@@ -275,19 +280,21 @@ function findDictionary(dict, key) {
 	return (dict.space[keyToString(key)])
 }
 
-function printLoadedDictionary(ld, stream, fPrinter) {
-	stream.write(`LoadedDictionary(${ld.name}-IDS) ::\n`)
-	printSpace(ld.ids, stream, fPrinter);
-	stream.write(`LoadedDictionary(${ld.name}-MDS) ::\n`)
-	printSpace(ld.mds, stream, fPrinter);
+function printGlobalDictionary(gd, stream, fPrinter) {
+	stream.write(`GlobalDictionary(${gd.name}-IDS) ::\n`)
+	printSpace(gd.ids, stream, fPrinter);
+	stream.write(`GlobalDictionary(${gd.name}-MDS) ::\n`)
+	printSpace(gd.mds, stream, fPrinter);
 }
 
-function printDictionaries(ld, stream, fPrinter) {
-	Dictionaries.forEach((v, k) => k.print(stream, fPrinter));
+function printDictionaries(stream, fPrinter) {
+	stream.write(`Printing Dictionaries ....\n`);
+	Dictionaries.forEach(dict => dict.print(stream, fPrinter));
+	stream.write(`--------------------------\n`);
 }
 
-function printDictionary(ld, name, stream, fPrinter) {
-	let dict = Dictionaries.get(name) || NamedDictionaries.get(name);
+function printDictionary(name, stream, fPrinter) {
+	let dict = NamedDictionaries.get(name) || Dictionaries.get(Yaga.Paths.resolve(name));
 	if (!dict)
 		throw new Error(`Dictionary '${name}' not found`);
 	dict.print(stream, fPrinter);

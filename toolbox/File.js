@@ -48,10 +48,12 @@ function tryResolvePath(path) {
         throw new Error('String required for file path');
     if (Path.isAbsolute(path))
         return (Fs.existsSync(path) ? path : null);
-    let absPath, paths, tyName = resolveSpecType(path, 'path://');
-    if (tyName && (paths = PathsMap[tyName])) {
+    let absPath, paths, tyName;
+    if ((tyName = resolveSpecType(path, 'path://')) && (paths = PathsMap[tyName])) {
         path = path.substr('path://'.length + tyName.length + 1);
         absPath = formResolvedPath(paths, path);
+    } else if ((tyName = resolveSpecType(path, 'testpath://'))) {
+        absPath = path;
     } else if (!absPath)
         absPath = formResolvedPath(PathsMap[Default], path);
     return (absPath);

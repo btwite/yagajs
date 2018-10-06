@@ -9,7 +9,7 @@ let _ = undefined;
 module.exports = {
     modules: {
         Common: mod => mod.Common,
-        Dictionary: mod => mod.LoadedDictionary,
+        Dictionary: mod => mod.GlobalDictionary,
         Error: mod => mod.Error,
         Tools(mod, cb) {
             return (cb.rollupModuleExports());

@@ -27,10 +27,10 @@ var YagaException = Yaga.Exception({
 var ReadDictionaryException = Yaga.Exception({
     name: 'yaga.machine.ReadDictionaryException',
     prototype: YagaException,
-    constructor(ymi, msg, exprs, errors) {
+    constructor(mach, msg, exprs, errors) {
         ReadDictionaryException.super(this, _, msg, errors);
         this.expressions = exprs;
-        this.ymi = ymi;
+        this.machine = mach;
         return (msg);
     }
 });
