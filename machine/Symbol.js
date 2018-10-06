@@ -10,7 +10,7 @@ let _ = undefined;
 
 var Yaga = require('../Yaga');
 var Common = require('./Common').Common;
-var Mach;
+var Mach, SymList, SymAssign;
 
 let Symbol = Yaga.Influence({
     name: 'yaga.machine.Symbol',
@@ -48,7 +48,7 @@ let Symbol = Yaga.Influence({
             print(printer) {
                 if (this.leadSyntax) printer.printLead(this.leadSyntax);
                 printer.printElement(this.name);
-            }
+            },
             value() {
                 return (`Symbol(${this.name})`);
             },
@@ -59,90 +59,40 @@ let Symbol = Yaga.Influence({
             leadSyntax: _,
             trailSyntax: _,
         },
-        constructor(arr, point, refList) {
-            this.elements = arr;
-            this.length = arr.length;
-            this.readPoint = point;
-            this.referenceList = refList;
+        constructor(symName, readPoint) {
+            if (typeof symName !== 'string')
+                symName = symName.toString(); // Handle StringBuilder case.
+            this.name = symName;
+            this.reference = this;
+            this.readPoint = readPoint || Yaga.Reader.ReadPoint.default;
         },
         static: {
-            get Nil() {
-                return (Nil.create);
+            get Token() {
+                return (Token.create);
             },
-            get nil() {
-                return (Nil.create);
+            Variable,
+            Parameter,
+            VariableParameter,
+            Operator,
+            bind: bindSymbol,
+            none,
+            get symList() {
+                return (SymList);
             },
-            get Insertable() {
-                return (InsertableList.create);
-            },
-            get Expression() {
-                return (Expression.create);
+            get symAssign() {
+                return (SymAssign);
             }
         }
     }, Common],
-    createExit(arr, point) {
-        if (arr.length === 0)
-            return (Nil.create(point));
-    },
     harmonizers: '.most.'
 });
 
-function _newSymbol(symName, optPoint) {
-    if (typeof symName !== 'string') symName = symName.toString(); // Handle StringBuilder case.
-    let sym = Object.create(_symbol);
-    sym.name = symName;
-    sym.reference = sym;
-    if (optPoint)
-        sym.parserPoint = optPoint;
-    return (sym);
-}
-
-_symbol = {
-    typeName: 'Symbol',
-    value() {
-        return (`Symbol(${this.name})`);
-    },
-    name: undefined,
-    parserPoint: undefined,
-    reference: undefined,
-    asQuoted: _asQuoted,
-    asQuasiQuoted: _asQuasiQuoted,
-    asQuasiOverride: _asQuasiOverride,
-    asQuasiInjection: _asQuasiInjection,
-    isaSymbol: true,
-    isQuoted: false,
-    isQuasiOverride: false,
-    isQuasiInjection: false,
-    leadSyntax: undefined,
-};
-
 module.exports = {
-    Symbol: () => 'Symbol',
-};
-return;
-
-module.exports = {
-    new: _newSymbol,
-    newOperator: _newOperator,
-    Variable: {
-        new: _newVariable,
-    },
-    Parameter: {
-        new: _newParameter,
-    },
-    VariableParameter: {
-        new: _newVarParm,
-    },
-    bind: _bindSymbol,
-    none: _none,
-    List: undefined,
-    opAssign: undefined,
-    Initialise: y => yaga = yaga ? yaga : y,
+    Symbol: Symbol.create,
+    Initialise: x => Mach = x,
     PostInitialise() {
-        yaga.newType(_symbol);
-        _symbol.parserPoint = yaga.Parser.defaultParserPoint;
-        this.List = _newSymbol('List');
-        this.opAssign = _newSymbol('=');
+        SymList = Symbol.create('List');
+        SymAssign = Symbol.create('=');
         Object.freeze(this);
     },
 };

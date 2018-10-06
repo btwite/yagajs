@@ -557,6 +557,21 @@ function testInfluence() {
     myInf.create.foo();
     myInf.create.foobar();
     myInf.create.foobar1();
+
+    o.assign({
+        helloWorld() {
+            console.log('dlroW olleH');
+            return (this);
+        },
+    });
+    o.helloWorld();
+    o = o.extend({
+        helloWorld() {
+            console.log('olleH dlroW');
+            return (this);
+        },
+    });
+    o.helloWorld();
 }
 
 function testReadPoint() {

@@ -132,7 +132,11 @@
  *				2. 'bindThis' will answer a bound function for an influence instance. Ex. foo.bindThis('fbar')
  *				   The same bound function will be answered for a given instance/function combination. Located in the public, private and
  *				   protected prototypes. Not supported in the static scope.
- *				3. 'assign' will create a shallow value level copy of an influence instance. Located in public prototype.
+ *				3. 'assign' allows the properties of an object to be copied into the influence instance. 
+ *				   A descriptor level copy is performed allowing the frozen prototype properties to be overriden
+ *				   in the instance. Located in public prototype.
+ *				4. 'extend' creates a POJO that extends the influence instance and optionally assigns an object template
+ *				   to the extension. The template is assigned at a descriptor level. Located in the public prototype.
  *	   13. 'createExit' can examine the constructor arguments and answer a pre-defined object before construction begins.
  *			An 'undefined' will allow construction to continue.
  *
@@ -199,6 +203,7 @@ function Influence(oDesc) {
 	oInf.prototype = defineConstant({}, 'copy', Yaga.thisArg(copy), false);
 	defineConstant(oInf.prototype, 'clone', Yaga.thisArg(clone), false);
 	defineConstant(oInf.prototype, 'assign', Yaga.thisArg(assign), false);
+	defineConstant(oInf.prototype, 'extend', Yaga.thisArg(extend), false);
 	defineConstant(oInf.prototype, 'bindThis', Yaga.thisArg(bindThis), false);
 	defineConstant(oInf.prototype, 'isanInfluenceInstance', true, true);
 	if (oDesc.hasOwnProperty('prototype'))
@@ -1057,8 +1062,16 @@ function clone(oInst, cloneMap) {
 	return (_copyClone(oInst, o => Mods.Replicate.cloneObject(o, cloneMap || (cloneMap = new Map()))))
 }
 
-function assign(oInst) {
-	return (_copyClone(oInst, o => Object.assign(Object.create(Object.getPrototypeOf(o)), o)));
+function assign(oInst, o) {
+	Object.defineProperties(oInst, Object.getOwnPropertyDescriptors(o));
+	return (oInst);
+}
+
+function extend(oInst, oTemplate) {
+	let o = Object.create(oInst);
+	if (oTemplate)
+		Object.defineProperties(o, Object.getOwnPropertyDescriptors(oTemplate));
+	return (o);
 }
 
 function _copyClone(oInst, fCopy) {

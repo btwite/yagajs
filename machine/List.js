@@ -111,74 +111,6 @@ var BoundList = Yaga.Influence({
 	},
 });
 
-var RelatedList = Yaga.Influence.abstract({
-	name: 'yaga.machine.RelatedList',
-	prototype: {
-		isaList: true,
-		get isaToken() {
-			return (this.relatedList.isaToken);
-		},
-		get elements() {
-			return (this.relatedList.elements);
-		},
-		get length() {
-			return (this.relatedList.length);
-		},
-		get readPoint() {
-			return (this.relatedList.readPoint);
-		},
-		get referenceList() {
-			return (this.relatedList.referenceList);
-		},
-		value(...args) {
-			return (this.relatedList.value(...args));
-		},
-		nativeValue(...args) {
-			return (this.relatedList.nativeValue(...args));
-		},
-		read(...args) {
-			return (this.relatedList.read(...args));
-		},
-		bind(...args) {
-			return (this.relatedList.bind(...args));
-		},
-		lazyEvaluate(...args) {
-			return (this.relatedList.lazyEvaluate(...args));
-		},
-		evaluate(...args) {
-			return (this.relatedList.evaluate(...args));
-		},
-		call(...args) {
-			return (this.relatedList.call(...args));
-		},
-		asString(...args) {
-			return (this.relatedList.asString(...args));
-		}
-	}
-});
-
-var UnboundList = Yaga.Influence({
-	name: 'yaga.machine.UnBoundList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isUnbound: true,
-			bind: returnThis,
-			evaluate(ymc) {
-				throw Yaga.Error.YagaException(this, this.rsn);
-			},
-			raiseError(ymc) {
-				ymc.addError(this, this.rsn);
-				return (this);
-			}
-		},
-		constructor(list, rsn) {
-			this.relatedList = list;
-			this.rsn = rsn;
-		},
-	}, RelatedList, List],
-});
-
 var DefaultNil, Nil = Yaga.Influence({
 	name: 'yaga.machine.Nil',
 	composition: [{
@@ -247,6 +179,22 @@ module.exports = Object.freeze({
 	},
 });
 
+function UnboundList(list, rsn) {
+	return (list.extend({
+		typeName: 'yaga.machine.UnBoundList',
+		isUnbound: true,
+		rsn: rsn,
+		bind: returnThis,
+		evaluate(ymc) {
+			throw Yaga.Error.YagaException(this, this.rsn);
+		},
+		raiseError(ymc) {
+			ymc.addError(this, this.rsn);
+			return (this);
+		}
+	}));
+}
+
 function invalidOperation(ymc) {
 	throw Yaga.Error.InternalException('Invalid operation')
 }
@@ -273,7 +221,7 @@ function bindList(ymc, list) {
 	// Check if all the elements have been bound.
 	if (checkBindings(arr)) {
 		return (isCallable ? BoundList.create(arr, list.readPoint) :
-			(UnboundList.create(list, 'Head element must be a function or macro').raiseError(ymc)));
+			(UnboundList(list, 'Head element must be a function or macro').raiseError(ymc)));
 	}
 	// If our head is callable then we just raise errors and return an unboundlist
 	if (isCallable) return (raiseListErrors(ymc, list, arr, 'List is a function or macro but has unbound elements or operators'));
@@ -520,8 +468,8 @@ function raiseListErrors(ymc, list, arr, msg) {
 		// Allow unbound operators that have an implementation spec.
 		if (e.isUnbound && !e.spec) e.raiseError(ymc);
 	});
-	if (!msg) return (UnboundList.create(list, 'List had bind errors'))
-	return (UnboundList.create(list, msg).raiseError(ymc))
+	if (!msg) return (UnboundList(list, 'List had bind errors'))
+	return (UnboundList(list, msg).raiseError(ymc))
 }
 
 function checkBindings(es) {
@@ -549,51 +497,31 @@ function evaluateArray(ymc, es) {
 }
 
 // Quoted type lists
-var QuotedList = Yaga.Influence({
-	name: 'yaga.machine.QuotedList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isQuoted: true,
-			leadSyntax: '\'(',
-			bind: returnThis,
-			evaluate: returnRelated,
-		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-})
-
 function asQuoted(list) {
-	return (QuotedList.create(list));
+	return (list.extend({
+		typeName: 'yaga.machine.QuotedList',
+		isQuoted: true,
+		leadSyntax: '\'(',
+		bind: returnThis,
+		evaluate: Yaga.thisArg(returnRelated),
+	}));
 }
 
-var QuasiQuotedList = Yaga.Influence({
-	name: 'yaga.machine.QuasiQuotedList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isQuasiQuoted: true,
-			leadSyntax: '`(',
-			bind(ymc) {
-				let arr = [];
-				this.elements.forEach(e => {
-					if (e.isQuasiOverride) e = e.bind(ymc);
-					arr.push(e);
-				});
-				return (BoundQuasiQuotedList.create(arr, this.readPoint));
-			},
-			evaluate: returnThis,
-		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-});
-
 function asQuasiQuoted(list) {
-	return (QuasiQuotedList.create(list));
+	return (list.extend({
+		typeName: 'yaga.machine.QuasiQuotedList',
+		isQuasiQuoted: true,
+		leadSyntax: '`(',
+		bind(ymc) {
+			let arr = [];
+			this.elements.forEach(e => {
+				if (e.isQuasiOverride) e = e.bind(ymc);
+				arr.push(e);
+			});
+			return (BoundQuasiQuotedList.create(arr, this.readPoint));
+		},
+		evaluate: returnThis,
+	}));
 }
 
 var BoundQuasiQuotedList = Yaga.Influence({
@@ -626,94 +554,62 @@ var BoundQuasiQuotedList = Yaga.Influence({
 
 // May change bind so that parent list is passed to handle quasi overrides rather than the parent having
 // to check every element.
-var QuasiOverrideList = Yaga.Influence({
-	name: 'yaga.machine.QuasiOverrideList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isQuasiOverride: true,
-			leadSyntax: ',(',
-			bind(ymc) {
-				return (BoundQuasiOverrideList.create(this.relatedList.bind(ymc)));
-			},
-			evaluate(ymc) {
-				throw Yaga.Error.YagaException(this, "Misplaced quasi override");
-			},
-		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-});
-
 function asQuasiOverride(list) {
-	return (QuasiOverrideList.create(list));
+	return (list.extend({
+		typeName: 'yaga.machine.QuasiOverrideList',
+		isQuasiOverride: true,
+		leadSyntax: ',(',
+		bind(ymc) {
+			return (BoundQuasiOverrideList(returnRelated(this).bind(ymc)));
+		},
+		evaluate(ymc) {
+			throw Yaga.Error.YagaException(this, "Misplaced quasi override");
+		},
+	}));
 }
 
-var BoundQuasiOverrideList = Yaga.Influence({
-	name: 'yaga.machine.BoundQuasiOverrideList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isQuasiOverride: true,
-			leadSyntax: ',(',
-			bind: returnThis,
-		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-});
-
-var QuasiInjectionList = Yaga.Influence({
-	name: 'yaga.machine.QuasiInjectionList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			isQuasiInjection: true,
-			leadSyntax: ',@(',
-			bind(ymc) {
-				return (BoundQuasiInjectionList.create(this.relatedList.bind(ymc)));
-			},
-			evaluate(ymc) {
-				throw Yaga.Error.YagaException(this, "Misplaced quasi injection");
-			},
-		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-});
+function BoundQuasiOverrideList(list) {
+	return (list.extend({
+		typeName: 'yaga.machine.BoundQuasiOverrideList',
+		isQuasiOverride: true,
+		leadSyntax: ',(',
+		bind: returnThis,
+	}));
+}
 
 function asQuasiInjection(list) {
-	return (QuasiInjectionList.create(list));
+	return (list.extend({
+		typeName: 'yaga.machine.QuasiInjectionList',
+		isQuasiInjection: true,
+		leadSyntax: ',@(',
+		bind(ymc) {
+			return (BoundQuasiInjectionList(returnRelated(this).bind(ymc)));
+		},
+		evaluate(ymc) {
+			throw Yaga.Error.YagaException(this, "Misplaced quasi injection");
+		},
+	}));
 }
 
-var BoundQuasiInjectionList = Yaga.Influence({
-	name: 'yaga.machine.BoundQuasiInjectionList',
-	composition: [{
-		prototype: {
-			isaList: true,
-			leadSyntax: ',@(',
-			isQuasiOverride: true,
-			isQuasiInjection: true,
-			bind: returnThis,
-			evaluate(ymc) {
-				let e = this.relatedList.call(this, ymc);
-				if (e.isaList) e = InsertableList.create(e.elements, e.readPoint);
-				return (e);
-			},
+function BoundQuasiInjectionList(list) {
+	return (list.extend({
+		typeName: 'yaga.machine.BoundQuasiInjectionList',
+		leadSyntax: ',@(',
+		isQuasiOverride: true,
+		isQuasiInjection: true,
+		bind: returnThis,
+		evaluate(ymc) {
+			let e = this.relatedList.call(this, ymc);
+			if (e.isaList) e = InsertableList.create(e.elements, e.readPoint);
+			return (e);
 		},
-		constructor(list) {
-			this.relatedList = list;
-		}
-	}, RelatedList, List]
-});
+	}));
+}
 
 function returnThis() {
 	return (this);
 }
 
-function returnRelated() {
-	return (this.relatedList);
+function returnRelated(oExtend) {
+	return (Object.getPrototypeOf(oExtend));
 }
