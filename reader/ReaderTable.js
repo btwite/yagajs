@@ -17,9 +17,9 @@
  *          patterns: {
  *              '<...>':    // Character pattern. Longest sequence matched first.
  *              '/<regexpr>/': { // Javascript regular expression. Processed after fixed pattern
- *					level: <number>, // Invocation level. Lower numbers higher precedence. > 0
- *					handler: optFunction 
- *			  },
+ *								level: <number>, // Invocation level. Lower numbers higher precedence. > 0
+ *								handler: optFunction 
+ *								},
  *			  ...
  *          },
  *      }
@@ -33,6 +33,7 @@
  *          7. Alphanumeric pattern with non-alphanumeric tail treated as non-alphanumeric. Prefix rule still applies
  *		    8. Regexprs processed after char patterns if no char pattern match.
  *		    9. Regexprs processed in lowest to highest level order. Random within level.
+ *			   Level number can also be passed as a property of the function. Ex. fn.level = 0;
  *		   10. Regexpr process stops on first successful match.
  *         11. Char patterns take precedence over regexpr patterns.
  *		   12. Patterns with no handler function will be processed as per Reader defaults.
@@ -43,6 +44,11 @@
  *						what: <Matching segment of source string>,
  *						fHandler: <ReaderTable handler to call>
  *					}
+ *		   15. Pattern handler function can also have a 'validateMatch' function property that is passed the
+ *			   results of a successful match. Must answer 'true' if match is to proceed. Care must be taken
+ *			   using this facility as a longer match that is then invalidated will also invalidate a shorter
+ *			   match. If this can occur then regexpr matches should be employed with precedence levels
+ *			   specified.
  */
 "use strict";
 
@@ -272,11 +278,17 @@ function runRegexpr(r, s, offset, fHandler) {
 	if (!r)
 		return (null);
 	let result = r.exec(s);
-	return (result ? {
-		position: result.index + offset,
-		what: result[0],
-		fHandler: fHandler(result),
-	} : null);
+	if (result) {
+		let f = fHandler(result);
+		if (f && f.validateMatch && !f.validateMatch(result))
+			return (null);
+		return ({
+			position: result.index + offset,
+			what: result[0],
+			fHandler: f
+		});
+	}
+	return (null);
 }
 
 function bestMatch(match1, match2) {
@@ -325,7 +337,8 @@ function orderRegexpr(regexprs, pat, spec) {
 	if (typeof spec === 'object') {
 		lvl = spec.level; // Will be greater than 0
 		fHandler = spec.handler;
-	}
+	} else if (fHandler.hasOwnProperty('level'))
+		lvl = fHandler.level;
 	if (!list[lvl]) list[lvl] = [];
 	list[lvl].push([pat, fHandler]);
 }

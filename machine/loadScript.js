@@ -20,6 +20,7 @@ module.exports = {
         Function: mod => mod.Function,
         Symbol: mod => mod.Symbol,
         Wrapper: mod => mod.Wrapper,
+        Primitives: _,
     },
     path: __dirname
 };

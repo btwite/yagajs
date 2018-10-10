@@ -234,9 +234,8 @@ function keyToString(key) {
 		case 'object':
 			if (typeof key.asString === 'function')
 				return (key.asString());
-		default:
-			return (String(key));
 	}
+	return (String(key));
 }
 
 function define(gd, key, value) {
@@ -261,11 +260,11 @@ function _define(gd, key, value) {
 
 function findGlobalDictionary(gd, key) {
 	key = keyToString(key);
-	let v = findDictionaryValue(key, key.length);
+	let v = findDictionaryValue(key);
 	return (v !== undefined ? v : gd.space[key]);
 }
 
-function findDictionaryValue(key, iEnd) {
+function findDictionaryValue(key, iEnd = key.length) {
 	let i = key.lastIndexOf(':', iEnd);
 	if (i < 0) return (undefined);
 	let dict = NamedDictionaries.get(key.substr(0, i));

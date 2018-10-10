@@ -32,15 +32,15 @@ let Symbol = Yaga.Influence({
             },
             bind(ymc) {
                 let binding = this.isBindable(ymc);
-                if (!binding) return (UnboundSymbol.create(this));
-                if (binding.isDeclared) return (Reference.create(v));
-                return (_bindSymbol(this, binding));
+                if (!binding) return (UnboundSymbol(this));
+                if (binding.isDeclared) return (Reference(v));
+                return (bindSymbol(this, binding));
             },
             evaluate(ymc) {
                 return (this.bind(ymc).evaluate(ymc));
             },
             write(ymc, val) {
-                throw yaga.errors.YagaException(this, 'Can only write to variables');
+                throw Mach.Error.YagaException(this, 'Can only write to variables');
             },
             asString() {
                 return (this.name)
@@ -87,6 +87,21 @@ let Symbol = Yaga.Influence({
     harmonizers: '.most.'
 });
 
+var Token = Yaga.Influence({
+    name: 'yaga.machine.Token',
+    composition: [{
+        abstract: {
+            isaSymbol: true,
+            add(ch) {
+                this.name += ch;
+            },
+            nextReadPoint() {
+                return (readPoint.increment(this.name.length));
+            },
+        },
+    }, Symbol],
+});
+
 module.exports = {
     Symbol: Symbol.create,
     Initialise: x => Mach = x,
@@ -97,40 +112,39 @@ module.exports = {
     },
 };
 
-function _newOperator(symName, specs, optPoint) {
-    let sym = _newSymbol(symName, optPoint);
-    sym = _newUnboundSymbol(sym);
+function Operator(symName, specs, readPoint) {
+    let sym = Symbol.create(symName, readPoint);
+    sym = UnboundSymbol(sym);
     sym.isanOperator = true;
     sym.specs = specs;
-    sym._unboundMessage = function () {
+    sym.unboundMessage = function () {
         return (`Incorrect placement of operator '${sym.name}'`);
     };
     return (sym);
 }
 
-function _newParameter(sym, defaultValue) {
-    let parm = Object.assign(Object.create(sym), {
-        typeName: 'Parameter',
+function Parameter(sym, defaultValue) {
+    return (sym.extend({
+        typeName: 'yaga.machine.Parameter',
         isaParameter: true,
         isDeclared: true,
         idxClosure: undefined,
         idx: undefined,
+        defaultValue,
         isBindable: () => true,
-        bind: _returnThis,
+        bind: returnThis,
         evaluate(ymc) {
             return (ymc.context.argLists[this.idxClosure][this.idx]);
         },
         write(ymc, val) {
-            throw yaga.errors.YagaException(this, `Parameter '${this.name}' is read-only`);
+            throw Mach.Error.YagaException(this, `Parameter '${this.name}' is read-only`);
         }
-    });
-    if (defaultValue !== undefined) parm.defaultValue = defaultValue;
-    return (parm);
+    }));
 }
 
-function _newVarParm(sym) {
-    let parm = _newParameter(sym);
-    parm.typeName = 'VariableParameter';
+function VariableParameter(sym) {
+    let parm = Parameter(sym);
+    parm.typeName = 'yaga.machine.VariableParameter';
     parm.isaVariableParameter = true;
     parm.evaluate = function (ymc) {
         // needs to be changed
@@ -139,15 +153,15 @@ function _newVarParm(sym) {
     return (parm);
 }
 
-function _newVariable(boundFnType, sym) {
-    let v = Object.assign(Object.create(sym), {
-        typeName: 'Variable',
+function Variable(boundFnType, sym) {
+    let v = sym.extend({
+        typeName: 'yaga.machine.Variable',
         isaVariable: true,
         isDeclared: true,
         idxClosure: undefined,
         idx: undefined,
         isBindable: () => true,
-        bind: _returnThis,
+        bind: returnThis,
         evaluate(ymc) {
             return (ymc.context.curClosure[this.name]);
         },
@@ -159,125 +173,120 @@ function _newVariable(boundFnType, sym) {
     return (v);
 }
 
-function _newReference(v) {
+function Reference(v) {
     let r = Object.create(v);
-    r.typeName = 'Reference';
-    r.parserPoint = sym.parserPoint;
+    r.typeName = 'yaga.machine.Reference';
+    r.readPoint = sym.readPoint;
     return (r);
 }
 
-function _none(optPoint) {
-    let none = _newSymbol('_', optPoint);
-    none.typeName = 'None';
-    none.isNone = true;
-    none.isBindable = () => true;
-    none.bind = _returnThis;
-    none.evaluate = _returnThis;
-    return (none);
+function none(readPoint) {
+    return (Symbol.create('_', readPoint).assign({
+        typeName: 'yaga.machine.None',
+        isNone: true,
+        isBindable: () => true,
+        bind: returnThis,
+        evaluate: returnThis,
+    }));
 }
 
-function _bindSymbol(sym, val) {
-    return (Object.assign(Object.create(val), {
-        _symbol: sym,
-        bind: _returnThis,
+function bindSymbol(sym, val) {
+    return (Yaga.assign({
+        symbol: sym,
+        bind: returnThis,
         evaluate(ymc) {
-            return (Object.getPrototypeOf(this).evaluate(ymc))
+            return (returnRelated(this).evaluate(ymc))
         },
         print(printer) {
-            return (this._symbol.print(printer));
+            return (this.symbol.print(printer));
+        }
+    }, Object.create(val)));
+}
+
+function UnboundSymbol(sym) {
+    return (sym.extend({
+        typeName: 'yaga.machine.UnboundSymbol',
+        isUnbound: true,
+        bind: returnThis,
+        unboundMessage() {
+            return (`'${sym.name}' is not declared or defined`);
+        },
+        evaluate(ymc) {
+            throw Mach.Error.YagaException(this, this.unboundMessage());
+        },
+        raiseError(ymc) {
+            ymc.addError(this, this.unboundMessage());
+            return (this);
         }
     }));
 }
 
-function _newUnboundSymbol(sym) {
-    sym = Object.create(sym);
-    sym.typeName = 'UnboundSymbol';
-    sym.isUnbound = true;
-    sym.bind = _returnThis;
-
-    sym._unboundMessage = function () {
-        return (`'${sym.name}' is not declared or defined`);
-    };
-    sym.evaluate = function (ymc) {
-        throw yaga.errors.YagaException(this, this._unboundMessage());
-    };
-    sym.raiseError = function (ymc) {
-        ymc.addError(this, this._unboundMessage());
-        return (this);
-    };
-    return (sym)
+function asQuoted(sym, leadSeq = '\'') {
+    return (sym.extend({
+        typeName: 'yaga.machine.QuotedSymbol',
+        isQuoted: true,
+        leadSyntax: leadSeq,
+        isBindable: () => false,
+        bind: returnThis,
+        evaluate: Yaga.thisArg(returnRelated),
+    }));
 }
 
-function _asQuoted() {
-    let sym = Object.create(this);
-    sym.typeName = 'QuotedSymbol';
-    sym.isQuoted = true;
-    sym.leadSyntax = '\'';
-    sym.isBindable = () => false;
-    sym.bind = _returnThis;
-    sym.evaluate = _returnPrototype;
-    return (sym);
-}
-
-function _asQuasiQuoted() {
-    let sym = this.asQuoted();
-    sym.leadSyntax = '`';
-    return (sym);
+function asQuasiQuoted(sym) {
+    return (sym.asQuoted('`'));
 }
 
 // May change bind so that parent list is passed to handle quasi overrides rather than the parent having
 // to check every element.
-function _asQuasiOverride() {
-    let sym = Object.create(this);
-    sym.typeName = 'QuasiOverrideSymbol';
-    sym.isQuasiOverride = true;
-    sym.leadSyntax = ',';
-    sym.bind = function (ymc) {
-        let sym = Object.getPrototypeOf(this);
-        return (_newBoundQuasiOverride(sym, sym.bind(ymc)));
-    };
-    sym.evaluate = function (ymc) {
-        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
-    }
-    return (sym);
+function asQuasiOverride(sym) {
+    return (sym.extend({
+        typeName: 'yaga.machine.QuasiOverrideSymbol',
+        isQuasiOverride: true,
+        leadSyntax: ',',
+        bind(ymc) {
+            return (BoundQuasiOverride(sym, sym.bind(ymc)));
+        },
+        evaluate(ymc) {
+            throw Mach.Error.YagaException(sym, "Misplaced quasi override");
+        }
+    }));
 }
 
-function _newBoundQuasiOverride(sym, val) {
-    let bind = _bindSymbol(sym, val);
-    bind.isQuasiOverride = true;
-    return (bind);
+function BoundQuasiOverride(sym, val) {
+    return (Yaga.assign({
+        isQuasiOverride: true
+    }, bindSymbol(sym, val)));
 }
 
-function _asQuasiInjection() {
-    let sym = this.asQuasiOverride();
-    sym.typeName = 'QuasiInjectionSymbol';
-    sym.isQuasiInjection = true;
-    sym.leadSyntax = ',@';
-    sym.bind = function (ymc) {
-        let sym = Object.getPrototypeOf(this);
-        return (_newBoundQuasiInjection(sym, sym.bind(ymc)));
-    };
-    sym.evaluate = function (ymc) {
-        throw new yaga.errors.YagaException(this, "Misplaced quasi override");
-    }
-    return (sym);
+function asQuasiInjection(sym) {
+    return (Yaga.assign({
+        typeName: 'yaga.machine.QuasiInjectionSymbol',
+        isQuasiInjection: true,
+        leadSyntax: ',@',
+        bind(ymc) {
+            return (BoundQuasiInjection(sym, sym.bind(ymc)));
+        },
+        evaluate(ymc) {
+            throw new Mach.Error.YagaException(this, "Misplaced quasi override");
+        },
+    }, asQuasiOverride(sym)));
 }
 
-function _newBoundQuasiInjection(sym, val) {
-    let bind = _newBoundQuasiOverride(sym, val);
-    bind.isQuasiInjection = true;
-    bind.evaluate = function (ymc) {
-        let e = Object.getPrototypeOf(this).evaluate(ymc);
-        if (e.isaList) e = yaga.List.newInsertable(e.elements, e.parserPoint);
-        return (e)
-    };
-    return (bind);
+function BoundQuasiInjection(sym, val) {
+    return (Yaga.assign({
+        isQuasiInjection: true,
+        evaluate(ymc) {
+            let e = returnRelated(this).evaluate(ymc);
+            if (e.isaList) e = yaga.List.newInsertable(e.elements, e.readPoint);
+            return (e)
+        },
+    }, BoundQuasiOverride(sym, val)));
 }
 
-function _returnThis() {
+function returnThis() {
     return (this);
 }
 
-function _returnPrototype() {
-    return (Object.getPrototypeOf(this));
+function returnRelated(sym) {
+    return (Object.getPrototypeOf(sym));
 }

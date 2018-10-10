@@ -13,6 +13,7 @@ module.exports = {
         File: _,
         Scopes: _,
         Replicate: mod => ({
+            assign: mod.assign,
             copy: mod.copy,
             reverseCopy: mod.reverseCopy,
             clone: mod.clone

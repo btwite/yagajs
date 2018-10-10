@@ -264,13 +264,13 @@ function peekNextChar(ctxt) {
 }
 
 function TokenInput(ctxt, chs, readPoint, isMatched = false) {
-    let iPeek, iInput = -1;
+    let iPeek, iCurInput = -1;
     return {
         typeName: 'TokenInput',
         readPoint: readPoint,
         fHandler: _,
         chars: chs,
-        startPeek: () => iPeek = iInput,
+        startPeek: () => iPeek = iCurInput,
         peekNext() {
             if (++iPeek >= this.chars.length)
                 return (null);
@@ -301,11 +301,9 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
             if (ctxt.readerTable.commitChar) {
                 ctxt.curInput = this;
                 ctxt.curToken = Token(ctxt, this.readPoint);
-                iInput = 0;
-                commitChar(ctxt, this.chars[0], this.readPoint);
-                for (let i = 1, len = this.chars.length; i < len; i++) {
-                    iInput = i;
-                    commitChar(ctxt, this.chars[i], this.readPoint.increment(i));
+                iCurInput = commitChar(ctxt, this.chars[0], this.readPoint, 0);
+                for (let len = this.chars.length; ++iCurInput < len;) {
+                    iCurInput = commitChar(ctxt, this.chars[iCurInput], this.readPoint.increment(iCurInput), iCurInput);
                 }
                 ctxt.curInput = _;
                 tok = ctxt.curToken;
@@ -468,14 +466,17 @@ function commitToken(ctxt, tok) {
     addToken(ctxt, tok);
 }
 
-function commitChar(ctxt, ch, readPoint) {
+function commitChar(ctxt, ch, readPoint, iCurInput) {
     if (ctxt.readerTable.commitChar) {
         // The ReaderTable function must complete the commit
+        // The current input index can change if the commit splits the token
+        ctxt.iCurInput = iCurInput;
         ctxt.readerTable.commitChar(commitCharState(ctxt, ch, readPoint));
-        return;
+        return (ctxt.iCurInput);
     }
     // Default is to just add the token
     addChar(ctxt, ch);
+    return (iCurInput);
 }
 
 function patternHandler(ctxt, f, tok) {
@@ -533,10 +534,41 @@ function statePrototypes(ctxt) {
         addToken(ctxt, tok)
     }
 
+    function fSplitToken() {
+        // Split the current Token Input at the current point and treat as if it is
+        // a complete new Input. This will force the reader table to be called on
+        // the reaminder of the current Token input.
+        if (!ctxt.curInput)
+            throw ReaderError(ctxt.currentPoint, 'No active Token input to split');
+        if (ctxt.iCurInput >= ctxt.curInput.chars.length - 1)
+            return;
+        let tok = TokenInput(ctxt,
+            ctxt.curInput.chars.substr(ctxt.iCurInput + 1),
+            this.readPoint.increment(ctxt.iCurInput + 1), false);
+        ctxt.inputStream = [tok].concat(ctxt.inputStream); // Add the split token to the head of the stream
+        ctxt.iCurInput = ctxt.curInput.chars.length; // Force the current Token Input action to end
+    }
+
     function fAddChar(ch) {
         if (typeof ch !== 'string' || ch.length !== 1)
             throw ReaderError(ctxt.currentPoint, 'Single character string expected');
         addChar(ctxt, ch);
+    }
+
+    function fAddValue(v, readPoint = v.readPoint || ctxt.currentPoint) {
+        // ReaderTable has converted a token or token sequence into a value object.
+        // We wrap the object to look like a token
+        let tok = Object.create(v);
+        tok.isaToken = true;
+        tok.add = () => {
+            throw ReaderError(readPoint, 'Operation not supported');
+        };
+        tok.nextReadPoint = () => {
+            throw ReaderError(readPoint, 'Operation not supported');
+        };
+        if (!tok.readPoint)
+            tok.readPoint = readPoint;
+        addToken(ctxt, tok);
     }
 
     function fExpression(startToken, endToken) {
@@ -636,6 +668,7 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            addValue: fAddValue,
             peeker: fPeeker,
         },
         endLineState: {
@@ -650,6 +683,7 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            addValue: fAddValue,
             peeker: fPeeker,
         },
         commitExpressionState: {
@@ -664,6 +698,7 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            addValue: fAddValue,
             peeker: fPeeker,
         },
         commitTokenState: {
@@ -678,6 +713,7 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            addValue: fAddValue,
             peeker: fPeeker,
         },
         commitCharState: {
@@ -692,6 +728,8 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            splitToken: fSplitToken,
+            addValue: fAddValue,
             addChar: fAddChar,
             peeker: fPeeker,
         },
@@ -707,6 +745,7 @@ function statePrototypes(ctxt) {
             startExpression: fStartExpression,
             endExpression: fEndExpression,
             addToken: fAddToken,
+            addValue: fAddValue,
             peeker: fPeeker,
         },
         errorState: {

@@ -89,7 +89,7 @@ var Error = Yaga.Influence({
             message: msg,
             attachment: attach,
             formattedMessage() {
-                return (`${point.format()}: ${e.typeName} - ${msg}`)
+                return (e ? `${point.format()}: ${e.typeName} - ${msg}` : `${point.format()}: ${msg}`)
             }
         }
     },

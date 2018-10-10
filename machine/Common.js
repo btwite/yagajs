@@ -10,9 +10,9 @@ let _ = undefined;
 var Yaga = require('../Yaga');
 var Mach;
 
-var Common = Yaga.Influence.abstract({
+var Common = Yaga.Influence({
     name: 'yaga.Common',
-    prototype: {
+    abstract: {
         isaMachineType: true,
         value() {
             return (`Type(${this.typeName})`);

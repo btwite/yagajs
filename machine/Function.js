@@ -9,138 +9,163 @@
 
 'use strict';
 
-module.exports = {
-    Function: {
-        Macro: () => 'Macro',
-    }
+let _ = undefined;
+
+var Yaga = require('../Yaga');
+var Common = require('./Common').Common;
+var Mach;
+
+var jsFunction = Yaga.Influence({
+    name: 'yaga.machine.jsFunction',
+    composition: [{
+        prototype: {
+            isaFunction: true,
+            isaMacro: false,
+            isajsFunction: true,
+            isajsMacro: false,
+            isaClosure: true,
+            jsPrim: '.jsPrim',
+            asQuoted: returnThis,
+            asQuasiQuoted: returnThis,
+            asQuasiOverride: returnThis,
+            asQuasiInjection: returnThis,
+            bind: returnThis,
+            evaluate: returnThis,
+            call(ymc, args, readPoint) {
+                // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
+                // Not going to implement arguments at this level. Will allow a jsFunction to be wrapped as a
+                // a Yaga function. Will need a separate Yaga call type to accept arguments as is.
+                // Note that js macros come through here, but always pass a list which will not be evaluated.
+                if (!args.elements) args = evaluateArgs(ymc, args, readPoint);
+                if (args.hasNone) return (jsPartialFunction(this, args, readPoint));
+                if (this.isaNativeFunction) {
+                    // Need to unwrap the arguments to make the call
+                    let arr = [];
+                    args.elements.forEach(e => arr.push(e.nativeValue(ymc)));
+                    return (Mach.Wrapper(this.jfn.apply(ymc, arr), args.readPoint));
+                }
+                return (Mach.Wrapper(this.jfn(ymc, args), args.readPoint));
+            },
+            print(printer) {
+                printer.printLead('(').printElement(this.jsPrim);
+                this.jsNames.forEach(n => printer.printElement(n.asString()));
+                printer.printTrail(')');
+            }
+        },
+        constructor(jfn, jNames, readPoint) {
+            this.jfn = jfn;
+            this.jsNames = jNames;
+            this.readPoint = readPoint || Yaga.Reader.ReadPoint.default;
+        }
+    }, Common],
+});
+
+var Function = Yaga.Influence({
+    name: 'yaga.machine.Function',
+    composition: [{
+        prototype: {
+            isaFunction: true,
+            isaMacro: false,
+            isajsFunction: false,
+            isajsMacro: false,
+            isaNativeFunction: false,
+            isaClosure: true,
+            asQuoted: returnThis,
+            asQuasiQuoted: returnThis,
+            asQuasiOverride: returnThis,
+            asQuasiInjection: returnThis,
+            thisArg_: {
+                nativeValue: nativeWrap,
+                bind: bindFunction,
+            },
+            evaluate: returnThis,
+            call(ymc, args) {
+                // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
+                // Send evaluate request throught to the arguments.
+            },
+            print(printer) {
+                if (this.leadSyntax) printer.printLead(this.leadSyntax);
+                printer.printElement(this.value());
+            }
+        },
+        constructor(parms, expr, readPoint) {
+            this.parms = parms;
+            this.expression = expr;
+            this.readPoint = readPoint;
+        },
+        static: {
+            jsFunction: jsFunction.create,
+            jsNativeFunction,
+            Macro,
+            jsMacro
+        }
+    }, Common],
+    harmonizers: '.most.'
+});
+
+module.exports = Object.freeze({
+    Function: Function.create,
+    Initialise: x => Mach = x,
+});
+
+function Macro(parms, expr, readPoint) {
+    return (Function.create(parms, expr, readPoint).assign({
+        typeName: 'yaga.machine.Macro',
+        isaMacro: true,
+    }));
 }
-return;
 
-var yaga, _function, _block, _jsFunction;
-
-module.exports = {
-    new: _newFunction,
-    jsNew: _jsNewFunction,
-    jsNewNative: _jsNewNativeFunction,
-    Macro: {
-        new: _newMacro,
-        jsNew: _jsNewMacro,
-    },
-    Block: {
-        new: _newBlock,
-    },
-    Initialise: y => yaga = yaga ? yaga : y,
-    PostInitialise: () => yaga.newType(_function),
-};
-Object.freeze(module.exports);
-
-function _newFunction(parms, expr, point) {
-    let func = Object.create(_function);
-    func.parms = parms;
-    func.expression = expr;
-    if (point) func.parserPoint = point;
-    return (func);
-}
-
-function _newMacro(parms, expr, point) {
-    let mac = _newFunction(parms, expr, point);
-    mac.typeName = 'Macro';
-    mac.isaMacro = true;
-    return (mac);
-}
-
-function _newBlock(stmtList, point) {
-    let blk = Object.create(_block);
-    blk.expression = stmtList;
-    if (point) func.parserPoint = point;
-    return (func);
-}
-
-function _jsNewFunction(jNames, jfn, point) {
-    let func = Object.create(_jsFunction);
-    func._jNames = jNames;
-    func.jfn = jfn;
-    if (point) func.parserPoint = point;
-    return (func);
-}
-
-function _jsNewNativeFunction(jfn) {
+function jsNativeFunction(jfn) {
     // Native function object is a special from of Wrapper to allow native functions to
     // be called with yaga. 'value' method will return the actual function.
-    let func = Object.create(_jsFunction);
-    func._jPrim = jfn.name;
-    func.isaNativeFunction = true;
-    func.jfn = jfn;
-    func.nativeValue = func.value = function () {
+    let f = function () {
         return (this.jfn);
     };
-    return (func);
+    return (jsFunction.create(jfn).assign({
+        jsPrim: jfn.name,
+        isaNativeFunction: true,
+        nativeValue: f,
+        value: f,
+    }));
 }
 
-function _jsNewMacro(jNames, jfn, point) {
-    let mac = _jsNewFunction(jNames, jfn, point);
-    mac.typeName = 'jsMacro';
-    mac.isaMacro = true;
-    mac.isajsMacro = true;
-    return (mac);
+function jsMacro(jfn, jNames, readPoint) {
+    return (jsFunction.create(jfn, jNames, readPoint).assign({
+        typeName: 'yaga.machine.jsMacro',
+        isaMacro: true,
+        isajsMacro: true,
+    }));
 }
 
-_function = {
-    typeName: 'Function',
-    parserPoint: undefined,
-    asQuoted: _returnThis,
-    asQuasiQuoted: _returnThis,
-    asQuasiOverride: _returnThis,
-    asQuasiInjection: _returnThis,
-    isaFunction: true,
-    isaClosure: true,
-    parms: undefined,
-    expression: undefined,
-    nativeValue: _nativeWrap,
-
-    bind: _bindFunction,
-    evaluate(yi) {
-        return (this);
-    },
-    call(yi, args) {
-        // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
-        // Send evaluate request throught to the arguments.
-    },
-    print(printer) {
-        if (this.leadSyntax) printer.printLead(this.leadSyntax);
-        printer.printElement(this.value());
-    }
-}
-
-function _nativeWrap(yi) {
+function nativeWrap(fn, ymc) {
     return ((...args) => {
         let arr = [];
-        args.forEach(a => arr.push(yaga.Wrapper.new(a)));
-        return (this.call(yi, arr).nativeValue(this));
+        args.forEach(a => arr.push(Mach.Wrapper(a)));
+        return (fn.call(ymc, arr).nativeValue(fn));
     });
 }
 
-function _bindFunction(yi) {
-    let fn = _bindClosure(yi, this, 'Function');
-    let binder = yi.binder;
-    binder.pushClosure(this);
-    _bindParameters(yi, fn);
-    fn.expression = fn.expression.bind(yi);
+function bindFunction(fn, ymc) {
+    let cl = bindClosure(ymc, fn, 'Function');
+    let binder = ymc.binder;
+    binder.pushClosure(fn);
+    bindParameters(ymc, cl);
+    cl.expression = cl.expression.bind(ymc);
     binder.popClosure();
-    return (fn);
+    return (cl);
 }
 
-function _bindClosure(yi, oClosure, ty) {
-    let binder = yi.binder;
-    return (Object.assign(Object.create(oClosure), {
+function bindClosure(ymc, oClosure, ty) {
+    let binder = ymc.binder;
+    return (oClosure.extend({
         typeName: `Bound${ty}`,
         [`isaBound${ty}`]: true,
         isaBoundClosure: true,
         parentClosure: binder.curDesc.fnType,
         idx: binder.curIdx,
         variables: [],
-        bind: _returnThis,
-        evaluate(yi) {
+        bind: returnThis,
+        evaluate(ymc) {
 
         },
         call: {
@@ -149,7 +174,7 @@ function _bindClosure(yi, oClosure, ty) {
 
         },
         addVariable(v) {
-            _addToVarMap(v, binder.curDesc.varMap);
+            addToVarMap(v, binder.curDesc.varMap);
             v.idxClosure = this.idx;
             v.idx = this.variables.length;
             this.variables.push(parm);
@@ -157,108 +182,85 @@ function _bindClosure(yi, oClosure, ty) {
     }));
 }
 
-function _bindParameters(yi, fn) {
+function bindParameters(ymc, fn) {
     // Parameters are inserted at the head of the bound functions variable list which
     // also means that the resolved arguments are moved to the instantiated function's
     // scope space.
     fn.parms.forEach(parm => fn.addVariable(parm));
     // Can now bind the default values as we have access to all the parameter definitions
     fn.parms.forEach(parm => {
-        if (parm.defaultValue) parm.defaultValue = parm.defaultValue.bind(yi);
+        if (parm.defaultValue) parm.defaultValue = parm.defaultValue.bind(ymc);
     });
     return (parms);
 }
 
-function _addToVarMap(v, varMap) {
+function addToVarMap(v, varMap) {
     let sName = v.asString();
     if (varMap[sName]) {
-        throw yaga.errors.BindException(parm, `'${sName}' is already declared`);
+        throw Mach.Error.BindException(parm, `'${sName}' is already declared`);
     }
     varMap[sName] = v;
 }
 
-_block = Object.assign(Object.create(_function), {
-    typeName: 'Block',
-    isaBlock: true,
+var Block = Yaga.Influence({
+    name: 'yaga.machine.Block',
+    composition: [{
+        prototype: {
+            thisArg_: {
+                bind: bindBlock,
+            },
+            evaluate(ymc) {
 
-    bind: _bindBlock,
-    evaluate(yi) {
+            },
+            call(ymc, args) {
+                // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
+                // Send evaluate request throught to the arguments.
 
-    },
-    call(yi, args) {
-        // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
-        // Send evaluate request throught to the arguments.
-
-    },
-    print(printer) {
-        if (this.leadSyntax) printer.printLead(this.leadSyntax);
-        printer.printElement(this.value());
-    }
+            },
+            print(printer) {
+                if (this.leadSyntax) printer.printLead(this.leadSyntax);
+                printer.printElement(this.value());
+            }
+        },
+        constructor(stmtList, point) {
+            this.expression = stmtList;
+            this.readPoint = point;
+        }
+    }, Function]
 });
 
-function _bindBlock(yi) {
-    let fn = _bindClosure(yi, this, 'Block');
-    fn.assignParameters = _assignParameters;
-    let binder = yi.binder;
-    binder.pushClosure(this);
+function bindBlock(blk, ymc) {
+    let fn = bindClosure(ymc, blk, 'Block');
+    fn.assignParameters = assignParameters;
+    let binder = ymc.binder;
+    binder.pushClosure(blk);
     let stmts = [];
-    fn.expression.elements.forEach(stmt => stmts.push(stmt.bind(yi)));
-    fn.expression = yaga.List.new(stmts, fn.expression.parserPoint);
+    fn.expression.elements.forEach(stmt => stmts.push(stmt.bind(ymc)));
+    fn.expression = yaga.List(stmts, fn.expression.readPoint);
     binder.popClosure();
     return (fn);
 }
 
-function _assignParameters(yi, fn, parms) {
+function assignParameters(ymc, fn, parms) {
     fn.parms = parms;
-    _bindParameters(yi, fn);
+    bindParameters(ymc, fn);
 }
 
-_jsFunction = Object.assign(Object.create(_function), {
-    typeName: 'jsFunction',
-    isajsFunction: true,
-    jfn: undefined,
-    _jPrim: '.jsPrim',
-    _jNames: undefined,
-
-    bind: _returnThis,
-    evaluate: _returnThis,
-    call(yi, args, optPoint) {
-        // Call is repsonsible for evaluating arguments. Allows for lazy evaluation via an argument declaration.
-        // Not going to implement arguments at this level. Will allow a jsFunction to be wrapped as a
-        // a Yaga function. Will need a separate Yaga call type to accept arguments as is.
-        // Note that js macros come through here, but always pass a list which will not be evaluated.
-        if (!args.elements) args = _evaluateArgs(yi, args, optPoint);
-        if (args.hasNone) return (_newjsPartialFunction(this, args, optPoint));
-        if (this.isaNativeFunction) {
-            // Need to unwrap the arguments to make the call
-            let arr = [];
-            args.elements.forEach(e => arr.push(e.nativeValue(yi)));
-            return (yaga.Wrapper.new(this.jfn.apply(yi, arr), args.parserPoint));
-        }
-        return (yaga.Wrapper.new(this.jfn(yi, args), args.parserPoint));
-    },
-    print(printer) {
-        printer.printLead('(').printElement(this._jPrim);
-        this._jNames.forEach(n => printer.printElement(n.asString()));
-        printer.printTrail(')');
-    }
-});
-
-function _newjsPartialFunction(jsfn, args) {
-    let fn = Object.create(jsfn);
-    fn.isaPartialFunction = true;
-    fn.partialArgs = args;
-    fn.nativeValue = _nativeWrap;
-    fn.call = function (yi, args, optPoint) {
-        if (args.length === 0) return (this);
-        if (!args.elements) args = _evaluateArgs(yi, args);
-        args = _mergeArgs(this.partialArgs, args, optPoint);
-        return (Object.getPrototypeOf(this).call(yi, args, optPoint));
-    };
-    return (fn);
+function jsPartialFunction(jsfn, args) {
+    return (jsfn.extend({
+        isaPartialFunction: true,
+        partialArgs: args,
+        nativeValue: Yaga.thisArg(nativeWrap),
+        call(ymc, args, optPoint) {
+            if (args.length === 0) return (this);
+            if (!args.elements) args = evaluateArgs(ymc, args);
+            args = mergeArgs(this.partialArgs, args, optPoint);
+            return (returnRelated(this).call(ymc, args, optPoint));
+        },
+    }));
 }
 
-function _mergeArgs(partArgs, args, optPoint) {
+function mergeArgs(partArgs, args, optPoint) {
     let e, arr = partArgs.elements.slice(0),
         es = args.elements,
         iArgs = 0,
@@ -271,28 +273,32 @@ function _mergeArgs(partArgs, args, optPoint) {
         if ((e = es[iArgs]).isNone) newMap.push(iArgs);
         arr.push(e);
     }
-    let list = yaga.List.new(arr, optPoint ? optPoint : arr[0].parserPoint);
+    let list = Mach.List(arr, optPoint ? optPoint : arr[0].readPoint);
     if (newMap.length > 0) list.hasNone = newMap;
     return (list);
 }
 
-function _evaluateArgs(yi, es, optPoint) {
-    if (es.length === 0) return (yaga.List.nil());
+function evaluateArgs(ymc, es, optPoint) {
+    if (es.length === 0) return (Mach.List.nil());
     let noneMap = [],
         arr = [];
     for (let i = 0; i < es.length; i++) {
-        let e = es[i].evaluate(yi);
+        let e = es[i].evaluate(ymc);
         if (e.isInsertable) arr = arr.concat(e.elements);
         else if (e.isNone) {
             noneMap.push(i);
             arr.push(e);
         } else arr.push(e);
     };
-    let list = yaga.List.new(arr, optPoint ? optPoint : arr[0].parserPoint);
+    let list = Mach.List(arr, optPoint ? optPoint : arr[0].readPoint);
     if (noneMap.length > 0) list.hasNone = noneMap;
     return (list);
 }
 
-function _returnThis() {
+function returnRelated(fn) {
+    return (Object.getPrototypeOf(fn));
+}
+
+function returnThis() {
     return (this);
 }

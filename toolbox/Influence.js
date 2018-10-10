@@ -22,6 +22,7 @@
  * 				protected_: {		// Protected properties of the prototype. Can also contain 'thisArg_'.
  * 				}
  * 			},
+ * 			abstract: <as above>,	// Abstract prototype and static specification. No constructor
  * 			constructor: <fInitialiser> | <oInitialiser>,
  * 			createExit: <function>	// Pre-empt construction after examining constructor arguments.
  * 			static: {				// Static properties for the Influence
@@ -41,27 +42,32 @@
  * 				<descriptor> | <influence object> | <influence function> | <registry name>,
  * 				...
  * 			],
- * 			harmonizers: '.least.' | '.most.' | {
+ * 			harmonizers: <GroupHarmonizers> | {
  * 				defaults: {
- * 					prototype: <See below>,			// Default is '.most.'
- * 					static: <See below>,			// Default is '.none.'
- * 					constructor: <See below>,		// Default is '.none.'
+ * 					prototype: <Harmonizers>,		// Default is '.most.'
+ * 					static: <Harmonizers>,			// Default is '.none.'
+ * 					constructor: <Harmonizers>,		// Default is '.none.'
  * 				},
- * 				prototype: {		// Harmonizers for prototype properties. Can also contain 'thisArg_'.
- * 					<property>: <idx> | <name> | <Inf Object> | <Inf Creator> | '.none.' | '.least.' | '.most.' | 
- * 								['.least.'] | ['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
+ * 				prototype: <GroupHarmonizers> | {	// Harmonizers for prototype properties. Can also contain 'thisArg_'.
+ * 					<property>: 
  * 					...
- * 					protected_: {	// Harmonizers for protected properties. Can also contain 'thisArg_'.
+ * 					protected_: {					// Harmonizers for protected properties. Can also contain 'thisArg_'.
  * 					},
  * 				},
- * 				static: {			// Harmonizers for static influence properties. Can also contain 'thisArg_'.
+ * 				static: <GroupHarmonizers> | {		// Harmonizers for static influence properties. Can also contain 'thisArg_'.
  * 					...
- * 					protected_: {	// Harmonizers for protected properties. Can also contain 'thisArg_'.
+ * 					protected_: {					// Harmonizers for protected properties. Can also contain 'thisArg_'.
  * 					},
  * 				},
- * 				constructor:,		// Influence constructor harmonizer
+ * 				constructor: <Harmonizers>,			// Influence constructor harmonizer
  * 			},
  * 		}
+ * 
+ * 	Harmonizer Specs:
+ * 		Harmonizers : <idx> | <name> | <Inf Object> | <Inf Creator> | '.none.' | '.least.' | '.most.' | 
+ * 						['.least.'] | ['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
+ * 		GroupHarmonizers : <idx> | <name> | <Inf Creator> | '.none.' | '.least.' | '.most.' | 
+ * 							['.least.'] | ['.most.'] | [(<idx> | <name>) ...] | fHarmonizer
  * 
  *  Notes:
  * 		1. Both 'register' and 'name' are optional. Influence treated as anonymous. Mutually exclusive
@@ -139,6 +145,9 @@
  *				   to the extension. The template is assigned at a descriptor level. Located in the public prototype.
  *	   13. 'createExit' can examine the constructor arguments and answer a pre-defined object before construction begins.
  *			An 'undefined' will allow construction to continue.
+ *	   14. <GroupHarmonizers> is a shorthand default that can be applied to a complete group. Excludes the use of <InfObject>.
+ *		   'defaults' section should be used if there is a mixture of individual property harmonizers and a common default
+ *         for other properties in the group.
  *
  * 	Future Enhancements:
  * 		1. Influence.inheritsFrom(<inf instance>, <inf object> | <inf function> | <registry name>) - Checks whether the object is an
@@ -160,7 +169,6 @@ module.exports = Object.freeze({
 	}
 });
 Influence.lookup = lookupRegistry;
-Influence.abstract = abstractInfluence;
 Object.freeze(Influence);
 
 const Registry = new Map(); // Registry of well known Influences
@@ -190,6 +198,9 @@ const HarmonizerDefaults = {
 function Influence(oDesc) {
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence descriptor '${oDesc}'`);
+	if (oDesc.hasOwnProperty('abstract'))
+		return (abstractInfluence(oDesc));
+
 	let oInf = {
 		typeName: 'Influence',
 		isanInfluence: true,
@@ -220,6 +231,8 @@ function Influence(oDesc) {
 function abstractInfluence(oDesc) {
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence descriptor '${oDesc}'`);
+	if (oDesc.hasOwnProperty('prototype'))
+		throw new Error("Influence descriptor has both a 'prototype' and 'abstract' property");
 	let oInf = {
 		typeName: 'Influence',
 		isanInfluence: true,
@@ -227,8 +240,6 @@ function abstractInfluence(oDesc) {
 		compositeMembership: [],
 	};
 	oInf.prototype = {};
-	if (!oDesc.hasOwnProperty('prototype'))
-		throw new Error("Abstract influence descriptor missing a 'prototype' property");
 	prototypeInfluence(oInf, oDesc);
 	return (finaliseInfluence(oInf));
 }
@@ -288,7 +299,7 @@ function compositionInfluence(oInf, oDesc) {
 	processName(oInf, oDesc);
 	processComposition(oInf, oDesc);
 	let harmonizers = oDesc.harmonizers;
-	if (typeof harmonizers === 'string') {
+	if (isaGroupHarmonizer(harmonizers)) {
 		// Apply the same default across all harmonized segments.
 		harmonizers = {
 			defaults: {
@@ -298,13 +309,28 @@ function compositionInfluence(oInf, oDesc) {
 			}
 		};
 	} else if (typeof harmonizers === 'object') {
+		harmonizers = Object.assign({}, harmonizers);
+		if (!harmonizers.default)
+			harmonizers.default = {};
 		Yaga.dispatchPropertyHandlers(harmonizers, {
-			prototype: () => harmonize(oInf, _, 'prototype', harmonizers.prototype),
-			static: () => {
-				allocStaticSegment(oInf);
-				harmonize(oInf, 'static', 'object', harmonizers.static);
+			prototype: () => {
+				if (isaGroupHarmonizer(harmonizers.prototype))
+					harmonizers.defaults.prototype = harmonizers.prototype;
+				else
+					harmonize(oInf, _, 'prototype', harmonizers.prototype)
 			},
-			constructor: () => harmonizeConstructor(oInf, harmonizers.constructor)
+			static: () => {
+				if (isaGroupHarmonizer(harmonizers.static))
+					harmonizers.defaults.static = harmonizers.static;
+				else {
+					allocStaticSegment(oInf);
+					harmonize(oInf, 'static', 'object', harmonizers.static);
+				}
+			},
+			constructor: () => {
+				// No requirement for group level harmonization
+				harmonizeConstructor(oInf, harmonizers.constructor)
+			}
 		});
 	} else
 		harmonizers = {};
@@ -334,6 +360,10 @@ function compositionInfluence(oInf, oDesc) {
 		inf.compositeMembership.push(oInf.create); // Just save the creator in composite membership list.
 	});
 	delete oInf.temp; // Only need 'temp' while we are constructing the composition
+}
+
+function isaGroupHarmonizer(harmonizer) {
+	return (harmonizer !== undefined && (typeof harmonizer !== 'object' || Array.isArray(harmonizer)));
 }
 
 function propagateScope(toTgt, frTgt) {
@@ -559,14 +589,15 @@ function prototypeInfluence(oInf, oDesc) {
 	oInf.isaPrototype = true;
 	oInf.isaComposition = false;
 	processName(oInf, oDesc);
-	if (oDesc.prototype) {
-		if (typeof oDesc.prototype !== 'object')
-			throw new Error(`Invalid influence prototype descriptor '${oDesc.prototype}'`);
-		Yaga.dispatchPropertyHandlers(oDesc.prototype, {
-			thisArg_: () => copyThisArgProps(oInf.prototype, oDesc.prototype.thisArg_),
-			private_: () => copyPrivatePrototypeProps(oInf, oDesc.prototype.private_),
-			protected_: () => copyProtectedPrototypeProps(oInf, oDesc.prototype.protected_),
-			_other_: prop => copyProperty(oInf.prototype, prop, oDesc.prototype)
+	let pDesc = oDesc.prototype || oDesc.abstract;
+	if (pDesc) {
+		if (typeof pDesc !== 'object')
+			throw new Error(`Invalid influence prototype or abstract descriptor '${pDesc}'`);
+		Yaga.dispatchPropertyHandlers(pDesc, {
+			thisArg_: () => copyThisArgProps(oInf.prototype, pDesc.thisArg_),
+			private_: () => copyPrivatePrototypeProps(oInf, pDesc.private_),
+			protected_: () => copyProtectedPrototypeProps(oInf, pDesc.protected_),
+			_other_: prop => copyProperty(oInf.prototype, prop, pDesc)
 		});
 	}
 	makeCreator(oInf, makeConstructor(oInf, oDesc));
@@ -651,7 +682,7 @@ function makeCreator(oInf, fConstructor) {
 		} :
 		(...args) => {
 			let o;
-			if (oInf.createExit && (o == oInf.createExit(...args) !== undefined))
+			if (oInf.createExit && (o = oInf.createExit(...args)) !== undefined)
 				return (o);
 			o = Object.create(oInf.prototype);
 			if (oInf.isScoped) newScopesObject(o, oInf);
@@ -661,10 +692,13 @@ function makeCreator(oInf, fConstructor) {
 }
 
 function makeConstructor(oInf, oDesc) {
+	if (oInf.isAbstract) {
+		if (oDesc.hasOwnProperty('constructor'))
+			throw new Error('Constructor invalid for an abstract influence');
+		return (_);
+	}
 	if (!oDesc.hasOwnProperty('constructor'))
 		return (oInf.constructor = () => undefined);
-	else if (oInf.isAbstract)
-		throw new Error('Constructor invalid for an abstract influence');
 	let ty = typeof oDesc.constructor;
 	if (ty === 'object') {
 		makeInitialiserObject(oInf, oDesc.constructor);

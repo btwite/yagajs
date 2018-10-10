@@ -79,7 +79,7 @@ let List = Yaga.Influence({
 var InsertableList = Yaga.Influence({
 	name: 'yaga.machine.InsertableList',
 	composition: [{
-		prototype: {
+		abstract: {
 			isaList: true,
 			isInsertable: true,
 			bind: invalidOperation,
@@ -95,13 +95,13 @@ var InsertableList = Yaga.Influence({
 var BoundList = Yaga.Influence({
 	name: 'yaga.machine.BoundList',
 	composition: [{
-		prototype: {
+		abstract: {
 			isaList: true,
 			isBound: true,
 			bind: returnThis,
 			evaluate(ymc) {
 				let es = this.elements;
-				return (es[0].call(ymc, es.slice(1), point));
+				return (es[0].call(ymc, es.slice(1), this.readPoint));
 			},
 		},
 	}, List],
@@ -134,11 +134,7 @@ var DefaultNil, Nil = Yaga.Influence({
 		if (!readPoint)
 			return (DefaultNil);
 	},
-	harmonizers: {
-		static: {
-			default: 0
-		}
-	}
+	harmonizers: '.most.'
 });
 
 var Expression = Yaga.Influence({
@@ -186,7 +182,7 @@ function UnboundList(list, rsn) {
 		rsn: rsn,
 		bind: returnThis,
 		evaluate(ymc) {
-			throw Yaga.Error.YagaException(this, this.rsn);
+			throw Mach.Error.YagaException(this, this.rsn);
 		},
 		raiseError(ymc) {
 			ymc.addError(this, this.rsn);
@@ -196,7 +192,7 @@ function UnboundList(list, rsn) {
 }
 
 function invalidOperation(ymc) {
-	throw Yaga.Error.InternalException('Invalid operation')
+	throw Mach.Error.InternalException('Invalid operation')
 }
 
 function bindList(ymc, list) {
@@ -258,7 +254,7 @@ function processOperators(ymc, es) {
 }
 
 function bindOperators(ymc, es, er) {
-	if (es.length === 0) throw Yaga.Error.BindException(er, `Missing argument for operator '${er.value()}'`);
+	if (es.length === 0) throw Mach.Error.BindException(er, `Missing argument for operator '${er.value()}'`);
 	if (es.length === 1) return (es); // Down to the last element in this branch
 	const dirPrec = {
 		none: {},
@@ -287,20 +283,20 @@ function bindOperators(ymc, es, er) {
 			iOp = i;
 		}
 	}
-	if (!curSpec) throw Yaga.Error.BindException(es[0], 'Missing operator specification when binding an operator expression');
+	if (!curSpec) throw Mach.Error.BindException(es[0], 'Missing operator specification when binding an operator expression');
 	if (iOp === 0) {
 		if (curSpec.type !== 'prefix' || curSpec.type !== 'list') {
-			throw Yaga.Error.BindException(es[0], `Expecting a prefix or list operator. Found('${curSpec.type}')`);
+			throw Mach.Error.BindException(es[0], `Expecting a prefix or list operator. Found('${curSpec.type}')`);
 		}
 		return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
 	if (iOp === es.length - 1) {
-		if (curSpec.type !== 'postfix') throw Yaga.Error.InternalException(`Expecting a postfix operator Found('${curSpec.type}')`);
+		if (curSpec.type !== 'postfix') throw Mach.Error.InternalException(`Expecting a postfix operator Found('${curSpec.type}')`);
 		return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
 	switch (curSpec.type) {
 		case 'binary':
-			let symFn = yaga.Symbol.new(curSpec.function, es[iOp].readPoint);
+			let symFn = Mach.Symbol(curSpec.function, es[iOp].readPoint);
 			return ([symFn, _bindOperators(ymc, es.slice(0, iOp), es[iOp]), _bindOperators(ymc, es.slice(iOp + 1), es[iOp])]);
 		case 'list':
 		case 'postfix':
@@ -308,7 +304,7 @@ function bindOperators(ymc, es, er) {
 		case 'connector':
 			return (bindSequenceOp(ymc, curSpec, es, iOp));
 	}
-	throw Yaga.Error.BindException(es[iOp], `Invalid operator specification type '${curSpec.type}'`);
+	throw Mach.Error.BindException(es[iOp], `Invalid operator specification type '${curSpec.type}'`);
 }
 
 function _bindOperators(ymc, es, er) {
@@ -319,7 +315,7 @@ function _bindOperators(ymc, es, er) {
 
 function bindSequenceOp(ymc, spec, es, iOp) {
 	let arr = [],
-		symFn = Yaga.Symbol(spec.function, es[iOp].readPoint);
+		symFn = Mach.Symbol(spec.function, es[iOp].readPoint);
 	switch (spec.type) {
 		case 'prefix':
 			if (es.length == 2) return ([symFn, es[1]])
@@ -348,7 +344,7 @@ function bindSequenceOp(ymc, spec, es, iOp) {
 			if (iOp + 1 < es.length - 1) arr = arr.concat(es.slice(iOp + 2));
 			break;
 		default:
-			throw Yaga.Error.InternalException('Invalid bind sequence');
+			throw Mach.Error.InternalException('Invalid bind sequence');
 	}
 	if (checkOperators(arr)) arr = bindOperators(ymc, arr, arr[0]);
 	return (arr);
@@ -374,7 +370,7 @@ function findEndOfList(ymc, spec, es, iOp) {
 			return (i);
 		}
 	}
-	throw Yaga.Error.BindException(es[iOp], 'Missing end of list');
+	throw Mach.Error.BindException(es[iOp], 'Missing end of list');
 }
 
 function parseOperators(ymc, es) {
@@ -450,7 +446,7 @@ function parseSymbol(ymc, e) {
 			e1.readPoint = e.readPoint.increment(iStart);
 			arr.push(e1);
 		}
-		arr.push(yaga.Symbol.Operator(sOp, specs, e.readPoint.increment(i)));
+		arr.push(Mach.Symbol.Operator(sOp, specs, e.readPoint.increment(i)));
 		iStart = k;
 		i = k - 1; // Need to allow for loop incrementer
 	}
@@ -563,7 +559,7 @@ function asQuasiOverride(list) {
 			return (BoundQuasiOverrideList(returnRelated(this).bind(ymc)));
 		},
 		evaluate(ymc) {
-			throw Yaga.Error.YagaException(this, "Misplaced quasi override");
+			throw Mach.Error.YagaException(this, "Misplaced quasi override");
 		},
 	}));
 }
@@ -586,7 +582,7 @@ function asQuasiInjection(list) {
 			return (BoundQuasiInjectionList(returnRelated(this).bind(ymc)));
 		},
 		evaluate(ymc) {
-			throw Yaga.Error.YagaException(this, "Misplaced quasi injection");
+			throw Mach.Error.YagaException(this, "Misplaced quasi injection");
 		},
 	}));
 }

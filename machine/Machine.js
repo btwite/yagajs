@@ -31,10 +31,12 @@ var MachineContext = Yaga.Influence({
     prototype: {
         thisArg_: {
             bind,
+            bindExpressions,
             evaluate,
+            evaluateExpressions,
             call,
             printDictionaries,
-            printLoadedDictionary,
+            printGlobalDictionary,
             printDictionary,
             causedErrors,
             clearErrors,
@@ -81,10 +83,12 @@ var Machine = Yaga.Influence({
     name: 'yaga.Machine',
     prototype: {
         bind: asMachineContext('bind'),
+        bindExpressions: asMachineContext('bindExpressions'),
         evaluate: asMachineContext('evaluate'),
+        evaluateExpressions: asMachineContext('evaluateExpressions'),
         call: asMachineContext('call'),
         printDictionaries: asMachineContext('printDictionaries'),
-        printLoadedDictionary: asMachineContext('printLoadedDictionary'),
+        printGlobalDictionary: asMachineContext('printGlobalDictionary'),
         printDictionary: asMachineContext('printDictionary'),
         causedErrors: asMachineContext('causedErrors'),
         clearErrors: asMachineContext('clearErrors'),
@@ -127,16 +131,16 @@ function readDictionary(ymc, gd, fPath) {
         let jfn = ymc.options.jsPrimLoader;
         if (!jfn) jfn = Mach.Primitives.jsPrimLoader.bind(Mach.Primitives);
         let desc = [Mach.Symbol('macro'), Mach.Symbol('jsPrim')];
-        gd.define('.jsPrim', Mach.Function.Macro(desc, jfn));
+        gd.define('.jsPrim', Mach.Function.jsMacro(jfn, desc));
     }
     let exprs = {};
     try {
         if (ymc.causedErrors(() => exprs.readExpression = ymc.reader.readFile(fPath)))
             throw Mach.Error.ReadDictionaryException(ymc.machine, `Read failed for dictionary '${fPath}'`, exprs, ymc.errors);
-        if (ymc.causedErrors(() => exprs.bindExpression = ymc.bind(exprs.readExpression))) {
+        if (ymc.causedErrors(() => exprs.bindExpression = bindExpressions(ymc, exprs.readExpression))) {
             throw Mach.Error.ReadDictionaryException(ymc.machine, `Bind failed for dictionary '${fPath}'`, exprs, ymc.errors);
         }
-        exprs.evaluateExpression = mach.evaluate(exprs.bindExpression);
+        exprs.evaluateExpression = evaluateExpressions(ymc, exprs.bindExpression);
     } catch (err) {
         ymc.addException(_, err);
     }
@@ -173,21 +177,48 @@ function mustHaveStarted(ymc) {
         throw Mach.Error.YagaException('Yaga machine could not be started');
 }
 
-function bind(ymc, exprs) {
-    ymc.mustHaveStarted();
-    // Can get one or more expressions to bind.
-    // Anwsers the result of the bind(s).
-    let binds = [],
-        fn = x => {
-            resetBinder(ymc);
-            return (x.bind(ymc));
-        };
-    if (Array.isArray(exprs))
-        exprs.forEach(expr => binds.push(doPhase(ymc, fn, expr)));
-    else
-        binds = doPhase(ymc, fn, exprs);
+function bind(ymc, expr) {
+    return (bindExpressions(ymc, [expr])[0]);
+}
+
+function bindExpressions(ymc, exprs) {
+    let binds = doExpressions(ymc, exprs, x => {
+        resetBinder(ymc);
+        return (x.bind(ymc));
+    });
     resetBinder(ymc);
     return (binds);
+}
+
+function evaluate(ymc, expr) {
+    return (evaluateExpressions(ymc, [expr])[0]);
+}
+
+function evaluateExpressions(ymc, exprs) {
+    return (doExpressions(ymc, exprs, x => x.evaluate(ymc)));
+}
+
+function doExpressions(ymc, exprs, fDo) {
+    ymc.mustHaveStarted();
+    let result = [];
+    if (Array.isArray(exprs))
+        exprs.forEach(expr => result.push(doExpression(ymc, fDo, expr)));
+    else if (exprs.isaList) {
+        exprs.elements.forEach(expr => result.push(doExpression(ymc, fDo, expr)));
+        result = Mach.List(result, exprs.readPoint);
+    } else
+        result = doPhase(ymc, fDo, exprs);
+    return (result);
+
+}
+
+function doExpression(ymc, fn, expr) {
+    try {
+        return (fn(expr));
+    } catch (err) {
+        ymc.addException(expr, err);
+    }
+    return (undefined);
 }
 
 function evaluate(exprs) {
@@ -207,15 +238,6 @@ function call(ymc, fn, ...args) {
     ymc.mustHaveStarted();
     if (!Mach.isaMachineType(fn) || !fn.isaClosure) throw Mach.Error.YagaException('Require a Yaga machine function type');
     return (fn.call(this, Mach.Wrapper.wrap(args)).nativeValue(ymc));
-}
-
-function doPhase(ymc, fn, expr) {
-    try {
-        return (fn(expr));
-    } catch (err) {
-        ymc.addException(expr, err);
-    }
-    return (undefined);
 }
 
 
@@ -273,19 +295,19 @@ function setDictDependsOn(ymc, paths) {
     ymc.gd.setDictionaryDependencies(paths);
 }
 
-function printLoadedDictionary(ymc, stream = process.stdout) {
-    stream.write('---------------- Yaga Machine Loaded Dictionary ----------------\n');
-    ymc.gd.print(stream, (v, indent) => print(v, stream, indent));
+function printGlobalDictionary(ymc, stream = process.stdout) {
+    stream.write('---------------- Yaga Machine Global Dictionary ----------------\n');
+    ymc.gd.print(stream, (v, indent) => print(ymc, v, stream, indent));
 }
 
 function printDictionaries(ymc, stream = process.stdout) {
     stream.write('---------------- All Dictionaries ----------------\n');
-    ymc.gd.printDictionaries(stream, (v, indent) => print(v, stream, indent));
+    Mach.Dictionary.printDictionaries(stream, (v, indent) => print(ymc, v, stream, indent));
 }
 
-function printDictionary(ymc, stream = process.stdout, name) {
+function printDictionary(ymc, name, stream = process.stdout) {
     stream.write('---------------- Dictionary ----------------\n');
-    ymc.gd.printDictionary(name, stream, (v, indent) => print(v, stream, indent));
+    Mach.Dictionary.printDictionary(name, stream, (v, indent) => print(ymc, v, stream, indent));
 }
 
 function registerOperator(ymc, sOp, wrap) {
@@ -307,7 +329,7 @@ function print(ymc, exprs, stream, initIndent = 0) {
         maxIndent = ' '.repeat(32);
     let printer = {
         printExpression(expr) {
-            if (_isaYagaType(expr)) expr.print(this);
+            if (Mach.isaMachineType(expr)) expr.print(this);
             else this.printElement(String(expr));
             return (this);
         },
@@ -388,7 +410,7 @@ function addError(ymc, e, msg, attach) {
 }
 
 function addException(ymc, e, excp) {
-    if (e === undefined && excp) e = excp.element;
+    if (excp && excp.element) e = excp.element;
     let msg = `${excp.name}: ${excp.message}`;
     ymc.errors.push(Mach.Error(e, msg, excp))
 }

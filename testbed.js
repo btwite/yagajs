@@ -9,6 +9,7 @@ let yaga = require('./Yaga');
 
 //test();
 testMachine();
+//testRegExprs();
 //testReader();
 //testGlobalDictionary();
 //testResolvePath();
@@ -36,20 +37,32 @@ function testMachine() {
     let mach;
     try {
         mach = yaga.Machine({
-            readerTable: _,
-            coreDictionary: 'test.yaga',
-            jsPrimLoader: () => _,
-            //        dictionary: _,
+            //        readerTable: _,
+            //coreDictionary: 'test.yaga',
+            //        jsPrimLoader: () => _,
+            dictionary: 'test.yaga',
             //        dictionaries: _,
         });
+        mach.printDictionary('test.yaga');
     } catch (err) {
         if ((mach = err.machine || mach) && mach.hasErrors()) {
             mach.printErrors();
-            if (err.expressions.readExpression)
-                log(err.expressions.readExpression);
+            //mach.printGlobalDictionary();
+            //            if (err.expressions.readExpression)
+            //                log(err.expressions.readExpression);
         } else
             throw err;
-    }
+    };
+}
+
+function testRegExprs() {
+    let r = /^(?:(?:\+|-)?\d+(?:.\d+)?(?:[Ee](?:\+|-)?\d+)?)(?![a-zA-Z0-9])/;
+    let r1 = /^(?:(?:\+|-)?\d+(?:.\d+)?(?:[Ee](?:\+|-)?\d+)?)/;
+    //let r = /^(?:\+|-)/;
+    let s = '+11111.1111e-10';
+    let m = r.exec(s);
+    let m1 = r1.exec(s);
+    log(m, m1);
 }
 
 function testReader() {
@@ -471,9 +484,9 @@ function testComposition() {
 }
 
 function testAbstractInfluence() {
-    let myInf = yaga.Influence.abstract({
+    let myInf = yaga.Influence({
         name: 'myAbstractInf',
-        prototype: {
+        abstract: {
             helloWorld() {
                 console.log('Hello World');
                 return (this);

@@ -27,6 +27,7 @@ Yaga.Exception = toolbox.Exception;
 
 Yaga.public = toolbox.Scopes.public;
 Yaga.createPrivateScope = toolbox.Scopes.createPrivateScope;
+Yaga.assign = toolbox.Replicate.assign;
 Yaga.copy = toolbox.Replicate.copy;
 Yaga.reverseCopy = toolbox.Replicate.reverseCopy;
 Yaga.clone = toolbox.Replicate.clone;

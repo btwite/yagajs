@@ -8,6 +8,7 @@
 var Exps;
 
 module.exports = Object.freeze({
+    assign,
     copy,
     reverseCopy,
     clone,
@@ -15,6 +16,10 @@ module.exports = Object.freeze({
     cloneObject,
     Initialise: x => Exps = x
 });
+
+function assign(from, to = {}) {
+    return (Object.defineProperties(to, Object.getOwnPropertyDescriptors(from)));
+}
 
 function copy(o) {
     if (Array.isArray(o))
