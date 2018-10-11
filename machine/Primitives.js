@@ -86,7 +86,8 @@ function jsPrimLoader(ymc, list) {
 
 function jsDefine(ymc, list) {
     let es = list.elements;
-    if (es.length != 2) _throw(es.length > 0 ? es[0] : list, `'define' requires a name and a value`);
+    if (es.length != 2)
+        _throw(es.length > 0 ? es[0] : list, `'define' requires a name and a value`);
     let val = es[1];
     //    console.log(es[0].name);
     val = val.bind(ymc).evaluate(ymc);

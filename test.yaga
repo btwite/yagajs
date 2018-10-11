@@ -1,12 +1,14 @@
 //((.jsPrim macro jsDefine) define (.jsPrim macro jsDefine))
 //(define function (.jsPrim macro jsFunction))
-/*
+
 (define str "aaaaa")
 (define str1 "aaaaaaaa
      \              bbbbbbbb")
 (define num 111.111E-10)
 (define str2 "lksjdlksjdlaskj" )
-*/
-(define \,,,@/// 300)
+
+(define '\,,,@/// 300)
 (define fred \,,,@/// )
 
+(define num1 (1 + 2))
+(define num2 (1+4*2))

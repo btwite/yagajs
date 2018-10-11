@@ -35,6 +35,17 @@ var ReadDictionaryException = Yaga.Exception({
     }
 });
 
+var RbeplException = Yaga.Exception({
+    name: 'yaga.machine.RbeplException',
+    prototype: YagaException,
+    constructor(mach, msg, exprs, errors) {
+        RbeplException.super(this, _, msg, errors);
+        this.expressions = exprs;
+        this.machine = mach;
+        return (msg);
+    }
+});
+
 var InternalException = Yaga.Exception({
     name: 'yaga.machine.InternalException',
     prototype: YagaException,
@@ -96,6 +107,7 @@ var Error = Yaga.Influence({
     static: {
         YagaException,
         ReadDictionaryException,
+        RbeplException,
         InternalException,
         ReaderException,
         DictionaryException,

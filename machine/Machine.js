@@ -30,6 +30,8 @@ var MachineContext = Yaga.Influence({
     name: 'yaga.machine.Context',
     prototype: {
         thisArg_: {
+            rbepl,
+            rbeplFile,
             bind,
             bindExpressions,
             evaluate,
@@ -82,6 +84,8 @@ var MachineContext = Yaga.Influence({
 var Machine = Yaga.Influence({
     name: 'yaga.Machine',
     prototype: {
+        rbepl: asMachineContext('rbepl'),
+        rbeplFile: asMachineContext('rbeplFile'),
         bind: asMachineContext('bind'),
         bindExpressions: asMachineContext('bindExpressions'),
         evaluate: asMachineContext('evaluate'),
@@ -120,6 +124,32 @@ function start(ymc) {
         ymc.options.ldDesc.coreDictionary = 'path://yaga.machine/core.yaga';
     ymc.gd = Mach.Dictionary.fromDescriptor(ymc.options.ldDesc);
     ymc.isInitialised = true;
+}
+
+function rbepl(ymc, s) {
+    return (_rbepl(ymc, () => ymc.reader.readString(s))[0]);
+}
+
+function rbeplFile(ymc, fPath) {
+    return (_rbepl(ymc, () => ymc.reader.readFile(Yaga.Paths.resolve(fPath))));
+}
+
+function _rbepl(ymc, fRead) {
+    ymc.clearErrors();
+    let exprs = {};
+    try {
+        if (ymc.causedErrors(() => exprs.readExpression = fRead()))
+            throw Mach.Error.RbeplException(ymc.machine, 'Read failed', exprs, ymc.errors);
+        if (ymc.causedErrors(() => exprs.bindExpression = bindExpressions(ymc, exprs.readExpression))) {
+            throw Mach.Error.RbeplException(ymc.machine, 'Bind failed', exprs, ymc.errors);
+        }
+        exprs.evaluateExpression = evaluateExpressions(ymc, exprs.bindExpression);
+    } catch (err) {
+        ymc.addException(_, err);
+    }
+    if (ymc.hasErrors())
+        throw Mach.Error.RbeplException(ymc.machine, 'Rbepl request failed', exprs, ymc.errors);
+    return (exprs.evaluateExpression.elements);
 }
 
 function readDictionary(ymc, gd, fPath) {

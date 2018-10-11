@@ -7,6 +7,9 @@
 let _ = undefined;
 let yaga = require('./Yaga');
 
+//let r = /^(?:\d+(?:\.\d+)?(?:[Ee](?:\+|-)?\d+)?)(?![a-zA-Z0-9])/;
+//log(r.exec('1.11e*2'));
+
 //test();
 testMachine();
 //testRegExprs();
@@ -40,10 +43,11 @@ function testMachine() {
             //        readerTable: _,
             //coreDictionary: 'test.yaga',
             //        jsPrimLoader: () => _,
-            dictionary: 'test.yaga',
+            //dictionary: 'test.yaga',
             //        dictionaries: _,
         });
-        mach.printDictionary('test.yaga');
+        mach.printGlobalDictionary();
+        mach.print(mach.rbeplFile('test.yaga'));
     } catch (err) {
         if ((mach = err.machine || mach) && mach.hasErrors()) {
             mach.printErrors();

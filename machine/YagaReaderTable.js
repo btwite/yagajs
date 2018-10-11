@@ -36,7 +36,7 @@ module.exports = Object.freeze({
             ',@': quasiInjection,
             '//': singleLineComment,
             '/*': multiLineComment,
-            '/^(?:(?:\\+|-)?\\d+(?:.\\d+)?(?:[Ee](?:\\+|-)?\\d+)?)(?![a-zA-Z0-9])/': numberValue,
+            '/^(?:\\d+(?:\\.\\d+)?(?:[Ee](?:\\+|-)?\\d+)?)(?![a-zA-Z0-9])/': numberValue,
         },
     }),
     Initialise: x => Mach = x,
@@ -194,7 +194,7 @@ function parseString(state, delimiter = '"') {
 
     str.lastCol = curCol;
     if (str.colEscape > 0) {
-        oEscape = 0;
+        str.colEscape = 0;
         if (Yaga.Character.isWhitespace(ch))
             state.throw("Invalid use of escape in String constant", state.readPoint);
         switch (ch) {

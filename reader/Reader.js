@@ -172,11 +172,10 @@ function popReaderContext(ctxt) {
     let ps = Reader.private(ctxt.reader);
     if (ps.contextStack.length === 0)
         throw new Error('No Reader context to pop');
-    let expr = endStream(ctxt);
     ps.context = ps.contextStack.pop();
     if (ps.contextStack.length == 0)
         endReader(ctxt);
-    return (expr);
+    return (ctxt.expression);
 }
 
 function moreText(ctxt) {
@@ -193,9 +192,10 @@ function nextInput(ctxt) {
             stream.push(EOLInput(ctxt));
         else if (ch === chEOS) {
             // Don't want two end of lines if EOS occurs straight after a NL
+            let readPoint = ctxt.currentPoint;
             if (ctxt.column !== 0)
                 stream.push(EOLInput(ctxt));
-            stream.push(EOSInput(ctxt));
+            stream.push(EOSInput(ctxt, readPoint));
             return; // Can't go any further
         }
     } while (Character.isWhitespace(ch));
@@ -210,8 +210,9 @@ function nextInput(ctxt) {
     if (Character.isEndOfLine(ch))
         stream.push(EOLInput(ctxt));
     else if (ch === chEOS) {
+        let readPoint = ctxt.currentPoint;
         stream.push(EOLInput(ctxt));
-        stream.push(EOSInput(ctxt));
+        stream.push(EOSInput(ctxt, readPoint));
     }
 }
 
@@ -328,26 +329,29 @@ function TokenInput(ctxt, chs, readPoint, isMatched = false) {
 }
 
 function EOLInput(ctxt) {
-    let iPeek, readPoint = ctxt.currentPoint;
-    return {
-        typeName: 'EOLInput',
-        readPoint: readPoint,
-        startPeek: () => iPeek = 0,
-        peekNext: () => iPeek++ === 0 ? '\n' : null,
-        peekReadPoint: () => readPoint,
-        action() {
-            endLine(ctxt, this.readPoint);
-            ctxt.line++;
-            ctxt.column = 0;
-            if (peekNextChar(ctxt) !== chEOS)
-                startLine(ctxt);
-            return (true);
-        }
-    }
+    let iPeek,
+        chNext = peekNextChar(ctxt),
+        readPoint = ctxt.currentPoint,
+        oInput = {
+            typeName: 'EOLInput',
+            readPoint: readPoint,
+            startPeek: () => iPeek = 0,
+            peekNext: () => iPeek++ === 0 ? '\n' : null,
+            peekReadPoint: () => readPoint,
+            action() {
+                endLine(ctxt, this.readPoint);
+                if (chNext !== chEOS)
+                    startLine(ctxt);
+                return (true);
+            }
+        };
+    ctxt.line++;
+    //    ctxt.column = chNext === chEOS ? 1 : 0;
+    ctxt.column = 0;
+    return (oInput);
 }
 
-function EOSInput(ctxt) {
-    let readPoint = ctxt.currentPoint;
+function EOSInput(ctxt, readPoint = ctxt.currentPoint) {
     return {
         typeName: 'EOSInput',
         readPoint: readPoint,
@@ -355,8 +359,9 @@ function EOSInput(ctxt) {
         peekNext: () => chEOS,
         peekReadPoint: () => readPoint,
         action() {
+            endStream(ctxt);
             if (ctxt.exprStack.length > 0)
-                throw ReaderError(ctxt.lastReadPoint, 'Missing end of expression');
+                throw ReaderError(readPoint, 'Missing end of expression');
             return (false);
         }
     }
@@ -430,10 +435,8 @@ function startStream(ctxt) {
 
 function endStream(ctxt) {
     // The endReader handler must answer the expression object that is to be returned.
-    let expr = ctxt.expression;
     if (ctxt.readerTable.endStream)
-        expr = ctxt.readerTable.endStream(endStreamState(ctxt, expr));
-    return (expr);
+        ctxt.expression = ctxt.readerTable.endStream(endStreamState(ctxt, ctxt.expression));
 }
 
 function startLine(ctxt) {
