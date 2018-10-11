@@ -13,6 +13,7 @@ let yaga = require('./Yaga');
 //test();
 testMachine();
 //testRegExprs();
+//testCharacter();
 //testReader();
 //testGlobalDictionary();
 //testResolvePath();
@@ -67,6 +68,17 @@ function testRegExprs() {
     let m = r.exec(s);
     let m1 = r1.exec(s);
     log(m, m1);
+}
+
+function testCharacter() {
+    let Char = yaga.Character;
+    log('isAlpha(a,0,_)', Char.isAlpha('a'), Char.isAlpha('0'), Char.isAlpha(''));
+    log('isDigit(a,0,_)', Char.isDigit('a'), Char.isDigit('0'), Char.isDigit(''));
+    log('isAlphaNumeric(a,0,_)', Char.isAlphaNumeric('a'), Char.isAlphaNumeric('0'), Char.isAlphaNumeric(''));
+    log('isEndOfLine(\u2028,0,_)', Char.isEndOfLine('\u2028'), Char.isEndOfLine('0'), Char.isEndOfLine(''));
+    log('isControl(\v,\u2028,_)', Char.isControl('\v'), Char.isControl('\u2028'), Char.isControl(''));
+    log('isWhitespace( ,\r,_)', Char.isWhitespace(' '), Char.isWhitespace('\r'), Char.isWhitespace(''));
+    log('isSpecial(\u4000, ,_)', Char.isSpecial('\u4000'), Char.isSpecial(' '), Char.isSpecial(''));
 }
 
 function testReader() {

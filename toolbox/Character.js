@@ -19,53 +19,60 @@ module.exports = Object.freeze({
     EndOfStream: '\uffff',
 });
 
-const Alphas = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const Digits = '0123456789';
-const AlphaNumerics = Alphas + Digits;
-const EndLine = '\n\r\u2028\u2029';
-const Bells = '\b';
-const Spacing = '\f\t\v';
-const Spaces = ' \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
-const Controls = EndLine + Bells + Spacing;
-const Operators = '~!@#$%^&*()_+-={}|[]\\:";\'<>?,./';
-const Whitespace = ' ' + EndLine + Spacing + Spaces;
-const NonSpecial = AlphaNumerics + Whitespace + Operators + Bells;
+function combineRegExps(...args) {
+    let sExpr = args[0].source;
+    for (let i = 1; i < args.length; i++)
+        sExpr = sExpr.substr(0, sExpr.length - 1) + args[i].source.substr(1);
+    return (new RegExp(sExpr));
+}
 
+const Alphas = /[a-zA-Z]/;
+const Digits = /[0-9]/;
+const EndLine = /[\n\r\u2028\u2029]/;
+const Bells = /[\b]/;
+const Spacing = /[\f\t\v]/;
+const Spaces = /[ \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/;
+const Operators = /[~\!@#\$%\^&\*\(\)_\+-\=\{\}\|\[\]\\\:";\'<>\?,\.\/]/;
+
+const AlphaNumerics = combineRegExps(Alphas, Digits);
+const Controls = combineRegExps(EndLine, Bells, Spacing);
+const Whitespace = combineRegExps(EndLine, Spacing, Spaces);
+const NonSpecial = combineRegExps(AlphaNumerics, Whitespace, Operators, Bells);
 
 // Will need to be extend the following functions properly handle ucs-2 extended characters
 
 function isSpecial(ch) {
-    return (ch !== '' && !NonSpecial.includes(ch));
+    return (!NonSpecial.test(ch));
 }
 
 function isAlpha(ch) {
-    return (ch !== '' && Alphas.includes(ch));
+    return (Alphas.test(ch));
 }
 
 function isAlphaNumeric(ch) {
-    return (ch !== '' && AlphaNumerics.includes(ch));
+    return (AlphaNumerics.test(ch));
 }
 
 function isDigit(ch) {
-    return (ch !== '' && Digits.includes(ch));
+    return (Digits.test(ch));
 }
 
 function isNumeric(ch) {
-    return (ch !== '' && isDigit(ch));
+    return (isDigit(ch));
 }
 
 function isControl(ch) {
-    return (ch !== '' && Controls.includes(ch));
+    return (Controls.test(ch));
 }
 
 function isOperator(ch) {
-    return (ch !== '' && Operators.includes(ch));
+    return (Operators.test(ch));
 }
 
 function isWhitespace(ch) {
-    return (ch !== '' && Whitespace.includes(ch));
+    return (Whitespace.test(ch));
 }
 
 function isEndOfLine(ch) {
-    return (ch !== '' && EndLine.includes(ch));
+    return (EndLine.test(ch));
 }
