@@ -1,10 +1,8 @@
 /**
- * Yaga : @file
+ * index : @file
  * 
- * Entry module for the Yaga machine and related services.
- * The Yaga function object is returned and defaults as the interface
- * to create an instance of the Yaga machine. The function object also contains
- * other Yaga services.
+ * Entry module for answering core yaga services wrapped in a single export.
+ * Reader and Machine services are lazy loaded.
  */
 "use strict";
 
@@ -12,14 +10,11 @@ var Yaga = {};
 
 module.exports = Yaga;
 
-let utils = require('./toolbox/Utilities');
-Yaga.thisArg = utils.thisArg;
-Yaga.dispatchPropertyHandlers = utils.dispatchPropertyHandlers;
-Yaga.bind = utils.bind;
+let toolbox = require('../toolbox');
+Yaga.thisArg = toolbox.Utilities.thisArg;
+Yaga.dispatchPropertyHandlers = toolbox.Utilities.dispatchPropertyHandlers;
+Yaga.bind = toolbox.Utilities.bind;
 
-Yaga.Loader = require('./toolbox/Loader').Loader;
-
-let toolbox = Yaga.Loader(require('./toolbox/loadScript'));
 Yaga.Character = toolbox.Character;
 Yaga.StringBuilder = toolbox.StringBuilder;
 Yaga.Influence = toolbox.Influence;
@@ -33,16 +28,16 @@ Yaga.reverseCopy = toolbox.Replicate.reverseCopy;
 Yaga.clone = toolbox.Replicate.clone;
 Yaga.Paths = toolbox.File.Paths;
 
-Yaga.Paths.append(__dirname);
-Yaga.Paths.forAppend('yaga', __dirname);
-Yaga.Paths.forAppend('yaga.machine', __dirname + '/machine');
+let p = __dirname.substr(0, __dirname.length - '/core'.length);
+Yaga.Paths.append(p);
+Yaga.Paths.forAppend('yaga', p);
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
 Object.defineProperty(Yaga, 'Reader', {
     get() {
         if (Reader) return (Reader);
-        let exps = Yaga.Loader(require('./reader/loadScript'));
+        let exps = require('../reader');
         Reader = (...args) => exps.Reader(...args);
         Reader.ReadPoint = exps.ReadPoint;
         Reader.ReaderTable = exps.ReaderTable;
@@ -55,9 +50,9 @@ let Machine = undefined;
 Object.defineProperty(Yaga, 'Machine', {
     get() {
         if (Machine) return (Machine);
-        let exps = Yaga.Loader(require('./machine/loadScript'));
+        let exps = require('../machine');
         Machine = (...args) => exps.Machine(...args);
-        Machine.GlobalDictionary = exps.Dictionary;
+        Machine.GlobalDictionary = exps.Dictionary.GlobalDictionary;
         return (Machine);
     }
 });

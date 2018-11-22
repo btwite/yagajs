@@ -52,7 +52,7 @@
  */
 "use strict";
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var Character = Yaga.Character;
 
 var PatternMatcher = {
@@ -92,7 +92,7 @@ var ReaderTable = Yaga.Influence({
 			// May actually have a ReaderTable so just answer it.
 			if (typeof rtDesc === 'object' && rtDesc.isaReaderTable)
 				return (rtDesc);
-			return (ReaderTable(rtDesc))
+			return (ReaderTable.create(rtDesc))
 		}
 	}
 });

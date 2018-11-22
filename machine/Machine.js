@@ -7,7 +7,7 @@
 
 let _ = undefined;
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var Mach;
 
 var Binder = Yaga.Influence({
@@ -122,7 +122,7 @@ function start(ymc) {
     ymc.isStarted = true;
     if (!ymc.options.ldDesc.coreDictionary)
         ymc.options.ldDesc.coreDictionary = 'path://yaga.machine/core.yaga';
-    ymc.gd = Mach.Dictionary.fromDescriptor(ymc.options.ldDesc);
+    ymc.gd = Mach.Dictionary.GlobalDictionary.fromDescriptor(ymc.options.ldDesc);
     ymc.isInitialised = true;
 }
 
@@ -332,12 +332,12 @@ function printGlobalDictionary(ymc, stream = process.stdout) {
 
 function printDictionaries(ymc, stream = process.stdout) {
     stream.write('---------------- All Dictionaries ----------------\n');
-    Mach.Dictionary.printDictionaries(stream, (v, indent) => print(ymc, v, stream, indent));
+    Mach.Dictionary.GlobalDictionary.printDictionaries(stream, (v, indent) => print(ymc, v, stream, indent));
 }
 
 function printDictionary(ymc, name, stream = process.stdout) {
     stream.write('---------------- Dictionary ----------------\n');
-    Mach.Dictionary.printDictionary(name, stream, (v, indent) => print(ymc, v, stream, indent));
+    Mach.Dictionary.GlobalDictionary.printDictionary(name, stream, (v, indent) => print(ymc, v, stream, indent));
 }
 
 function registerOperator(ymc, sOp, wrap) {

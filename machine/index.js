@@ -1,15 +1,17 @@
 /*
- *  loadScript: @file
+ *  index: @file
  *
- *  Answers the loader descriptor for the machine package.
+ *  Answers the the full machine package interface.
  */
 "use strict";
 
 let _ = undefined;
-module.exports = {
+let tb = require('../toolbox');
+
+module.exports = tb.Loader.load({
     modules: {
         Common: mod => mod.Common,
-        Dictionary: mod => mod.GlobalDictionary,
+        Dictionary: _,
         Error: mod => mod.Error,
         Tools(mod, cb) {
             return (cb.rollupModuleExports());
@@ -23,4 +25,6 @@ module.exports = {
         Primitives: _,
     },
     path: __dirname
-};
+});
+
+tb.File.Paths.forAppend('yaga.machine', __dirname);

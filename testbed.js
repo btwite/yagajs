@@ -5,18 +5,18 @@
 "use strict"
 
 let _ = undefined;
-let yaga = require('./Yaga');
+let yaga = require('./core');
 
 //let r = /^(?:\d+(?:\.\d+)?(?:[Ee](?:\+|-)?\d+)?)(?![a-zA-Z0-9])/;
 //log(r.exec('1.11e*2'));
 
 //test();
-testMachine();
+//testMachine();
 //testRegExprs();
 //testCharacter();
 //testReader();
 //testGlobalDictionary();
-//testResolvePath();
+//testResolvePath()
 //testProperties();
 //testExceptions();
 //testReaderTable();
@@ -30,7 +30,7 @@ testMachine();
 //testGrammarExtensions();
 
 function test() {
-    let rt = require('./machine/YagaReaderTable').YagaReaderTable;
+    let rt = require('./machine').YagaReaderTable;
     //    log(rt.match('((.jsPrim'));
     let reader = yaga.Reader(rt);
     let exprs = reader.readFile(__dirname + '\\test.yaga');
@@ -66,7 +66,7 @@ function testRegExprs() {
     //let r = /^(?:\+|-)/;
     let s = '+11111.1111e-10';
     let m = r.exec(s);
-    let m1 = r1.exec(s);
+    let m1 = r1.exec();
     log(m, m1);
 }
 
@@ -165,6 +165,7 @@ function testGlobalDictionary() {
 
 function testResolvePath() {
     log(yaga.Paths.resolve('path://yaga/toolbox/Influence.js'));
+    yaga.Machine; // Have to force load machine to have the machine path name initialised
     log(yaga.Paths.resolve('path://yaga.machine/core.yaga'));
     log(yaga.Paths.resolve('toolbox/Influence.js'));
     log(yaga.Paths.tryResolve('toolbox1/Influence.js'));

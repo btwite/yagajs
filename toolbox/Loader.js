@@ -43,16 +43,16 @@
 let _ = undefined;
 
 module.exports = Object.freeze({
-	Loader
+	load
 });
 
 /**
  * Package loader function.
  * Note: The path can typically be set to the module's __dirname argument.
  */
-function Loader(oDesc, oInit) {
+function load(oDesc, oInit) {
 	if (arguments.length <= 0)
-		throw new Error(`Loader call requires minimum of a loader descriptor argument`);
+		throw new Error(`Load call requires minimum of a loader descriptor argument`);
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid loader descriptor argument '${oDesc}'`);
 	if (oInit !== undefined && typeof oInit !== 'object')

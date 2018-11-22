@@ -5,7 +5,7 @@
  */
 "use strict";
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var DefaultReadPoint;
 
 module.exports = Object.freeze({

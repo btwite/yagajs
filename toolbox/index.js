@@ -1,13 +1,15 @@
 /*
- *  loadScript: @file
+ *  index: @file
  *
- *  Answers the loader descriptor for the toolbox package, other than the loader itself.
+ *  Main module for the toolbox. Exports public services and loads all toolbox components.
  */
 "use strict";
 
 let _ = undefined;
-module.exports = {
+
+module.exports = require('./Loader').load({
     modules: {
+        Loader: _,
         Character: _,
         Utilities: _,
         File: _,
@@ -23,4 +25,4 @@ module.exports = {
         Exception: mod => mod.Exception,
     },
     path: __dirname
-};
+});

@@ -8,7 +8,7 @@
 
 let _ = undefined;
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var Mach;
 
 var YagaException = Yaga.Exception({

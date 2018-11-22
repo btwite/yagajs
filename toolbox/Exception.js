@@ -14,8 +14,6 @@
  */
 "use strict";
 
-var Yaga = require('../Yaga');
-
 module.exports = Object.freeze({
     Exception
 });

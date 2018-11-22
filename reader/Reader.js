@@ -9,7 +9,7 @@
 
 let _ = undefined;
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var Character = Yaga.Character;
 var ReadPoint, ReaderTable;
 var chEOS = Character.EndOfStream;

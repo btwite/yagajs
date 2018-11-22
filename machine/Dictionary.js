@@ -62,7 +62,7 @@
 
 let _ = undefined;
 
-var Yaga = require('../Yaga');
+var Yaga = require('../core');
 var Dictionaries = new Map();
 var NamedDictionaries = new Map();
 

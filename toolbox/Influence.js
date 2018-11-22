@@ -158,14 +158,17 @@
 "use strict";
 
 var _ = undefined;
-var Yaga = require('../Yaga');
-var Exps, Mods;
+var Mods, Utils;
 
 module.exports = Object.freeze({
 	Influence,
-	Initialise: (x, m) => {
-		Exps = x;
-		Mods = m;
+	Initialise: (x, m) => Mods = m,
+	PostInitialise: x => {
+		Utils = {
+			thisArg: x.Utilities.thisArg,
+			dispatchPropertyHandlers: x.Utilities.dispatchPropertyHandlers,
+			uuidv4: x.Utilities.uuidv4,
+		}
 	}
 });
 Influence.lookup = lookupRegistry;
@@ -211,11 +214,11 @@ function Influence(oDesc) {
 			throw new Error("Influence descriptor 'createExit' property must be a function");
 		oInf.createExit = oDesc.createExit;
 	}
-	oInf.prototype = defineConstant({}, 'copy', Yaga.thisArg(copy), false);
-	defineConstant(oInf.prototype, 'clone', Yaga.thisArg(clone), false);
-	defineConstant(oInf.prototype, 'assign', Yaga.thisArg(assign), false);
-	defineConstant(oInf.prototype, 'extend', Yaga.thisArg(extend), false);
-	defineConstant(oInf.prototype, 'bindThis', Yaga.thisArg(bindThis), false);
+	oInf.prototype = defineConstant({}, 'copy', Utils.thisArg(copy), false);
+	defineConstant(oInf.prototype, 'clone', Utils.thisArg(clone), false);
+	defineConstant(oInf.prototype, 'assign', Utils.thisArg(assign), false);
+	defineConstant(oInf.prototype, 'extend', Utils.thisArg(extend), false);
+	defineConstant(oInf.prototype, 'bindThis', Utils.thisArg(bindThis), false);
 	defineConstant(oInf.prototype, 'isanInfluenceInstance', true, true);
 	if (oDesc.hasOwnProperty('prototype'))
 		prototypeInfluence(oInf, oDesc);
@@ -312,7 +315,7 @@ function compositionInfluence(oInf, oDesc) {
 		harmonizers = Object.assign({}, harmonizers);
 		if (!harmonizers.default)
 			harmonizers.default = {};
-		Yaga.dispatchPropertyHandlers(harmonizers, {
+		Utils.dispatchPropertyHandlers(harmonizers, {
 			prototype: () => {
 				if (isaGroupHarmonizer(harmonizers.prototype))
 					harmonizers.defaults.prototype = harmonizers.prototype;
@@ -459,7 +462,7 @@ function _harmonize(oInf, sSeg, tProp, oDesc, harmonizers) {
 	if (oDesc === undefined) return;
 	if (typeof oDesc !== 'object')
 		throw new Error(`Invalid influence composition harmonizer '${oDesc}'`);
-	Yaga.dispatchPropertyHandlers(oDesc, {
+	Utils.dispatchPropertyHandlers(oDesc, {
 		thisArg_: () => _harmonize(oInf, sSeg, tProp, copyThisArgProps({}, oDesc.thisArg_), harmonizers),
 		protected_: () => harmonizeProtected(oInf, sSeg, oDesc.protected_),
 		_other_: prop => harmonizeProperty(oInf, sSeg, tProp, oDesc, prop, harmonizers)
@@ -593,7 +596,7 @@ function prototypeInfluence(oInf, oDesc) {
 	if (pDesc) {
 		if (typeof pDesc !== 'object')
 			throw new Error(`Invalid influence prototype or abstract descriptor '${pDesc}'`);
-		Yaga.dispatchPropertyHandlers(pDesc, {
+		Utils.dispatchPropertyHandlers(pDesc, {
 			thisArg_: () => copyThisArgProps(oInf.prototype, pDesc.thisArg_),
 			private_: () => copyPrivatePrototypeProps(oInf, pDesc.private_),
 			protected_: () => copyProtectedPrototypeProps(oInf, pDesc.protected_),
@@ -610,7 +613,7 @@ function makeStatics(oInf, oDesc) {
 		throw new Error("Influence 'static' property must be an object");
 	oInf.static = {};
 	oInf.static.object = defineConstant({}, 'influence', oInf, false);
-	Yaga.dispatchPropertyHandlers(oDesc.static, {
+	Utils.dispatchPropertyHandlers(oDesc.static, {
 		thisArg_: () => copyThisArgProps(oInf.static.object, oDesc.static[prop]),
 		private_: () => copyPrivateStaticProps(oInf, oDesc.static.private_),
 		protected_: () => copyProtectedStaticProps(oInf, oDesc.static.protected_),
@@ -648,7 +651,7 @@ function copyPrivateStaticProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new Error(`Influence static 'private_' property must be an object`);
 	allocatePrivateStaticScope(oInf);
-	Yaga.dispatchPropertyHandlers(oSrc, {
+	Utils.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.static.privatePrototype, oSrc[prop]),
 		_other_: prop => copyProperty(oInf.static.privatePrototype, prop, oSrc)
 	});
@@ -659,7 +662,7 @@ function copyProtectedStaticProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new Error(`Influence static 'protected_' property must be an object`);
 	allocateProtectedStaticScope(oInf);
-	Yaga.dispatchPropertyHandlers(oSrc, {
+	Utils.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.static.protectedPrototype, oSrc[prop]),
 		_other_: prop => copyProperty(oInf.static.protectedPrototype, prop, oSrc)
 	});
@@ -719,7 +722,7 @@ function makeInitialiserObject(oInf, oInit) {
 		if (typeof oInit !== 'object')
 			throw new Error("Constructor private/protected initialiser must be an object");
 		fAllocScope(oInf);
-		Yaga.dispatchPropertyHandlers(oInit, {
+		Utils.dispatchPropertyHandlers(oInit, {
 			thisArg_: () => copyThisArgProps(o, oInit.thisArg_),
 			freeze_: () => freezeInitObjectProps(o, oInit.freeze_),
 			_other_: prop => copyProperty(o, prop, oInit)
@@ -727,14 +730,14 @@ function makeInitialiserObject(oInf, oInit) {
 	}
 
 	function freezeInitObjectProps(o, oInit) {
-		Yaga.dispatchPropertyHandlers(oInit, {
+		Utils.dispatchPropertyHandlers(oInit, {
 			thisArg_: () => copyThisArgProps(o, oInit.thisArg_, FreezeProp),
 			_other_: prop => copyProperty(o, prop, oInit, FreezeProp)
 		});
 	}
 
 	oInf.publicInitialiser = {};
-	Yaga.dispatchPropertyHandlers(oInit, {
+	Utils.dispatchPropertyHandlers(oInit, {
 		private_: () => makeInitObject(oInf.privateInitialiser = {}, oInit.private_, allocatePrivateScope),
 		protected_: () => makeInitObject(oInf.protectedInitialiser = {}, oInit.protected_, allocateProtectedScope),
 		thisArg_: () => copyThisArgProps(oInf.publicInitialiser, oInit.thisArg_),
@@ -762,7 +765,7 @@ function copyPrivatePrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new Error(`Influence 'private_' property must be an object`);
 	allocatePrivateScope(oInf);
-	Yaga.dispatchPropertyHandlers(oSrc, {
+	Utils.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.privatePrototype, oSrc[prop]),
 		_other_: prop => copyProperty(oInf.privatePrototype, prop, oSrc)
 	});
@@ -773,7 +776,7 @@ function copyProtectedPrototypeProps(oInf, oSrc) {
 	if (typeof oSrc !== 'object')
 		throw new Error(`Influence 'protected_' property must be an object`);
 	allocateProtectedScope(oInf);
-	Yaga.dispatchPropertyHandlers(oSrc, {
+	Utils.dispatchPropertyHandlers(oSrc, {
 		thisArg_: () => copyThisArgProps(oInf.protectedPrototype, oSrc[prop]),
 		_other_: prop => copyProperty(oInf.protectedPrototype, prop, oSrc)
 	});
@@ -851,11 +854,11 @@ function lateAllocateStaticProtectedScope(oInf, oTgt) {
 }
 
 function allocatePrivateScope(oInf) {
-	_allocatePrivateScope(oInf, _, defineConstant({}, 'bindThis', Yaga.thisArg(bindThis), false));
+	_allocatePrivateScope(oInf, _, defineConstant({}, 'bindThis', Utils.thisArg(bindThis), false));
 }
 
 function allocateProtectedScope(oInf) {
-	_allocateProtectedScope(oInf, _, defineConstant({}, 'bindThis', Yaga.thisArg(bindThis), false));
+	_allocateProtectedScope(oInf, _, defineConstant({}, 'bindThis', Utils.thisArg(bindThis), false));
 }
 
 function allocatePrivateStaticScope(oInf) {
@@ -915,7 +918,7 @@ function _allocateScope(scopeID, id, ty, fProt) {
 
 function getScopeID(oTgt) {
 	if (!oTgt.scopeID) {
-		oTgt.scopeID = 'sid:' + Exps.Utilities.uuidv4();
+		oTgt.scopeID = 'sid:' + Utils.uuidv4();
 		oTgt.validScopeIDs = {
 			[oTgt.scopeID]: true,
 		};
@@ -929,7 +932,7 @@ function copyThisArgProps(oTgt, oSrc, flFreeze = false) {
 	Object.keys(oSrc).forEach(prop => {
 		let sDesc = Object.getOwnPropertyDescriptor(oSrc, prop);
 		if (typeof sDesc.value === 'function')
-			sDesc.value = Yaga.thisArg(sDesc.value);
+			sDesc.value = Utils.thisArg(sDesc.value);
 		defineProperty(oTgt, prop, sDesc, flFreeze);
 	});
 	return (oTgt);
@@ -1015,7 +1018,7 @@ function _applyProtectedInitialisers(oInf, oTgt) {
 
 function _applyInitialisers(oInf, oTgt, oInit) {
 	function applyFreeze(oInit) {
-		Yaga.dispatchPropertyHandlers(oInit, {
+		Utils.dispatchPropertyHandlers(oInit, {
 			thisArg_: () => copyThisArgProps(oTgt, oInit.thisArg_, FreezeProp),
 			do_: () => applyDo(oInit.do_, FreezeProp),
 			_other_: prop => copyProperty(oTgt, prop, oInit, FreezeProp)
