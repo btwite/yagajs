@@ -32,6 +32,10 @@ let p = __dirname.substr(0, __dirname.length - '/core'.length);
 Yaga.Paths.append(p);
 Yaga.Paths.forAppend('yaga', p);
 
+let transpiler = require('../extensions/transpiler');
+Yaga.transpile = transpiler.transpile;
+Yaga.transpileFile = transpiler.transpileFile;
+
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;
 Object.defineProperty(Yaga, 'Reader', {

@@ -11,6 +11,7 @@ let yaga = require('./core');
 //log(r.exec('1.11e*2'));
 
 //test();
+testTranspiler();
 //testMachine();
 //testRegExprs();
 //testCharacter();
@@ -35,6 +36,13 @@ function test() {
     let reader = yaga.Reader(rt);
     let exprs = reader.readFile(__dirname + '\\test.yaga');
     log(exprs);
+}
+
+function testTranspiler() {
+    let cc = require('charcodes');
+    let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
+    log(out.code);
+    yaga.transpileFile('../repos/yaga/test.jsy');
 }
 
 function testMachine() {
