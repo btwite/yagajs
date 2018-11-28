@@ -26,5 +26,3 @@ module.exports = tb.Loader.load({
     },
     path: __dirname
 });
-
-tb.File.Paths.forAppend('yaga.machine', __dirname);

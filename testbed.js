@@ -11,7 +11,7 @@ let yaga = require('./core');
 //log(r.exec('1.11e*2'));
 
 //test();
-testTranspiler();
+//testTranspiler();
 //testMachine();
 //testRegExprs();
 //testCharacter();
@@ -39,10 +39,9 @@ function test() {
 }
 
 function testTranspiler() {
-    let cc = require('charcodes');
     let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
     log(out.code);
-    yaga.transpileFile('../repos/yaga/test.jsy');
+    yaga.transpileFile('../repos/yaga/test.js');
 }
 
 function testMachine() {
@@ -175,6 +174,10 @@ function testResolvePath() {
     log(yaga.Paths.resolve('path://yaga/toolbox/Influence.js'));
     yaga.Machine; // Have to force load machine to have the machine path name initialised
     log(yaga.Paths.resolve('path://yaga.machine/core.yaga'));
+    yaga.Paths.forAppend('myTag', 'path://myTag1/toolbox');
+    yaga.Paths.forAppend('myTag1', 'path://yaga');
+    log(yaga.Paths.resolve('path://myTag/Influence.js'));
+    yaga.Paths.append('path://yaga');
     log(yaga.Paths.resolve('toolbox/Influence.js'));
     log(yaga.Paths.tryResolve('toolbox1/Influence.js'));
 }

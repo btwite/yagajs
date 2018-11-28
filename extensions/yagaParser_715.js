@@ -4471,12 +4471,21 @@ var Tokenizer = function (_LocationParser) {
 
     if (next === 61) {
       this.finishOp(types.assign, 2);
-    } else if (next === 62 && code === 45) {
-      if (this.input.charCodeAt(this.state.pos + 2) === 91) {
-        this.state.pos += 3;
+    } else if (code === 45 && (next === 62 || next === 32 && this.input.charCodeAt(this.state.pos + 2) === 62)) {
+      var _pos = this.state.pos + 1;
+
+      if (this.input.charCodeAt(_pos) === 32) {
+        _pos++;
+      }
+
+      _pos++;
+      var ch = this.input.charCodeAt(_pos);
+
+      if (ch === 91 || ch === 32 && this.input.charCodeAt(_pos + 1) === 91) {
+        this.state.pos = _pos + (ch === 32 ? 2 : 1);
         this.finishToken(types.bindValue);
       } else {
-        this.state.pos += 2;
+        this.state.pos = _pos;
         this.finishToken(types.bind);
       }
     } else {
