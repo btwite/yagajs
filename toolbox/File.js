@@ -71,6 +71,10 @@ function fileType(fPath, fnErr) {
     return (null);
 }
 
+function findFiles(dirPath, flRecursive, filterExpr) {
+
+}
+
 /**
  * Function:    resolvePath
  * Description: Answers a fully qualified path name for a partial file or directory specification.
@@ -231,8 +235,8 @@ function _pathRemove(tag, path) {
     return (a);
 }
 
-let p = __dirname.substr(0, __dirname.length - '/toolbox'.length);
 pathsAppend(process.cwd());
+let p = __dirname.substr(0, __dirname.length - '/toolbox'.length);
 pathsForAppend('yaga', p);
 pathsForAppend('yaga.machine', p + '/machine');
 

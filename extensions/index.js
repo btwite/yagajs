@@ -9,7 +9,7 @@
 const Transpiler = require('./transpiler');
 
 if (process.mainModule === module) {
-    Transpiler.main();
+    Transpiler.main(process.argv.slice(2));
 } else {
     module.exports = Transpiler;
 }

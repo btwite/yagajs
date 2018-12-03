@@ -11,7 +11,7 @@ let yaga = require('./core');
 //log(r.exec('1.11e*2'));
 
 //test();
-//testTranspiler();
+testTranspiler();
 //testMachine();
 //testRegExprs();
 //testCharacter();
@@ -41,7 +41,10 @@ function test() {
 function testTranspiler() {
     let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
     log(out.code);
-    yaga.transpileFile('../repos/yaga/test.js');
+    let fn = '../repos/yaga/test.js';
+    let res = yaga.transpileFile(fn);
+    log(`transpileFile: Transpiled '${res.inPath}' to '${res.outPath}`);
+    require('./extensions').main([fn]);
 }
 
 function testMachine() {
