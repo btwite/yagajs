@@ -30,15 +30,13 @@ module.exports = Object.freeze({
     isaFile,
     isaDirectory,
     fileType,
+    findFiles,
 });
 
 function isaFile(fPath, fnErr) {
-    if (!Fs.existsSync(fPath)) {
-        if (fnErr) fnErr(`'${fPath}' does not exist`);
+    if (!_checkExists(fPath, fnErr))
         return (false);
-    }
-    const stats = Fs.statSync(fPath);
-    if (!stats.isFile()) {
+    if (_fileType(fPath) !== 'file') {
         if (fnErr) fnErr(`'${fPath}' is not a file`);
         return (false);
     }
@@ -46,12 +44,9 @@ function isaFile(fPath, fnErr) {
 }
 
 function isaDirectory(fPath, fnErr) {
-    if (!Fs.existsSync(fPath)) {
-        if (fnErr) fnErr(`'${fPath}' does not exist`);
+    if (!_checkExists(fPath, fnErr))
         return (false);
-    }
-    const stats = Fs.statSync(fPath);
-    if (!stats.isDirectory()) {
+    if (_fileType(fPath) !== 'directory') {
         if (fnErr) fnErr(`'${fPath}' is not a directory`);
         return (false);
     }
@@ -59,20 +54,34 @@ function isaDirectory(fPath, fnErr) {
 }
 
 function fileType(fPath, fnErr) {
-    if (!Fs.existsSync(fPath)) {
-        if (fnErr) fnErr(`'${fPath}' does not exist`);
-        return (null);
-    }
+    return (_checkExists(fPath, fnErr) ? _fileType(fPath) : 'none');
+}
+
+function _checkExists(fPath, fnErr) {
+    if (Fs.existsSync(fPath))
+        return (true);
+    if (fnErr) fnErr(`'${fPath}' does not exist`);
+    return (false);
+}
+
+function _fileType(fPath) {
     const stats = Fs.statSync(fPath);
     if (stats.isFile())
         return ('file');
     else if (stats.isDirectory)
         return ('directory');
-    return (null);
+    return ('none');
 }
 
 function findFiles(dirPath, flRecursive, filterExpr) {
-
+    let files = [];
+    dirPath = resolvePath(dirPath);
+    if (_fileType(dirPath) !== 'directory')
+        return (files);
+    let cands = Fs.readdirSync(dirPath, {
+        withFileTypes: true
+    });
+    log(cands);
 }
 
 /**

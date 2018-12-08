@@ -27,6 +27,10 @@ Yaga.copy = toolbox.Replicate.copy;
 Yaga.reverseCopy = toolbox.Replicate.reverseCopy;
 Yaga.clone = toolbox.Replicate.clone;
 Yaga.Paths = toolbox.File.Paths;
+Yaga.isaFile = toolbox.File.isaFile;
+Yaga.isaDirectory = toolbox.File.isaDirectory;
+Yaga.fileType = toolbox.File.fileType;
+Yaga.findFiles = toolbox.File.findFiles;
 
 let transpiler = require('../extensions/transpiler');
 Yaga.transpile = transpiler.transpile;
