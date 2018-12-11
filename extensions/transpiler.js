@@ -33,20 +33,29 @@ function transpile(code) {
 }
 
 function transpileFile(inPath, outPath) {
+    inPath = File.Paths.tryResolve(inPath) || inPath;
     File.isaFile(inPath, msg => throwError(msg));
-    if (outPath)
-        File.isaDirectory(outPath, msg => throwError(msg));
-
     inPath = Fs.realpathSync(inPath);
     let fDesc = Path.parse(inPath);
 
     if (outPath) {
-        outPath = Fs.realpathSync(outPath);
-        let p = outPath;
-        outPath = Path.join(outPath, fDesc.name);
-        if (p === fDesc.dir && fDesc.ext === JsExt)
-            outPath += YagaExt; // Add a Yaga specific extension to prevent override
-        outPath += JsExt;
+        outPath = File.Paths.tryResolve(outPath) || outPath;
+        if (File.isaDirectory(outPath)) {
+            outPath = Fs.realpathSync(outPath);
+            let p = outPath;
+            outPath = Path.join(outPath, fDesc.name);
+            if (p === fDesc.dir && fDesc.ext === JsExt)
+                outPath += YagaExt; // Add a Yaga specific extension to prevent override
+            outPath += JsExt;
+        } else {
+            outPath = Fs.realpathSync(outPath);
+            let fDesc = Path.parse(outPath);
+            File.isaDirectory(fDesc.dir, msg => throwError(msg));
+            if (outPath === inPath) {
+                // Add a Yaga specific extension to prevent override
+                outPath = Path.join(fDesc.dir, fDesc.name) + YagaExt + fDesc.ext;
+            }
+        }
     } else {
         // No output path provided so construct a copy of the file with the Yaga specific extension.
         outPath = Path.join(fDesc.dir, fDesc.name);
@@ -59,6 +68,10 @@ function transpileFile(inPath, outPath) {
     let res = transpile(code);
     //    Fs.unlinkSync(outPath);
     Fs.writeFileSync(outPath, res.code);
+    return {
+        inPath,
+        outPath
+    }
 }
 
 function throwError(msg) {
@@ -73,7 +86,7 @@ function normaliseOutDirPath(outPath) {
 // source file(s) and a target output directory.
 
 if (process.mainModule === module) {
-    main();
+    main(process.argv.slice(2));
 } else {
     module.exports = Object.freeze({
         transpile,
@@ -84,7 +97,7 @@ if (process.mainModule === module) {
 
 // Transpiler has been invoked as a main module with the following usage.
 //  node @yagajs/extensions[/transpiler] [-?] [-l] [-r] [-f <regexpr>] inFile|inDir [outDir]
-function main() {
+function main(argv) {
     // Arguments for the Transpiler will start at the 3rd entry.
     const args = {
         flList: false,
@@ -94,18 +107,32 @@ function main() {
         inisDir: false,
         outDir: _,
     };
-    if (!parseArguments(args))
+    if (!parseArguments(args, argv))
         return;
 
-    if (!args.inisDir) {
-        log(`Transpiling `)
+    if (args.inisDir) {
+
+    } else
+        mainTranspile(args.inFile, args.outDir);
+    log('**** Transpiler Ended');
+}
+
+function mainTranspile(inFile, outDir) {
+    if (outDir)
+        log(`**** Transpiling '${inFile}' to '${outDir}`);
+    else
+        log(`**** Transpiling '${inFile}'`);
+    try {
+        let res = transpileFile(inFile, outDir);
+        log(`**** Transpile Complete. Target(${res.outPath})`);
+    } catch (err) {
+        log(`****** ERROR: ${err.message}`);
     }
 }
 
-function parseArguments(args) {
-    for (let i = 2; i < process.argv.length; i++) {
-        let arg = process.argv[i];
-        log(arg);
+function parseArguments(args, argv) {
+    for (let i = 0; i < argv.length; i++) {
+        let arg = argv[i];
         switch (arg) {
             case '-l':
                 args.flList = true;
@@ -114,27 +141,27 @@ function parseArguments(args) {
                 args.flRecursive = true;
                 break;
             case '-f':
-                if (++i >= process.argv.length)
+                if (++i >= argv.length)
                     return (usage('Missing filter regular expression'));
                 try {
-                    args.filter = new RegExp(process.argv[i]);
+                    args.filter = new RegExp(argv[i]);
                 } catch (err) {
-                    return (usage(`Invalid filter expression '${process.argv[i]}'`));
+                    return (usage(`Invalid filter expression '${argv[i]}'`));
                 }
                 break;
             case '-?':
                 return (usage());
             default:
                 if (!args.inFile) {
-                    args.inFile = arg;
-                    if (File.isaDirectory(arg))
+                    args.inFile = File.Paths.tryResolve(arg) || arg;
+                    if (File.isaDirectory(args.inFile))
                         args.inisDir = true;
-                    else if (!File.isaFile(arg, msg => usage(msg)))
+                    else if (!File.isaFile(args.inFile, msg => usage(msg)))
                         return;
                 } else if (!args.outDir) {
-                    if (!File.isaDirectory(arg, msg => usage(msg)))
+                    args.outDir = File.Paths.tryResolve(arg) || arg;
+                    if (!File.isaDirectory(args.outDir, msg => usage(msg)))
                         return;
-                    args.outDir = arg;
                 } else
                     return (usage('Too many arguments'));
         }
@@ -142,11 +169,12 @@ function parseArguments(args) {
 
     if (!args.inFile)
         return (usage('Missing input file argument'));
-    if (!Fs.exists(args.inFile))
+    if (!Fs.existsSync(args.inFile))
         return (usage(`Input file '${args.inFile}' does not exit`));
 
-    if (args.outDir && !Fs.exists(args.outDir))
+    if (args.outDir && !Fs.existsSync(args.outDir))
         return (usage(`Output directory '${args.outDir}' does not exit`));
+    return (true);
 }
 
 function usage(errMsg) {
