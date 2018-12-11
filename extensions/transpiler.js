@@ -96,6 +96,10 @@ function main() {
     };
     if (!parseArguments(args))
         return;
+
+    if (!args.inisDir) {
+        log(`Transpiling `)
+    }
 }
 
 function parseArguments(args) {
@@ -122,11 +126,11 @@ function parseArguments(args) {
                 return (usage());
             default:
                 if (!args.inFile) {
+                    args.inFile = arg;
                     if (File.isaDirectory(arg))
                         args.inisDir = true;
                     else if (!File.isaFile(arg, msg => usage(msg)))
                         return;
-                    args.inFile = arg;
                 } else if (!args.outDir) {
                     if (!File.isaDirectory(arg, msg => usage(msg)))
                         return;
