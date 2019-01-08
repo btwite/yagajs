@@ -78,10 +78,6 @@ function throwError(msg) {
     throw new Error(msg);
 }
 
-function normaliseOutDirPath(outPath) {
-
-}
-
 // Check if we are the main module and if so expect command line arguments to nominate
 // source file(s) and a target output directory.
 
@@ -98,11 +94,11 @@ if (process.mainModule === module) {
 // Transpiler has been invoked as a main module with the following usage.
 //  node @yagajs/extensions[/transpiler] [-?] [-l] [-r] [-f <regexpr>] inFile|inDir [outDir]
 function main(argv) {
-    // Arguments for the Transpiler will start at the 3rd entry.
+    // The node command name and yaga extensions main module name arguments must be stripped off.
     const args = {
         flList: false,
         flRecursive: false,
-        filter: /.js$/,
+        filter: /\.js$/,
         inFile: _,
         inisDir: false,
         outDir: _,
@@ -110,21 +106,33 @@ function main(argv) {
     if (!parseArguments(args, argv))
         return;
 
+    log('**** Transpiler Started');
     if (args.inisDir) {
-
+        let files = File.findFiles(args.inFile, {
+            recursive: args.flRecursive,
+            filter: args.filter
+        });
+        if (args.flList) {
+            log('**** Transpiler source file list :');
+            files.forEach(fn => log(`  ${fn}`));
+        } else
+            files.forEach(fn => _main(fn, args.outDir));
+    } else if (args.flList) {
+        log('**** Transpiler source file list :');
+        log(`  ${args.inFile}`);
     } else
-        mainTranspile(args.inFile, args.outDir);
+        _main(args.inFile, args.outDir);
     log('**** Transpiler Ended');
 }
 
-function mainTranspile(inFile, outDir) {
+function _main(inFile, outDir) {
     if (outDir)
         log(`**** Transpiling '${inFile}' to '${outDir}`);
     else
         log(`**** Transpiling '${inFile}'`);
     try {
         let res = transpileFile(inFile, outDir);
-        log(`**** Transpile Complete. Target(${res.outPath})`);
+        log(`**** Transpile Complete. Output(${res.outPath})`);
     } catch (err) {
         log(`****** ERROR: ${err.message}`);
     }
@@ -187,7 +195,7 @@ function usage(errMsg) {
     log('      -? : Usage');
     log('      -l : List the input and target output files without transpiling');
     log('      -r : Recursively process sub-directories');
-    log('      -f : Regular expression file filter for input directory. Default(.js$)');
+    log('      -f : Regular expression file filter for input directory. Default(\.js$)');
     log('      inFile|inDir : Single source file or input directory to filter');
     log('      outDir : Optional output directory for transpiled files. If not provided');
     log("               then the file name will either be appended with a '.js'");

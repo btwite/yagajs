@@ -45,8 +45,8 @@ function testTranspiler() {
     let res = yaga.transpileFile(fn);
     log(`transpileFile: Transpiled '${res.inPath}' to '${res.outPath}`);
     require('./extensions').main([fn]);
-
-    yaga.findFiles('.');
+    require('./extensions').main(['-l', fn]);
+    require('./extensions').main(['-l', '-r', '../repos/yaga']);
 }
 
 function testMachine() {

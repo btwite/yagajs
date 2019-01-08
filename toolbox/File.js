@@ -73,15 +73,42 @@ function _fileType(fPath) {
     return ('none');
 }
 
-function findFiles(dirPath, flRecursive, filterExpr) {
-    let files = [];
+/*
+ *  Options for 'findFiles' are as follows:
+ *    includeDirectories - True to include subdirectory names.
+ *    filter - String regular expression to filter candidate file names.
+ *    recursive - True to recursively process subdirectories 
+ */
+function findFiles(dirPath, options) {
     dirPath = resolvePath(dirPath);
     if (_fileType(dirPath) !== 'directory')
-        return (files);
-    let cands = Fs.readdirSync(dirPath, {
-        withFileTypes: true
+        return ([]);
+    return (_findFiles([], dirPath, new RegExp((options && options.filter) || '.*'), {
+        includeDirectories: (options && options.includeDirectories) ? true : false,
+        recursive: (options && options.recursive) ? true : false,
+    }));
+}
+
+function _findFiles(files, dirPath, rx, options) {
+    _readDirectory(dirPath, rx).forEach(fn => {
+        if (_fileType(fn) !== 'directory') {
+            if (rx.test(fn))
+                files.push(fn);
+            return;
+        }
+        if (options.includeDirectories && rx.test(fn))
+            files.push(fn);
+        if (options.recursive)
+            _findFiles(files, fn, rx, options);
     });
-    log(cands);
+    return (files);
+}
+
+function _readDirectory(dirPath, rx) {
+    let con = dirPath.length == 0 || '/ \\'.includes(dirPath[dirPath.length - 1]) ? '' : Path.sep,
+        files = [];
+    Fs.readdirSync(dirPath).forEach(fn => files.push(dirPath + con + fn));
+    return (files);
 }
 
 /**
