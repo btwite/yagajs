@@ -16,7 +16,7 @@ The *extensions* library implements Javascript language customisations built on 
 
 ## TESTING
 
-See [yagajs](https://github.com/btwite/yagajs/README.md#TESTING)
+See [yagajs](https://github.com/btwite/yagajs/blob/master/README.md#TESTING)
 
 ## JAVASCRIPT LANGUAGE EXTENSIONS
 

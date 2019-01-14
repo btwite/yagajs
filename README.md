@@ -24,11 +24,11 @@ A formal testing environment is yet to be setup.
 
 ## LIBRARIES
 
-### [@yagajs/toolbox](./toolbox/README.md)
+### [@yagajs/toolbox](https://github.com/btwite/yagajs/blob/master/toolbox/README.md)
 
-A group of objects for extending Javascript core functionality.
+A group of helper objects for extending Javascript core functionality.
 
-### [@yagajs/extensions](./extensions/README.md)
+### [@yagajs/extensions](https://github.com/btwite/yagajs/blob/master/extensions/README.md)
 
 Javascript syntax extensions implemented as a Babel plugin and a custom Babel parser.
 

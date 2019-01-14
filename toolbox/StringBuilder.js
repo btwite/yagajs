@@ -2,7 +2,7 @@
  * StringBuilder : @file
  * 
  * Construct a string by collecting the parts into an array.
- * The final result is answered by joinging the parts.
+ * The final result is answered by joining the parts.
  */
 
 'use strict';
