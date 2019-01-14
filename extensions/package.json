@@ -1,0 +1,26 @@
+{
+  "name": "@yagajs/extensions",
+  "version": "0.1.0",
+  "description": "Javascript language customisations",
+  "main": "index.js",
+  "dependencies": {
+    "@Babel/core": ">=7.1.5",
+    "@yagajs/toolbox": "latest"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://btwite@github.com/btwite/yagajs.git"
+  },
+  "keywords": [
+    "language",
+    "bind",
+    "operator",
+    "syntax"
+  ],
+  "author": "Bruce Twite",
+  "license": "ISC",
+  "homepage": "https://github.com/btwite/yagajs#readme"
+}

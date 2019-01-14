@@ -1,0 +1,39 @@
+{
+  "name": "@yagajs/toolbox",
+  "version": "1.0.0",
+  "description": "Helper objects and utility functions.",
+  "main": "index.js",
+  "dependencies": {
+    "fs": "latest",
+    "path": "latest"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://btwite@github.com/btwite/yagajs.git"
+  },
+  "keywords": [
+    "scope",
+    "scopes",
+    "private",
+    "protected",
+    "inheritance",
+    "influence",
+    "prototype",
+    "exception",
+    "error",
+    "path",
+    "file",
+    "package",
+    "loader",
+    "load",
+    "replicate",
+    "copy",
+    "clone"
+  ],
+  "author": "Bruce Twite",
+  "license": "ISC",
+  "homepage": "https://github.com/btwite/yagajs#readme"
+}

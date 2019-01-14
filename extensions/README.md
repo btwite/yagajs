@@ -32,7 +32,7 @@ The `->` operator has three forms:
 
 > `foo->bar`
 
-In the example above the `->` operator will bind the `foo` object to the function property `bar` of the `foo` object. 
+In the example above the `->` operator will bind the `foo` object to *this* of the function property `bar` of the `foo` object. 
 
 This is similar to the expression `foo.bar.bind(foo)`.
 
@@ -48,7 +48,7 @@ This is similar to the expression `foo['bar'].bind(foo)`.
 
 > `foo->[bar]`
 
-The square brackets can also be used to define an expression that returns a function, allowing any value to be provided as the left hand parameter of the `->` operator. In this example the `->` operator will bind the `foo` value to the function that is contained in the `bar` variable or constant that is defined within the scope of the `foo->[bar]` expression. The `bar` function property of a `foo` value that is an object will be excluded in this case. 
+The square brackets can also be used to define an expression that returns a function, allowing any value to be provided as the left hand parameter of the `->` operator. In this example the `->` operator will bind the `foo` value to *this* of the function that is contained in the `bar` variable or constant that is defined within the scope of the `foo->[bar]` expression. The `bar` function property of a `foo` value that is an object will be excluded in this case. 
 
 This is similar to the expression `bar.bind(foo)`.
 
