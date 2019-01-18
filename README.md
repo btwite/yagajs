@@ -17,8 +17,7 @@ A set of Javascript tool libraries.
 
 ## TESTING
 
-Repository includes the script `testbed.js` which contains a list of selectable
-functions for testing the features of the scopes library. Note that it references the module `./scopes`. This should be modified to `prop-scopes` for an npm installation.
+Repository includes the script `testbed.js` which contains a list of selectable functions for testing the features of the yagajs libraries.
 
 A formal testing environment is yet to be setup.
 
