@@ -7,9 +7,7 @@
 "use strict";
 
 let Babel = require('@babel/core');
-let YagaToolboxPath = 'd:/repos/yaga/toolbox/Utilities';
 let t = Babel.types;
-let __yagaUtilities__ = t.identifier('__yagaUtilities__');
 let __yagaBindFn__ = t.identifier('__yagaBindFn__');
 
 let YagaVisitor = {
@@ -49,30 +47,63 @@ module.exports = function () {
     });
 };
 
-// var __yagaBindFn__ = __yagaUtilities__.bind;
+// function __yagaBindFn(o, tgt) ....
 function addYagaBindDeclaration(state) {
     if (state.flYagaBind)
         return;
-    addYagaRequireDeclaration(state);
-    let node = t.variableDeclaration('var', [
-        t.variableDeclarator(__yagaBindFn__, t.memberExpression(__yagaUtilities__, t.identifier('bind')))
-    ]);
-    state.progNode.body.splice(1, 0, node);
-    // Insert into body after Yaga Utilities require.
-    state.flYagaBind = true;
-}
 
-// var __yagaUtilities__ = require(<yagaToolboxPath>);
-function addYagaRequireDeclaration(state) {
-    if (state.flRequire)
-        return;
-    let node = t.variableDeclaration('var', [
-        t.variableDeclarator(__yagaUtilities__, t.callExpression(t.identifier('require'), [t.stringLiteral(YagaToolboxPath)]))
+    let __yagaBindMap__ = t.identifier('_yagaBindMap__');
+    // const __yagaBindMap__ = Symbol.for('__yagaBindMap__');
+    let node = t.variableDeclaration('const', [
+        t.variableDeclarator(__yagaBindMap__,
+            t.callExpression(t.memberExpression(t.identifier('Symbol'), t.identifier('for')), [t.stringLiteral('__yagaBindMap__')]))
     ]);
     // Insert at head of body.
     state.progNode.body.unshift(node);
-    state.flRequire = true;
-};
+
+    let oParm = t.identifier('o');
+    let tgtParm = t.identifier('tgt');
+    let bfVar = t.identifier('bf');
+    let mapVar = t.identifier('map');
+    let body = t.blockStatement([
+        // if (typeof tgt === 'string')
+        //     tgt = o[tgt];
+        t.ifStatement(t.binaryExpression('===', t.unaryExpression('typeof', tgtParm), t.stringLiteral('string')),
+            t.expressionStatement(t.assignmentExpression('=', tgtParm, t.memberExpression(oParm, tgtParm, true)))),
+
+        // if (typeof tgt !== 'function')
+        //     throw new Error('Target of bind must be a function');
+        t.ifStatement(t.binaryExpression('!==', t.unaryExpression('typeof', tgtParm), t.stringLiteral('function')),
+            t.throwStatement(t.newExpression(t.identifier('Error'), [t.stringLiteral('Target of bind must be a function')]))),
+
+        // let bf, map = tgt[__yagaBindMap__] || (tgt[__yagaBindMap__] = new WeakMap());
+        t.variableDeclaration('let', [
+            t.variableDeclarator(bfVar),
+            t.variableDeclarator(mapVar,
+                t.logicalExpression('||',
+                    t.memberExpression(tgtParm, __yagaBindMap__, true),
+                    t.assignmentExpression('=', t.memberExpression(tgtParm, __yagaBindMap__, true),
+                        t.newExpression(t.identifier('WeakMap'), []))))
+        ]),
+
+        // return (map.get(o) || (map.set(o, (bf = tgt.bind(o))), bf));
+        t.returnStatement(t.logicalExpression('||',
+            t.callExpression(t.memberExpression(mapVar, t.identifier('get')), [oParm]),
+            t.sequenceExpression([
+                t.callExpression(t.memberExpression(mapVar, t.identifier('set')), [oParm,
+                    t.assignmentExpression('=', bfVar, t.callExpression(t.memberExpression(tgtParm, t.identifier('bind')), [oParm]))
+                ]),
+                bfVar
+            ])
+        ))
+    ]);
+
+    node = t.functionDeclaration(__yagaBindFn__, [oParm, tgtParm], body);
+    // Insert into body after Yaga Utilities require.
+    state.progNode.body.splice(1, 0, node);
+
+    state.flYagaBind = true;
+}
 
 function log(...args) {
     console.log(...args);

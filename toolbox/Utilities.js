@@ -5,7 +5,7 @@
  */
 "use strict";
 
-const SymBindMap = Symbol.for('BindMap');
+const SymBindMap = Symbol.for('__yagaBindMap__');
 
 module.exports = Object.freeze({
     thisArg,
@@ -32,6 +32,17 @@ function dispatchPropertyHandlers(o, oHandlers) {
 }
 
 function bind(o, tgt) {
+    // Bind the object to an explicit function or if a string to a function member of 
+    // the object and record the relationship to anwser the same bound function in the future.
+    if (typeof tgt === 'string')
+        tgt = o[tgt];
+    if (typeof tgt !== 'function')
+        throw new Error('Target of bind must be a function or a function property of the object');
+    let bf, map = tgt[SymBindMap] || (tgt[SymBindMap] = new WeakMap());
+    return (map.get(o) || (map.set(o, (bf = tgt.bind(o))), bf));
+}
+
+function oldBind(o, tgt) {
     // Bind the object to an explicit function or if a string to a function member of 
     // the object and record the relationship to anwser the same bound function in the future.
     let bf, f, ty = typeof tgt;

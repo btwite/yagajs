@@ -11,6 +11,7 @@ let yaga = require('./core');
 //log(r.exec('1.11e*2'));
 
 //test();
+//testBindFunction();
 testTranspiler();
 //testMachine();
 //testRegExprs();
@@ -28,14 +29,43 @@ testTranspiler();
 //testReadPoint();
 //testAbstractInfluence();
 //testInfluence();
-//testGrammarExtensions();
 
 function test() {
+    const Babel = require("@babel/core");
+    let ast = Babel.parseSync("let a='x', o = {}; o[x]");
+    log(ast.program.body[1].expression.property);
+    return;
     let rt = require('./machine').YagaReaderTable;
     //    log(rt.match('((.jsPrim'));
     let reader = yaga.Reader(rt);
     let exprs = reader.readFile(__dirname + '\\test.yaga');
     log(exprs);
+}
+
+function testBindFunction() {
+    let obj = {
+        foo() {
+            console.log('hello world');
+        }
+    };
+    let f1 = obj.foo.bind(obj);
+    let f2 = obj.foo.bind(obj);
+    let f3 = yaga.bind(obj, 'foo');
+    let f4 = yaga.bind(obj, 'foo');
+
+    console.log(f1 === f2, f3 === f4);
+
+    function foobar() {
+        console.log('hello world');
+    }
+    f1 = foobar.bind(obj);
+    f2 = foobar.bind(obj);
+    f3 = yaga.bind(obj, foobar);
+    f4 = yaga.bind(obj, foobar);
+
+    console.log(f1 === f2, f3 === f4);
+
+    trycode(() => yaga.bind(obj, 10));
 }
 
 function testTranspiler() {
@@ -627,7 +657,8 @@ function testReadPoint() {
     trycode(() => r.sourceName = 'mysource', err => log(err.message));
 }
 
-function testGrammarExtensions() {
+// Depreacted implementation of bind function using yaga machine
+function oldTestGrammarExtensions() {
     yaga.installGrammarExtensions();
     let obj = {
         foobar() {

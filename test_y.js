@@ -1,6 +1,12 @@
-var __yagaUtilities__ = require("d:/repos/yaga/toolbox/Utilities");
+const _yagaBindMap__ = Symbol.for("__yagaBindMap__");
 
-var __yagaBindFn__ = __yagaUtilities__.bind;
+function __yagaBindFn__(o, tgt) {
+  if (typeof tgt === "string") tgt = o[tgt];
+  if (typeof tgt !== "function") throw new Error("Target of bind must be a function");
+  let bf,
+      map = tgt[_yagaBindMap__] || (tgt[_yagaBindMap__] = new WeakMap());
+  return map.get(o) || (map.set(o, bf = tgt.bind(o)), bf);
+}
 
 // A test module to put through the Yaga extensions transpiler.
 function main() {
