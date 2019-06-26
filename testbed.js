@@ -31,6 +31,11 @@ testTranspiler();
 //testInfluence();
 
 function test() {
+    let o = {
+        private: 1
+    };
+    log(o);
+    /*
     const Babel = require("@babel/core");
     let ast = Babel.parseSync("let a='x', o = {}; o[x]");
     log(ast.program.body[1].expression.property);
@@ -40,6 +45,7 @@ function test() {
     let reader = yaga.Reader(rt);
     let exprs = reader.readFile(__dirname + '\\test.yaga');
     log(exprs);
+    */
 }
 
 function testBindFunction() {
@@ -69,14 +75,14 @@ function testBindFunction() {
 }
 
 function testTranspiler() {
-    let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
-    log(out.code);
-    let fn = '../repos/yagajs/test.js';
+//    let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
+//    log(out.code);
+    let fn = '../../repos/yagajs/test.js';
     let res = yaga.transpileFile(fn);
     log(`transpileFile: Transpiled '${res.inPath}' to '${res.outPath}`);
-    require('./extensions').main([fn]);
-    require('./extensions').main(['-l', fn]);
-    require('./extensions').main(['-l', '-r', '../repos/yagajs']);
+//    require('./extensions').main([fn]);
+//    require('./extensions').main(['-l', fn]);
+//    require('./extensions').main(['-l', '-r', '../../repos/yagajs']);
 }
 
 function testMachine() {

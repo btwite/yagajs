@@ -1,6 +1,36 @@
+/*
+import {
+    arrayTypeAnnotation
+} from "@babel/types";
+*/
+
+let _yagaPrivateSpace_ = new WeakMap();
+
+function _yagaObjLiteral_(o, oPrivate) {
+    _yagaPrivateSpace_.set(o, oPrivate);
+    return (o);
+}
+
+function _yagaGetPrivateSpace(o) {
+    let oPrivate = _yagaPrivateSpace_.get(o);
+    if (!oPrivate)
+        oPrivate = _yagaPrivateSpace_.set(o, {});
+    return (oPrivate);
+}
+
 // A test module to put through the Yaga extensions transpiler.
 
 function main() {
+    obj = {
+        a: 1,
+        b: 2,
+        #c: 3,
+        d: 4
+    };
+    obj#['aaa'];
+    obj.#aaa;
+    console.log(obj);
+
     let obj = {
         foo() {
             console.log('hello world');
@@ -19,6 +49,9 @@ function main() {
     f4 = obj - > [foobar];
 
     console.log(f1 === f2, f3 === f4);
+
+    f1 = obj.a.b - > foo;
+
 }
 
 function foobar() {

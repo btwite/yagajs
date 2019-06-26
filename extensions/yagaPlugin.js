@@ -12,18 +12,32 @@ let __yagaBindFn__ = t.identifier('__yagaBindFn__');
 
 let YagaVisitor = {
     MemberExpression(path) {
-        if (!path.node._yagaBindExpression)
-            return;
-        addYagaBindDeclaration(this);
-        if (path.node.computed) {
-            path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, path.node.property]));
-        } else {
-            path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, t.stringLiteral(path.node.property.name)]));
-        }
+        if (path.node._yagaBindExpression)
+            addYagaBindExpression(path);
+        else if (path.node._yagaPrivateProperty)
+            addYagaPrivatePropertyAccessor(path);
     }
 }
 
-module.exports = function () {
+function addYagaBindExpression(path) {
+    addYagaBindDeclaration(this);
+    if (path.node.computed) {
+        path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, path.node.property]));
+    } else {
+        path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, t.stringLiteral(path.node.property.name)]));
+    }
+}
+
+function addYagaPrivatePropertyAccessor(path) {
+    addYagaPrivateDeclaration(this);
+    if (path.node.computed) {
+        path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, path.node.property]));
+    } else {
+        path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, t.stringLiteral(path.node.property.name)]));
+    }
+}
+
+module.exports = function() {
     return ({
         visitor: {
             Program: {
@@ -47,6 +61,7 @@ module.exports = function () {
     });
 };
 
+function addYagaPrivateDeclaration(state) {}
 // function __yagaBindFn(o, tgt) ....
 function addYagaBindDeclaration(state) {
     if (state.flYagaBind)

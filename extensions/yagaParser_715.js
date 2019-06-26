@@ -202,6 +202,7 @@ var types = {
   dot: new TokenType("."),
   bind: new TokenType("->"),
   bindValue: new TokenType("->["),
+  privateExpr: new TokenType("#["),
   question: new TokenType("?", {
     beforeExpr: beforeExpr
   }),
@@ -272,100 +273,100 @@ var types = {
   })
 };
 var keywords = {
-  break: new KeywordTokenType("break"),
-  case: new KeywordTokenType("case", {
+  "break": new KeywordTokenType("break"),
+  "case": new KeywordTokenType("case", {
     beforeExpr: beforeExpr
   }),
-  catch: new KeywordTokenType("catch"),
-  continue: new KeywordTokenType("continue"),
-  debugger: new KeywordTokenType("debugger"),
-  default: new KeywordTokenType("default", {
+  "catch": new KeywordTokenType("catch"),
+  "continue": new KeywordTokenType("continue"),
+  "debugger": new KeywordTokenType("debugger"),
+  "default": new KeywordTokenType("default", {
     beforeExpr: beforeExpr
   }),
-  do: new KeywordTokenType("do", {
+  "do": new KeywordTokenType("do", {
     isLoop: isLoop,
     beforeExpr: beforeExpr
   }),
-  else: new KeywordTokenType("else", {
+  "else": new KeywordTokenType("else", {
     beforeExpr: beforeExpr
   }),
-  finally: new KeywordTokenType("finally"),
-  for: new KeywordTokenType("for", {
+  "finally": new KeywordTokenType("finally"),
+  "for": new KeywordTokenType("for", {
     isLoop: isLoop
   }),
-  function: new KeywordTokenType("function", {
+  "function": new KeywordTokenType("function", {
     startsExpr: startsExpr
   }),
-  if: new KeywordTokenType("if"),
-  return: new KeywordTokenType("return", {
+  "if": new KeywordTokenType("if"),
+  "return": new KeywordTokenType("return", {
     beforeExpr: beforeExpr
   }),
-  switch: new KeywordTokenType("switch"),
-  throw: new KeywordTokenType("throw", {
+  "switch": new KeywordTokenType("switch"),
+  "throw": new KeywordTokenType("throw", {
     beforeExpr: beforeExpr,
     prefix: prefix,
     startsExpr: startsExpr
   }),
-  try: new KeywordTokenType("try"),
-  var: new KeywordTokenType("var"),
-  let: new KeywordTokenType("let"),
-  const: new KeywordTokenType("const"),
-  while: new KeywordTokenType("while", {
+  "try": new KeywordTokenType("try"),
+  "var": new KeywordTokenType("var"),
+  "let": new KeywordTokenType("let"),
+  "const": new KeywordTokenType("const"),
+  "while": new KeywordTokenType("while", {
     isLoop: isLoop
   }),
-  with: new KeywordTokenType("with"),
-  new: new KeywordTokenType("new", {
+  "with": new KeywordTokenType("with"),
+  "new": new KeywordTokenType("new", {
     beforeExpr: beforeExpr,
     startsExpr: startsExpr
   }),
-  this: new KeywordTokenType("this", {
+  "this": new KeywordTokenType("this", {
     startsExpr: startsExpr
   }),
-  super: new KeywordTokenType("super", {
+  "super": new KeywordTokenType("super", {
     startsExpr: startsExpr
   }),
-  class: new KeywordTokenType("class", {
+  "class": new KeywordTokenType("class", {
     startsExpr: startsExpr
   }),
-  extends: new KeywordTokenType("extends", {
+  "extends": new KeywordTokenType("extends", {
     beforeExpr: beforeExpr
   }),
-  export: new KeywordTokenType("export"),
-  import: new KeywordTokenType("import", {
+  "export": new KeywordTokenType("export"),
+  "import": new KeywordTokenType("import", {
     startsExpr: startsExpr
   }),
-  yield: new KeywordTokenType("yield", {
+  "yield": new KeywordTokenType("yield", {
     beforeExpr: beforeExpr,
     startsExpr: startsExpr
   }),
-  null: new KeywordTokenType("null", {
+  "null": new KeywordTokenType("null", {
     startsExpr: startsExpr
   }),
-  true: new KeywordTokenType("true", {
+  "true": new KeywordTokenType("true", {
     startsExpr: startsExpr
   }),
-  false: new KeywordTokenType("false", {
+  "false": new KeywordTokenType("false", {
     startsExpr: startsExpr
   }),
-  in: new KeywordTokenType("in", {
+  "in": new KeywordTokenType("in", {
     beforeExpr: beforeExpr,
     binop: 7
   }),
-  instanceof: new KeywordTokenType("instanceof", {
+  "instanceof": new KeywordTokenType("instanceof", {
     beforeExpr: beforeExpr,
     binop: 7
   }),
-  typeof: new KeywordTokenType("typeof", {
+  "typeof": new KeywordTokenType("typeof", {
     beforeExpr: beforeExpr,
     prefix: prefix,
     startsExpr: startsExpr
   }),
-  void: new KeywordTokenType("void", {
+  "void": new KeywordTokenType("void", {
     beforeExpr: beforeExpr,
     prefix: prefix,
     startsExpr: startsExpr
   }),
-  delete: new KeywordTokenType("delete", {
+  "delete": new KeywordTokenType("delete", {
     beforeExpr: beforeExpr,
     prefix: prefix,
     startsExpr: startsExpr
@@ -840,10 +841,10 @@ function isMaybeDefaultImport(state) {
 }
 
 var exportSuggestions = {
-  const: "declare export var",
-  let: "declare export var",
+  "const": "declare export var",
+  "let": "declare export var",
   type: "export type",
-  interface: "export interface"
+  "interface": "export interface"
 };
 
 function partition(list, test) {
@@ -1090,7 +1091,7 @@ var flow = (function (superClass) {
           this.semicolon();
         }
 
-        node.default = true;
+        node["default"] = true;
         return this.finishNode(node, "DeclareExportDeclaration");
       } else {
         if (this.match(types._const) || this.match(types._let) || (this.isContextual("type") || this.isContextual("interface")) && !insideModule) {
@@ -1101,14 +1102,14 @@ var flow = (function (superClass) {
 
         if (this.match(types._var) || this.match(types._function) || this.match(types._class) || this.isContextual("opaque")) {
             node.declaration = this.flowParseDeclare(this.startNode());
-            node.default = false;
+            node["default"] = false;
             return this.finishNode(node, "DeclareExportDeclaration");
           } else if (this.match(types.star) || this.match(types.braceL) || this.isContextual("interface") || this.isContextual("type") || this.isContextual("opaque")) {
             node = this.parseExport(node);
 
             if (node.type === "ExportNamedDeclaration") {
               node.type = "ExportDeclaration";
-              node.default = false;
+              node["default"] = false;
               delete node.exportKind;
             }
 
@@ -1160,13 +1161,13 @@ var flow = (function (superClass) {
         node.typeParameters = null;
       }
 
-      node.extends = [];
-      node.implements = [];
+      node["extends"] = [];
+      node["implements"] = [];
       node.mixins = [];
 
       if (this.eat(types._extends)) {
         do {
-          node.extends.push(this.flowParseInterfaceExtends());
+          node["extends"].push(this.flowParseInterfaceExtends());
         } while (!isClass && this.eat(types.comma));
       }
 
@@ -1182,7 +1183,7 @@ var flow = (function (superClass) {
         this.next();
 
         do {
-          node.implements.push(this.flowParseInterfaceExtends());
+          node["implements"].push(this.flowParseInterfaceExtends());
         } while (this.eat(types.comma));
       }
 
@@ -1294,7 +1295,7 @@ var flow = (function (superClass) {
       if (this.match(types.eq)) {
         if (allowDefault) {
           this.eat(types.eq);
-          node.default = this.flowParseType();
+          node["default"] = this.flowParseType();
         } else {
           this.unexpected();
         }
@@ -1329,7 +1330,7 @@ var flow = (function (superClass) {
         var typeParameter = this.flowParseTypeParameter(allowDefault, defaultRequired);
         node.params.push(typeParameter);
 
-        if (typeParameter.default) {
+        if (typeParameter["default"]) {
           defaultRequired = true;
         }
 
@@ -1389,11 +1390,11 @@ var flow = (function (superClass) {
     _proto.flowParseInterfaceType = function flowParseInterfaceType() {
       var node = this.startNode();
       this.expectContextual("interface");
-      node.extends = [];
+      node["extends"] = [];
 
       if (this.eat(types._extends)) {
         do {
-          node.extends.push(this.flowParseInterfaceExtends());
+          node["extends"].push(this.flowParseInterfaceExtends());
         } while (this.eat(types.comma));
       }
 
@@ -1412,7 +1413,7 @@ var flow = (function (superClass) {
     };
 
     _proto.flowParseObjectTypeIndexer = function flowParseObjectTypeIndexer(node, isStatic, variance) {
-      node.static = isStatic;
+      node["static"] = isStatic;
 
       if (this.lookahead().type === types.colon) {
         node.id = this.flowParseObjectPropertyKey();
@@ -1429,7 +1430,7 @@ var flow = (function (superClass) {
     };
 
     _proto.flowParseObjectTypeInternalSlot = function flowParseObjectTypeInternalSlot(node, isStatic) {
-      node.static = isStatic;
+      node["static"] = isStatic;
       node.id = this.flowParseObjectPropertyKey();
       this.expect(types.bracketR);
       this.expect(types.bracketR);
@@ -1481,7 +1482,7 @@ var flow = (function (superClass) {
 
     _proto.flowParseObjectTypeCallProperty = function flowParseObjectTypeCallProperty(node, isStatic) {
       var valueNode = this.startNode();
-      node.static = isStatic;
+      node["static"] = isStatic;
       node.value = this.flowParseObjectTypeMethodish(valueNode);
       return this.finishNode(node, "ObjectTypeCallProperty");
     };
@@ -1634,7 +1635,7 @@ var flow = (function (superClass) {
         return this.finishNode(node, "ObjectTypeSpreadProperty");
       } else {
         node.key = this.flowParseObjectPropertyKey();
-        node.static = isStatic;
+        node["static"] = isStatic;
         node.proto = protoStart != null;
         node.kind = kind;
         var optional = false;
@@ -2210,7 +2211,7 @@ var flow = (function (superClass) {
           invalid = _this$getArrowLikeExp[1];
 
       if (failed || invalid.length > 0) {
-        var noArrowAt = originalNoArrowAt.concat();
+        var noArrowAt = [].concat(originalNoArrowAt);
 
         if (invalid.length > 0) {
           this.state = state;
@@ -2546,7 +2547,7 @@ var flow = (function (superClass) {
 
       if (this.isContextual("implements")) {
         this.next();
-        var implemented = node.implements = [];
+        var implemented = node["implements"] = [];
 
         do {
           var _node2 = this.startNode();
@@ -3258,7 +3259,7 @@ var entities = {
   or: "\u2228",
   cap: "\u2229",
   cup: "\u222A",
-  int: "\u222B",
+  "int": "\u222B",
   there4: "\u2234",
   sim: "\u223C",
   cong: "\u2245",
@@ -4069,6 +4070,7 @@ var State = function () {
     this.hasFlowComment = false;
     this.isIterator = false;
     this.classLevel = 0;
+    this._yagaAllowHash = 0;
     this.labels = [];
     this.decoratorStack = [[]];
     this.yieldOrAwaitInPossibleArrowParameters = null;
@@ -4128,9 +4130,9 @@ var forbiddenNumericSeparatorSiblings = {
 };
 var allowedNumericSeparatorSiblings = {};
 allowedNumericSeparatorSiblings.bin = [48, 49];
-allowedNumericSeparatorSiblings.oct = allowedNumericSeparatorSiblings.bin.concat([50, 51, 52, 53, 54, 55]);
-allowedNumericSeparatorSiblings.dec = allowedNumericSeparatorSiblings.oct.concat([56, 57]);
-allowedNumericSeparatorSiblings.hex = allowedNumericSeparatorSiblings.dec.concat([65, 66, 67, 68, 69, 70, 97, 98, 99, 100, 101, 102]);
+allowedNumericSeparatorSiblings.oct = [].concat(allowedNumericSeparatorSiblings.bin, [50, 51, 52, 53, 54, 55]);
+allowedNumericSeparatorSiblings.dec = [].concat(allowedNumericSeparatorSiblings.oct, [56, 57]);
+allowedNumericSeparatorSiblings.hex = [].concat(allowedNumericSeparatorSiblings.dec, [65, 66, 67, 68, 69, 70, 97, 98, 99, 100, 101, 102]);
 var Token = function Token(state) {
   this.type = state.type;
   this.value = state.value;
@@ -4479,15 +4481,19 @@ var Tokenizer = function (_LocationParser) {
       }
 
       _pos++;
+      var typ = types.bind;
       var ch = this.input.charCodeAt(_pos);
 
-      if (ch === 91 || ch === 32 && this.input.charCodeAt(_pos + 1) === 91) {
-        this.state.pos = _pos + (ch === 32 ? 2 : 1);
-        this.finishToken(types.bindValue);
-      } else {
-        this.state.pos = _pos;
-        this.finishToken(types.bind);
+      if (ch === 91) {
+        _pos += 1;
+        typ = types.bindValue;
+      } else if (ch === 32 && this.input.charCodeAt(_pos + 1) === 91) {
+        _pos += 2;
+        typ = types.bindValue;
       }
+
+      this.state.pos = _pos;
+      this.finishToken(typ);
     } else {
       this.finishOp(types.plusMin, 1);
     }
@@ -4566,7 +4572,13 @@ var Tokenizer = function (_LocationParser) {
           return;
         }
 
-        if ((this.hasPlugin("classPrivateProperties") || this.hasPlugin("classPrivateMethods")) && this.state.classLevel > 0) {
+        if (this.input.charCodeAt(this.state.pos + 1) === 91) {
+          this.state.pos += 2;
+          this.finishToken(types.privateExpr);
+          return;
+        }
+
+        if (this.state._yagaAllowHash && (this.state.classLevel === 0 || this.hasPlugin("classPrivateProperties") || this.hasPlugin("classPrivateMethods"))) {
           ++this.state.pos;
           this.finishToken(types.hash);
           return;
@@ -4768,16 +4780,16 @@ var Tokenizer = function (_LocationParser) {
     var mods = "";
 
     while (this.state.pos < this.input.length) {
-      var char = this.input[this.state.pos];
+      var _char = this.input[this.state.pos];
       var charCode = this.input.codePointAt(this.state.pos);
 
-      if (VALID_REGEX_FLAGS.indexOf(char) > -1) {
-        if (mods.indexOf(char) > -1) {
+      if (VALID_REGEX_FLAGS.indexOf(_char) > -1) {
+        if (mods.indexOf(_char) > -1) {
           this.raise(this.state.pos + 1, "Duplicate regular expression flag");
         }
 
         ++this.state.pos;
-        mods += char;
+        mods += _char;
       } else if (isIdentifierChar(charCode) || charCode === 92) {
         this.raise(this.state.pos + 1, "Invalid regular expression flag");
       } else {
@@ -6102,11 +6114,19 @@ var ExpressionParser = function (_LValParser) {
         _node8.optional = true;
         return this.finishNode(_node8, "OptionalMemberExpression");
       }
-    } else if (this.eat(types.dot)) {
+    } else if (this.match(types.dot)) {
       var _node9 = this.startNodeAt(startPos, startLoc);
 
       _node9.object = base;
+      this.state._yagaAllowHash++;
+      this.next();
       _node9.property = this.parseMaybePrivateName();
+
+      if (_node9.property.type === "PrivateName") {
+        _node9._yagaPrivateProperty = true;
+      }
+
+      this.state._yagaAllowHash--;
       _node9.computed = false;
 
       if (state.optionalChainMember) {
@@ -6132,20 +6152,29 @@ var ExpressionParser = function (_LValParser) {
       this.expect(types.bracketR);
       _node11._yagaBindExpression = true;
       return this.finishNode(_node11, "MemberExpression");
-    } else if (this.eat(types.bracketL)) {
+    } else if (this.eat(types.privateExpr)) {
       var _node12 = this.startNodeAt(startPos, startLoc);
 
       _node12.object = base;
       _node12.property = this.parseExpression();
+      _node12._yagaPrivateProperty = true;
       _node12.computed = true;
+      this.expect(types.bracketR);
+      return this.finishNode(_node12, "MemberExpression");
+    } else if (this.eat(types.bracketL)) {
+      var _node13 = this.startNodeAt(startPos, startLoc);
+
+      _node13.object = base;
+      _node13.property = this.parseExpression();
+      _node13.computed = true;
       this.expect(types.bracketR);
 
       if (state.optionalChainMember) {
-        _node12.optional = false;
-        return this.finishNode(_node12, "OptionalMemberExpression");
+        _node13.optional = false;
+        return this.finishNode(_node13, "OptionalMemberExpression");
       }
 
-      return this.finishNode(_node12, "MemberExpression");
+      return this.finishNode(_node13, "MemberExpression");
     } else if (!noCalls && this.match(types.parenL)) {
       var oldMaybeInArrowParameters = this.state.maybeInArrowParameters;
       var oldYOAIPAP = this.state.yieldOrAwaitInPossibleArrowParameters;
@@ -6156,18 +6185,18 @@ var ExpressionParser = function (_LValParser) {
 
       this.next();
 
-      var _node13 = this.startNodeAt(startPos, startLoc);
+      var _node14 = this.startNodeAt(startPos, startLoc);
 
-      _node13.callee = base;
+      _node14.callee = base;
       var refTrailingCommaPos = {
         start: -1
       };
-      _node13.arguments = this.parseCallExpressionArguments(types.parenR, _possibleAsync, refTrailingCommaPos);
+      _node14.arguments = this.parseCallExpressionArguments(types.parenR, _possibleAsync, refTrailingCommaPos);
 
       if (!state.optionalChainMember) {
-        this.finishCallExpression(_node13);
+        this.finishCallExpression(_node14);
       } else {
-        this.finishOptionalCallExpression(_node13);
+        this.finishOptionalCallExpression(_node14);
       }
 
       if (_possibleAsync && this.shouldParseAsyncArrow()) {
@@ -6177,15 +6206,15 @@ var ExpressionParser = function (_LValParser) {
           this.raise(refTrailingCommaPos.start, "A trailing comma is not permitted after the rest element");
         }
 
-        _node13 = this.parseAsyncArrowFromCallExpression(this.startNodeAt(startPos, startLoc), _node13);
+        _node14 = this.parseAsyncArrowFromCallExpression(this.startNodeAt(startPos, startLoc), _node14);
         this.state.yieldOrAwaitInPossibleArrowParameters = oldYOAIPAP;
       } else {
-        this.toReferencedList(_node13.arguments);
+        this.toReferencedList(_node14.arguments);
         this.state.yieldOrAwaitInPossibleArrowParameters = this.state.yieldOrAwaitInPossibleArrowParameters || oldYOAIPAP;
       }
 
       this.state.maybeInArrowParameters = oldMaybeInArrowParameters;
-      return _node13;
+      return _node14;
     } else if (this.match(types.backQuote)) {
       return this.parseTaggedTemplateExpression(startPos, startLoc, base, state);
     } else {
@@ -6380,17 +6409,17 @@ var ExpressionParser = function (_LValParser) {
         {
           this.expectPlugin("doExpressions");
 
-          var _node14 = this.startNode();
+          var _node15 = this.startNode();
 
           this.next();
           var oldInFunction = this.state.inFunction;
           var oldLabels = this.state.labels;
           this.state.labels = [];
           this.state.inFunction = false;
-          _node14.body = this.parseBlock(false);
+          _node15.body = this.parseBlock(false);
           this.state.inFunction = oldInFunction;
           this.state.labels = oldLabels;
-          return this.finishNode(_node14, "DoExpression");
+          return this.finishNode(_node15, "DoExpression");
         }
 
       case types.regexp:
@@ -6476,28 +6505,40 @@ var ExpressionParser = function (_LValParser) {
     return this.finishNode(node, "BooleanLiteral");
   };
 
-  _proto.parseMaybePrivateName = function parseMaybePrivateName() {
-    var isPrivate = this.match(types.hash);
+  _proto.parseMaybePrivateName = function parseMaybePrivateName(isPrivate) {
+    if (isPrivate === undefined) {
+      isPrivate = this.checkPrivatePrefix();
+    }
 
     if (isPrivate) {
-      this.expectOnePlugin(["classPrivateProperties", "classPrivateMethods"]);
-
-      var _node15 = this.startNode();
-
-      var columnHashEnd = this.state.end;
-      this.next();
-      var columnIdentifierStart = this.state.start;
-      var spacesBetweenHashAndIdentifier = columnIdentifierStart - columnHashEnd;
-
-      if (spacesBetweenHashAndIdentifier != 0) {
-        this.raise(columnIdentifierStart, "Unexpected space between # and identifier");
+      if (this.state.classLevel === this.state._yagaAllowHash) {
+        this.expectOnePlugin(["classPrivateProperties", "classPrivateMethods"]);
       }
 
-      _node15.id = this.parseIdentifier(true);
-      return this.finishNode(_node15, "PrivateName");
+      var _node16 = this.startNode();
+
+      _node16.id = this.parseIdentifier(true);
+      return this.finishNode(_node16, "PrivateName");
     } else {
       return this.parseIdentifier(true);
     }
+  };
+
+  _proto.checkPrivatePrefix = function checkPrivatePrefix() {
+    if (!this.match(types.hash)) {
+      return false;
+    }
+
+    var columnHashEnd = this.state.end;
+    this.next();
+    var columnNext = this.state.start;
+    var spaces = columnNext - columnHashEnd;
+
+    if (spaces != 0) {
+      this.raise(columnNext, "Unexpected space after private '#' prefix");
+    }
+
+    return true;
   };
 
   _proto.parseFunctionExpression = function parseFunctionExpression() {
@@ -6771,6 +6812,7 @@ var ExpressionParser = function (_LValParser) {
   };
 
   _proto.parseObj = function parseObj(isPattern, refShorthandDefaultPos) {
+    this.state._yagaAllowHash++;
     var decorators = [];
     var propHash = Object.create(null);
     var first = true;
@@ -6884,6 +6926,7 @@ var ExpressionParser = function (_LValParser) {
       this.raise(this.state.start, "You have trailing decorators with no property");
     }
 
+    this.state._yagaAllowHash--;
     return this.finishNode(node, isPattern ? "ObjectPattern" : "ObjectExpression");
   };
 
@@ -6961,6 +7004,9 @@ var ExpressionParser = function (_LValParser) {
   };
 
   _proto.parsePropertyName = function parsePropertyName(prop) {
+    var isPrivate = this.checkPrivatePrefix();
+    if (isPrivate) prop._yagaPrivateProperty = true;
+
     if (this.eat(types.bracketL)) {
       prop.computed = true;
       prop.key = this.parseMaybeAssign();
@@ -6968,7 +7014,7 @@ var ExpressionParser = function (_LValParser) {
     } else {
       var oldInPropertyName = this.state.inPropertyName;
       this.state.inPropertyName = true;
-      prop.key = this.match(types.num) || this.match(types.string) ? this.parseExprAtom() : this.parseMaybePrivateName();
+      prop.key = this.match(types.num) || this.match(types.string) ? this.parseExprAtom() : this.parseMaybePrivateName(isPrivate);
 
       if (prop.key.type !== "PrivateName") {
         prop.computed = false;
@@ -7911,7 +7957,7 @@ var StatementParser = function (_ExpressionParser) {
     }
 
     if (type === "ForOfStatement") {
-      node.await = !!forAwait;
+      node["await"] = !!forAwait;
     }
 
     node.left = init;
@@ -8026,13 +8072,14 @@ var StatementParser = function (_ExpressionParser) {
   };
 
   _proto.isNonstaticConstructor = function isNonstaticConstructor(method) {
-    return !method.computed && !method.static && (method.key.name === "constructor" || method.key.value === "constructor");
+    return !method.computed && !method["static"] && (method.key.name === "constructor" || method.key.value === "constructor");
   };
 
   _proto.parseClassBody = function parseClassBody(node) {
     var oldStrict = this.state.strict;
     this.state.strict = true;
-    this.state.classLevel++;
+    var oldClassLevel = this.state.classLevel;
+    this.state.classLevel = ++this.state._yagaAllowHash;
     var state = {
       hadConstructor: false
     };
@@ -8075,7 +8122,8 @@ var StatementParser = function (_ExpressionParser) {
     }
 
     node.body = this.finishNode(classBody, "ClassBody");
-    this.state.classLevel--;
+    this.state.classLevel = oldClassLevel;
+    this.state._yagaAllowHash--;
     this.state.strict = oldStrict;
   };
 
@@ -8091,14 +8139,14 @@ var StatementParser = function (_ExpressionParser) {
         method.kind = "method";
         method.computed = false;
         method.key = key;
-        method.static = false;
+        method["static"] = false;
         this.pushClassMethod(classBody, method, false, false, false);
         return;
       } else if (this.isClassProperty()) {
         var prop = member;
         prop.computed = false;
         prop.key = key;
-        prop.static = false;
+        prop["static"] = false;
         classBody.body.push(this.parseClassProperty(prop));
         return;
       } else if (containsEsc) {
@@ -8118,7 +8166,7 @@ var StatementParser = function (_ExpressionParser) {
     var privateProp = member;
     var method = publicMethod;
     var publicMember = publicMethod;
-    member.static = isStatic;
+    member["static"] = isStatic;
 
     if (this.eat(types.star)) {
       method.kind = "method";
@@ -8216,7 +8264,7 @@ var StatementParser = function (_ExpressionParser) {
   _proto.parseClassPropertyName = function parseClassPropertyName(member) {
     var key = this.parsePropertyName(member);
 
-    if (!member.computed && member.static && (key.name === "prototype" || key.value === "prototype")) {
+    if (!member.computed && member["static"] && (key.name === "prototype" || key.value === "prototype")) {
       this.raise(key.start, "Classes may not have static property named prototype");
     }
 
@@ -8919,7 +8967,7 @@ var typescript = (function (superClass) {
       var node = this.startNode();
       node.name = this.parseIdentifierName(node.start);
       node.constraint = this.tsEatThenParseType(types._extends);
-      node.default = this.tsEatThenParseType(types.eq);
+      node["default"] = this.tsEatThenParseType(types.eq);
       return this.finishNode(node, "TSTypeParameter");
     };
 
@@ -9519,7 +9567,7 @@ var typescript = (function (superClass) {
       node.typeParameters = this.tsTryParseTypeParameters();
 
       if (this.eat(types._extends)) {
-        node.extends = this.tsParseHeritageClause();
+        node["extends"] = this.tsParseHeritageClause();
       }
 
       var body = this.startNode();
@@ -9599,7 +9647,7 @@ var typescript = (function (superClass) {
     };
 
     _proto.tsParseEnumDeclaration = function tsParseEnumDeclaration(node, isConst) {
-      if (isConst) node.const = true;
+      if (isConst) node["const"] = true;
       node.id = this.parseIdentifier();
       this.expect(types.braceL);
       node.members = this.tsParseDelimitedList("EnumMembers", this.tsParseEnumMember.bind(this));
@@ -9802,7 +9850,7 @@ var typescript = (function (superClass) {
         case "abstract":
           if (next || this.match(types._class)) {
             var cls = node;
-            cls.abstract = true;
+            cls["abstract"] = true;
             if (next) this.next();
             return this.parseClass(cls, true, false);
           }
@@ -10091,7 +10139,7 @@ var typescript = (function (superClass) {
         var cls = this.startNode();
         this.next();
         this.parseClass(cls, true, true);
-        cls.abstract = true;
+        cls["abstract"] = true;
         return cls;
       }
 
@@ -10133,26 +10181,26 @@ var typescript = (function (superClass) {
       var methodOrProp = member;
       var prop = member;
       var propOrIdx = member;
-      var abstract = false,
+      var _abstract = false,
           readonly = false;
       var mod = this.tsParseModifier(["abstract", "readonly"]);
 
       switch (mod) {
         case "readonly":
           readonly = true;
-          abstract = !!this.tsParseModifier(["abstract"]);
+          _abstract = !!this.tsParseModifier(["abstract"]);
           break;
 
         case "abstract":
-          abstract = true;
+          _abstract = true;
           readonly = !!this.tsParseModifier(["readonly"]);
           break;
       }
 
-      if (abstract) methodOrProp.abstract = true;
+      if (_abstract) methodOrProp["abstract"] = true;
       if (readonly) propOrIdx.readonly = true;
 
-      if (!abstract && !isStatic && !methodOrProp.accessibility) {
+      if (!_abstract && !isStatic && !methodOrProp.accessibility) {
         var idx = this.tsTryParseIndexSignature(member);
 
         if (idx) {
@@ -10162,7 +10210,7 @@ var typescript = (function (superClass) {
       }
 
       if (readonly) {
-        methodOrProp.static = isStatic;
+        methodOrProp["static"] = isStatic;
         this.parseClassPropertyName(prop);
         this.parsePostMemberNameModifiers(methodOrProp);
         this.pushClassProperty(classBody, prop);
@@ -10286,7 +10334,7 @@ var typescript = (function (superClass) {
       }
 
       if (this.eatContextual("implements")) {
-        node.implements = this.tsParseHeritageClause();
+        node["implements"] = this.tsParseHeritageClause();
       }
     };
 
