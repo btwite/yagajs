@@ -4,36 +4,38 @@ import {
 } from "@babel/types";
 */
 
-let _yagaPrivateSpace_ = new WeakMap();
-
-function _yagaObjLiteral_(o, oPrivate) {
-    _yagaPrivateSpace_.set(o, oPrivate);
-    return (o);
-}
-
-function _yagaGetPrivateSpace(o) {
-    let oPrivate = _yagaPrivateSpace_.get(o);
-    if (!oPrivate)
-        oPrivate = _yagaPrivateSpace_.set(o, {});
-    return (oPrivate);
-}
-
 // A test module to put through the Yaga extensions transpiler.
 
 function main() {
+    testPrivateSpace();
+    //    testBind();
+}
+
+function testPrivateSpace() {
     obj = {
         a: 1,
         b: 2,
         #c: 3,
         d: 4
     };
-    obj#['aaa'];
-    obj.#aaa;
-    console.log(obj);
 
+    log('testPrivateSpace: 1:', obj#['c'], obj.#c);
+
+    obj.#c = 100;
+    log('testPrivateSpace: 2:', obj.c, obj.#c);
+
+    obj#[];
+    log('testPrivateSpace: 3:', obj#[], obj#[].c);
+
+    if (true === false) {
+        obj.#aaa.x.y;
+    }
+}
+
+function testBind() {
     let obj = {
         foo() {
-            console.log('hello world');
+            log('hello world');
         }
     };
     let f1 = obj.foo.bind(obj);
@@ -41,21 +43,27 @@ function main() {
     let f3 = obj - > foo;
     let f4 = obj - > foo;
 
-    console.log(f1 === f2, f3 === f4);
+    log(f1 === f2, f3 === f4);
 
     f1 = foobar.bind(obj);
     f2 = foobar.bind(obj);
     f3 = obj - > [foobar];
     f4 = obj - > [foobar];
 
-    console.log(f1 === f2, f3 === f4);
+    log(f1 === f2, f3 === f4);
 
-    f1 = obj.a.b - > foo;
+    if (true === false) {
+        f1 = obj.a.b - > foo.x.y;
+    }
 
 }
 
 function foobar() {
-    console.log('hello world');
+    log('hello world');
 }
 
 main();
+
+function log(...args) {
+    console.log.apply(undefined, args);
+}

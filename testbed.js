@@ -4,6 +4,8 @@
 
 "use strict"
 
+log('CWD:', process.cwd());
+
 let _ = undefined;
 let yaga = require('./core');
 

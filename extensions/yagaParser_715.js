@@ -203,6 +203,7 @@ var types = {
   bind: new TokenType("->"),
   bindValue: new TokenType("->["),
   privateExpr: new TokenType("#["),
+  privateSpace: new TokenType("#[]"),
   question: new TokenType("?", {
     beforeExpr: beforeExpr
   }),
@@ -4573,6 +4574,12 @@ var Tokenizer = function (_LocationParser) {
         }
 
         if (this.input.charCodeAt(this.state.pos + 1) === 91) {
+          if (this.input.charCodeAt(this.state.pos + 2) === 93) {
+            this.state.pos += 3;
+            this.finishToken(types.privateSpace);
+            return;
+          }
+
           this.state.pos += 2;
           this.finishToken(types.privateExpr);
           return;
@@ -6152,14 +6159,24 @@ var ExpressionParser = function (_LValParser) {
       this.expect(types.bracketR);
       _node11._yagaBindExpression = true;
       return this.finishNode(_node11, "MemberExpression");
-    } else if (this.eat(types.privateExpr)) {
+    } else if (this.match(types.privateExpr) || this.match(types.privateSpace)) {
+      var flPrivateSpaceOnly = this.match(types.privateSpace);
+      this.next();
+
       var _node12 = this.startNodeAt(startPos, startLoc);
 
       _node12.object = base;
-      _node12.property = this.parseExpression();
+
+      if (flPrivateSpaceOnly) {
+        delete _node12.property;
+        _node12._yagaPrivateSpaceOnly = true;
+      } else {
+        _node12.property = this.parseExpression();
+        _node12.computed = true;
+        this.expect(types.bracketR);
+      }
+
       _node12._yagaPrivateProperty = true;
-      _node12.computed = true;
-      this.expect(types.bracketR);
       return this.finishNode(_node12, "MemberExpression");
     } else if (this.eat(types.bracketL)) {
       var _node13 = this.startNodeAt(startPos, startLoc);
@@ -6913,6 +6930,10 @@ var ExpressionParser = function (_LValParser) {
 
       if (prop.shorthand) {
         this.addExtra(prop, "shorthand", true);
+      }
+
+      if (prop._yagaPrivateProperty) {
+        node._yagaHasPrivateProperties = true;
       }
 
       node.properties.push(prop);
