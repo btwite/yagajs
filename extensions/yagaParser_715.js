@@ -4573,7 +4573,9 @@ var Tokenizer = function (_LocationParser) {
           return;
         }
 
-        if (this.input.charCodeAt(this.state.pos + 1) === 91) {
+        var ch = this.input.charCodeAt(this.state.pos + 1);
+
+        if (ch === 91) {
           if (this.input.charCodeAt(this.state.pos + 2) === 93) {
             this.state.pos += 3;
             this.finishToken(types.privateSpace);
@@ -4581,6 +4583,10 @@ var Tokenizer = function (_LocationParser) {
           }
 
           this.state.pos += 2;
+          this.finishToken(types.privateExpr);
+          return;
+        } else if (ch === 32 && this.input.charCodeAt(this.state.pos + 2) === 91) {
+          this.state.pos += 3;
           this.finishToken(types.privateExpr);
           return;
         }
@@ -6542,7 +6548,9 @@ var ExpressionParser = function (_LValParser) {
   };
 
   _proto.checkPrivatePrefix = function checkPrivatePrefix() {
-    if (!this.match(types.hash)) {
+    if (this.match(types.privateExpr)) {
+      return true;
+    } else if (!this.match(types.hash)) {
       return false;
     }
 
@@ -7028,7 +7036,7 @@ var ExpressionParser = function (_LValParser) {
     var isPrivate = this.checkPrivatePrefix();
     if (isPrivate) prop._yagaPrivateProperty = true;
 
-    if (this.eat(types.bracketL)) {
+    if (this.eat(types.bracketL) || this.eat(types.privateExpr)) {
       prop.computed = true;
       prop.key = this.parseMaybeAssign();
       this.expect(types.bracketR);

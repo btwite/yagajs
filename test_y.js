@@ -36,12 +36,12 @@ function main() {
 function testPrivateSpace() {
   obj = __yagaObjLiteral__({
     a: 1,
-    b: 2,
-    d: 4
+    b: 2
   }, {
-    c: 3
+    c: 3,
+    ['d']: 4
   });
-  log('testPrivateSpace: 1:', __yagaGetPrivateSpace__(obj)['c'], __yagaGetPrivateSpace__(obj).c);
+  log('testPrivateSpace: 1:', __yagaGetPrivateSpace__(obj)['c'], __yagaGetPrivateSpace__(obj).c, __yagaGetPrivateSpace__(obj)['d']);
   __yagaGetPrivateSpace__(obj).c = 100;
   log('testPrivateSpace: 2:', obj.c, __yagaGetPrivateSpace__(obj).c);
 

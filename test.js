@@ -16,10 +16,10 @@ function testPrivateSpace() {
         a: 1,
         b: 2,
         #c: 3,
-        d: 4
+        # ['d']: 4
     };
 
-    log('testPrivateSpace: 1:', obj#['c'], obj.#c);
+    log('testPrivateSpace: 1:', obj#['c'], obj.#c, obj#['d']);
 
     obj.#c = 100;
     log('testPrivateSpace: 2:', obj.c, obj.#c);
