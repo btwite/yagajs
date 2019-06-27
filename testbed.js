@@ -77,14 +77,14 @@ function testBindFunction() {
 }
 
 function testTranspiler() {
-//    let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
-//    log(out.code);
+    //    let out = yaga.transpile("let x; x->y; x->['a' + 'b']");
+    //    log(out.code);
     let fn = '../../repos/yagajs/test.js';
     let res = yaga.transpileFile(fn);
     log(`transpileFile: Transpiled '${res.inPath}' to '${res.outPath}`);
-//    require('./extensions').main([fn]);
-//    require('./extensions').main(['-l', fn]);
-//    require('./extensions').main(['-l', '-r', '../../repos/yagajs']);
+    //    require('./extensions').main([fn]);
+    //    require('./extensions').main(['-l', fn]);
+    //    require('./extensions').main(['-l', '-r', '../../repos/yagajs']);
 }
 
 function testMachine() {

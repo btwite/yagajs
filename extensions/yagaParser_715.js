@@ -204,9 +204,6 @@ var types = {
   bindValue: new TokenType("->["),
   privateExpr: new TokenType("#["),
   privateSpace: new TokenType("#[]"),
-  question: new TokenType("?", {
-    beforeExpr: beforeExpr
-  }),
   questionDot: new TokenType("?."),
   arrow: new TokenType("=>", {
     beforeExpr: beforeExpr
@@ -4649,7 +4646,7 @@ var Tokenizer = function (_LocationParser) {
         return;
 
       case 58:
-        if (this.hasPlugin("functionBind") && this.input.charCodeAt(this.state.pos + 1) === 58) {
+        if ((this.hasPlugin("functionBind") || this.state._yagaAllowHash) && this.input.charCodeAt(this.state.pos + 1) === 58) {
           this.finishOp(types.doubleColon, 2);
         } else {
           ++this.state.pos;
@@ -6944,6 +6941,10 @@ var ExpressionParser = function (_LValParser) {
         node._yagaHasPrivateProperties = true;
       }
 
+      if (prop._yagaThisArgProperty) {
+        node._yagaHasThisArgProperties = true;
+      }
+
       node.properties.push(prop);
     }
 
@@ -6998,12 +6999,19 @@ var ExpressionParser = function (_LValParser) {
     }
   };
 
+  _proto.parseObjectPropertyValue = function parseObjectPropertyValue(prop, isPattern, refShorthandDefaultPos) {
+    prop.value = isPattern ? this.parseMaybeDefault(this.state.start, this.state.startLoc) : this.parseMaybeAssign(false, refShorthandDefaultPos);
+    return this.finishNode(prop, "ObjectProperty");
+  };
+
   _proto.parseObjectProperty = function parseObjectProperty(prop, startPos, startLoc, isPattern, refShorthandDefaultPos) {
     prop.shorthand = false;
 
     if (this.eat(types.colon)) {
-      prop.value = isPattern ? this.parseMaybeDefault(this.state.start, this.state.startLoc) : this.parseMaybeAssign(false, refShorthandDefaultPos);
-      return this.finishNode(prop, "ObjectProperty");
+      return this.parseObjectPropertyValue(prop, isPattern, refShorthandDefaultPos);
+    } else if (this.eat(types.doubleColon)) {
+      prop._yagaThisArgProperty = true;
+      return this.parseObjectPropertyValue(prop, isPattern, refShorthandDefaultPos);
     }
 
     if (!prop.computed && prop.key.type === "Identifier") {

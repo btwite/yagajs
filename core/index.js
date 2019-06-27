@@ -35,6 +35,7 @@ Yaga.findFiles = toolbox.File.findFiles;
 let transpiler = require('../extensions/transpiler');
 Yaga.transpile = transpiler.transpile;
 Yaga.transpileFile = transpiler.transpileFile;
+Yaga.transpileFileToAst = transpiler.transpileFileToAst;
 
 // Setup Reader as a getter and only load on first access.
 let Reader = undefined;

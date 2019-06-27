@@ -1,18 +1,40 @@
-/*
-import {
-    arrayTypeAnnotation
-} from "@babel/types";
-*/
-
 // A test module to put through the Yaga extensions transpiler.
 
+function fred(...args) {
+
+}
+
 function main() {
+    testThisArg();
     testPrivateSpace();
-    //    testBind();
+    testBind();
+}
+
+function testThisArg() {
+    let obj = {
+        thisArg::thisArg,
+        badThisArg::1,
+        noThisArg: noThisArg
+    };
+
+    function thisArg(that) {
+        log(that);
+        return (that);
+    }
+
+    function noThisArg() {
+        log(this);
+        return (this);
+    }
+
+    log(obj.thisArg(), obj.noThisArg());
+    trycode(() => {
+        obj.badThisArg();
+    })
 }
 
 function testPrivateSpace() {
-    obj = {
+    let obj = {
         a: 1,
         b: 2,
         #c: 3,
@@ -24,7 +46,6 @@ function testPrivateSpace() {
     obj.#c = 100;
     log('testPrivateSpace: 2:', obj.c, obj.#c);
 
-    obj#[];
     log('testPrivateSpace: 3:', obj#[], obj#[].c);
 
     if (true === false) {
@@ -66,4 +87,14 @@ main();
 
 function log(...args) {
     console.log.apply(undefined, args);
+}
+
+function trycode(fn, fErr) {
+    try {
+        fn()
+    } catch (err) {
+        if (fErr) fErr(err);
+        else log(err);
+        if (typeof err === 'object' && err.errors) yaga.printErrors(err.errors);
+    }
 }

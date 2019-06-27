@@ -74,6 +74,26 @@ function transpileFile(inPath, outPath) {
     }
 }
 
+function transpileFileToAst(inPath) {
+    inPath = File.Paths.tryResolve(inPath) || inPath;
+    File.isaFile(inPath, msg => throwError(msg));
+    inPath = Fs.realpathSync(inPath);
+    let fDesc = Path.parse(inPath);
+
+    let code = Fs.readFileSync(inPath);
+    let ast = Babel.parseSync(code, {
+        plugins: [{
+            parserOverride(code, opts) {
+                return (YagaParser.parse(code, opts));
+            }
+        }]
+    });
+    return {
+        inPath,
+        ast
+    }
+}
+
 function throwError(msg) {
     throw new Error(msg);
 }
@@ -87,6 +107,7 @@ if (process.mainModule === module) {
     module.exports = Object.freeze({
         transpile,
         transpileFile,
+        transpileFileToAst,
         main
     });
 }

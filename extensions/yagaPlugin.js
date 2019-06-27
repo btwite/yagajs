@@ -22,6 +22,8 @@ let YagaVisitor = {
             addYagaPrivatePropertyAccessor(this, path);
     },
     ObjectExpression(path) {
+        if (path.node._yagaHasThisArgProperties)
+            parseObjectThisArgProperties(this, path);
         if (path.node._yagaHasPrivateProperties)
             parseObjectPrivateProperties(this, path);
     }
@@ -34,6 +36,16 @@ function addYagaBindExpression(state, path) {
     } else {
         path.replaceWith(t.callExpression(__yagaBindFn__, [path.node.object, t.stringLiteral(path.node.property.name)]));
     }
+}
+
+function parseObjectThisArgProperties(state, path) {
+    addYagaThisArgDeclaration(state);
+    const __yagaThisArgFn__ = t.identifier('__yagaThisArg__');
+    path.node.properties.forEach(prop => {
+        if (!prop._yagaThisArgProperty)
+            return;
+        prop.value = t.callExpression(__yagaThisArgFn__, [prop.value]);
+    });
 }
 
 function parseObjectPrivateProperties(state, path) {
@@ -88,6 +100,30 @@ module.exports = function() {
         }
     });
 };
+
+function addYagaThisArgDeclaration(state) {
+    /*
+    function __yagaThisArg__(f) {
+        return function(...args) {
+            return f(this, ...args);
+        };
+    }
+    */
+    let argsParm = t.identifier('args');
+    let fParm = t.identifier('f');
+    let body = t.blockStatement([
+        t.returnStatement(t.functionExpression(null, [t.restElement(argsParm)],
+            t.blockStatement([
+                t.returnStatement(t.callExpression(fParm, [t.thisExpression(), t.spreadElement(argsParm)]))
+            ])))
+    ]);
+
+    let __yagaThisArg__ = t.identifier('__yagaThisArg__');
+    let node = t.functionDeclaration(__yagaThisArg__, [fParm], body);
+
+    // Insert at head of body.
+    state.progNode.body.unshift(node);
+}
 
 function addYagaPrivateDeclaration(state) {
     if (state.flYagaPrivateSpace)
