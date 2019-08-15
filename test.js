@@ -38,7 +38,7 @@ function testPrivateSpace() {
         a: 1,
         b: 2,
         #c: 3,
-        # ['d']: 4
+        #['d']: 4
     };
 
     log('testPrivateSpace: 1:', obj#['c'], obj.#c, obj#['d']);
@@ -61,20 +61,20 @@ function testBind() {
     };
     let f1 = obj.foo.bind(obj);
     let f2 = obj.foo.bind(obj);
-    let f3 = obj - > foo;
-    let f4 = obj - > foo;
+    let f3 = obj->foo;
+    let f4 = obj->foo;
 
     log(f1 === f2, f3 === f4);
 
     f1 = foobar.bind(obj);
     f2 = foobar.bind(obj);
-    f3 = obj - > [foobar];
-    f4 = obj - > [foobar];
+    f3 = obj->[foobar];
+    f4 = obj->[foobar];
 
     log(f1 === f2, f3 === f4);
 
     if (true === false) {
-        f1 = obj.a.b - > foo.x.y;
+        f1 = obj.a.b->foo.x.y;
     }
 
 }
